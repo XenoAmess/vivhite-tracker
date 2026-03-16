@@ -113,3 +113,5 @@ out/
 # ===== Temporary Files =====
 tmp/
 *.tmp
+
+local.properties
