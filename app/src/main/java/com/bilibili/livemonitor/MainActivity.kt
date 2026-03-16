@@ -89,9 +89,9 @@ class MainActivity : AppCompatActivity() {
 
             // 更新图标
             val iconRes = if (isRunning && LiveCheckService.lastLiveStatus) {
-                R.mipmap.ic_launcher_on
+                R.drawable.img_on
             } else {
-                R.mipmap.ic_launcher_off
+                R.drawable.img_off
             }
             ivStatus.setImageResource(iconRes)
         }

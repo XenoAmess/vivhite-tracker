@@ -200,8 +200,8 @@ class LiveCheckService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_ALERT_ID)
-            .setSmallIcon(R.drawable.ic_notification_on)
-            .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher_on))
+            .setSmallIcon(R.drawable.img_on)
+            .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.img_on))
             .setContentTitle("🎉 白绮开播啦！")
             .setContentText("直播间 11258892 正在直播中，快去看看吧！")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -224,8 +224,8 @@ class LiveCheckService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val iconRes = if (isLive) R.mipmap.ic_launcher_on else R.mipmap.ic_launcher_off
-        val smallIconRes = if (isLive) R.drawable.ic_notification_on else R.drawable.ic_notification_off
+        val iconRes = if (isLive) R.drawable.img_on else R.drawable.img_off
+        val smallIconRes = if (isLive) R.drawable.img_on else R.drawable.img_off
         val statusText = if (isLive) "🔴 直播中" else "⚫ 未开播"
         val contentText = if (isLive) 
             "白绮正在直播，快去观看吧！" 

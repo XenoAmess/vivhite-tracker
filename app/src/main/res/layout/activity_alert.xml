@@ -12,7 +12,7 @@
         android:layout_width="150dp"
         android:layout_height="150dp"
         android:layout_marginTop="48dp"
-        android:src="@mipmap/ic_launcher_on"
+        android:src="@drawable/img_on"
         android:contentDescription="开播图标"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
