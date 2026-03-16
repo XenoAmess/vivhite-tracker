@@ -235,7 +235,7 @@ class LiveCheckService : Service() {
         return NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_SERVICE_ID)
             .setSmallIcon(smallIconRes)
             .setLargeIcon(BitmapFactory.decodeResource(resources, iconRes))
-            .setContentTitle("B站直播监控 - $statusText")
+            .setContentTitle("牢白播了吗 - $statusText")
             .setContentText(contentText)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

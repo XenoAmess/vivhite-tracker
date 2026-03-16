@@ -46,6 +46,13 @@ class MainActivity : AppCompatActivity() {
 
         setupUI()
         checkBatteryOptimization()
+        
+        // 打开应用默认开启监控
+        if (!LiveCheckService.isRunning) {
+            if (checkNotificationPermission()) {
+                startMonitoring()
+            }
+        }
     }
 
     override fun onResume() {
@@ -55,22 +62,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupUI() {
         binding.apply {
-            btnStart.setOnClickListener {
-                if (checkNotificationPermission()) {
-                    startMonitoring()
+            btnToggle.setOnClickListener {
+                if (LiveCheckService.isRunning) {
+                    stopMonitoring()
+                } else {
+                    if (checkNotificationPermission()) {
+                        startMonitoring()
+                    }
                 }
-            }
-
-            btnStop.setOnClickListener {
-                stopMonitoring()
             }
 
             btnOpenSettings.setOnClickListener {
                 openBatterySettings()
             }
-
-            // 设置房间号（默认11258892）
-            etRoomId.setText(preferenceManager.getRoomId().toString())
         }
     }
 
@@ -84,8 +88,17 @@ class MainActivity : AppCompatActivity() {
                     if (isRunning) android.R.color.holo_green_dark else android.R.color.holo_red_dark
                 )
             )
-            btnStart.isEnabled = !isRunning
-            btnStop.isEnabled = isRunning
+            
+            // 根据状态切换按钮文本和颜色
+            if (isRunning) {
+                btnToggle.text = "停止监控"
+                btnToggle.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.red_500))
+                btnToggle.setIconResource(android.R.drawable.ic_media_pause)
+            } else {
+                btnToggle.text = "开始监控"
+                btnToggle.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.green_500))
+                btnToggle.setIconResource(android.R.drawable.ic_media_play)
+            }
 
             // 更新图标
             val iconRes = if (isRunning && LiveCheckService.lastLiveStatus) {
@@ -126,8 +139,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startMonitoring() {
-        val roomIdText = binding.etRoomId.text.toString()
-        val roomId = roomIdText.toLongOrNull() ?: 11258892L
+        val roomId = 11258892L
         preferenceManager.saveRoomId(roomId)
 
         val serviceIntent = Intent(this, LiveCheckService::class.java).apply {
@@ -135,7 +147,7 @@ class MainActivity : AppCompatActivity() {
         }
         ContextCompat.startForegroundService(this, serviceIntent)
 
-        Toast.makeText(this, "已开始监控直播间", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "已开始监控直播间 11258892", Toast.LENGTH_SHORT).show()
         updateUI()
     }
 

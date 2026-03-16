@@ -34,7 +34,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
-        android:text="B站直播监控"
+        android:text="牢白播了吗"
         android:textSize="28sp"
         android:textStyle="bold"
         android:textColor="@color/purple_500"
@@ -54,69 +54,46 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tvTitle" />
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/tilRoomId"
-        android:layout_width="0dp"
+    <TextView
+        android:id="@+id/tvRoomId"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="直播间: 11258892"
+        android:textSize="16sp"
+        android:textColor="@android:color/darker_gray"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvStatus" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnToggle"
+        android:layout_width="0dp"
+        android:layout_height="56dp"
         android:layout_marginTop="32dp"
-        android:hint="直播间号"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:text="开始监控"
+        android:textSize="16sp"
+        app:backgroundTint="@color/green_500"
+        app:icon="@android:drawable/ic_media_play"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tvStatus">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etRoomId"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="number"
-            android:text="11258892" />
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <LinearLayout
-        android:id="@+id/llButtons"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:orientation="horizontal"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tilRoomId">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnStart"
-            android:layout_width="0dp"
-            android:layout_height="56dp"
-            android:layout_marginEnd="8dp"
-            android:layout_weight="1"
-            android:text="开始监控"
-            android:textSize="16sp"
-            app:backgroundTint="@color/green_500"
-            app:icon="@android:drawable/ic_media_play" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnStop"
-            android:layout_width="0dp"
-            android:layout_height="56dp"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:text="停止监控"
-            android:textSize="16sp"
-            android:enabled="false"
-            app:backgroundTint="@color/red_500"
-            app:icon="@android:drawable/ic_media_pause" />
-    </LinearLayout>
+        app:layout_constraintTop_toBottomOf="@id/tvRoomId" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnOpenSettings"
         android:layout_width="0dp"
         android:layout_height="56dp"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="24dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
         android:text="电池优化设置"
         android:textSize="16sp"
         app:icon="@android:drawable/ic_menu_preferences"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/llButtons" />
+        app:layout_constraintTop_toBottomOf="@id/btnToggle" />
 
     <TextView
         android:id="@+id/tvDescription"
