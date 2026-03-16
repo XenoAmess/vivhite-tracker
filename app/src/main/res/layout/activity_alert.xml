@@ -7,16 +7,26 @@
     android:background="@drawable/gradient_alert_background"
     android:padding="32dp">
 
-    <ImageView
-        android:id="@+id/ivAlertIcon"
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cvAlertIcon"
         android:layout_width="150dp"
         android:layout_height="150dp"
         android:layout_marginTop="48dp"
-        android:src="@drawable/img_on"
-        android:contentDescription="开播图标"
+        app:cardCornerRadius="75dp"
+        app:cardElevation="0dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/ivAlertIcon"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:src="@drawable/img_on"
+            android:scaleType="centerCrop"
+            android:contentDescription="开播图标" />
+
+    </androidx.cardview.widget.CardView>
 
     <TextView
         android:id="@+id/tvAlertTitle"
@@ -29,7 +39,7 @@
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/ivAlertIcon" />
+        app:layout_constraintTop_toBottomOf="@id/cvAlertIcon" />
 
     <TextView
         android:id="@+id/tvAlertMessage"
