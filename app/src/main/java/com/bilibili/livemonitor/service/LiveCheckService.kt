@@ -253,8 +253,10 @@ class LiveCheckService : Service() {
         isRunning = false
         lastLiveStatus = false
 
-        // 发送广播重启服务
-        val broadcastIntent = Intent("com.bilibili.livemonitor.RESTART_SERVICE")
+        // 发送广播重启服务（使用显式 Intent）
+        val broadcastIntent = Intent(this, com.bilibili.livemonitor.receiver.ServiceRestartReceiver::class.java).apply {
+            action = "com.bilibili.livemonitor.RESTART_SERVICE"
+        }
         sendBroadcast(broadcastIntent)
     }
 

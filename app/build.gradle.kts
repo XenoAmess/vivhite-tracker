@@ -11,8 +11,9 @@ android {
         applicationId = "com.bilibili.livemonitor"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // 使用 Git commit 数作为 versionCode，确保 CI 构建可以覆盖安装
+        versionCode = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
+        versionName = "1.0.${versionCode}"
     }
 
     buildTypes {
