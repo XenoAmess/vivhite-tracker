@@ -15,9 +15,9 @@
     <application
         android:name=".LiveMonitorApp"
         android:allowBackup="true"
-        android:icon="@drawable/img_off"
+        android:icon="@mipmap/ic_launcher_off"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/img_off"
+        android:roundIcon="@mipmap/ic_launcher_off_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.BilibiliLiveMonitor"
         android:usesCleartextTraffic="true"
