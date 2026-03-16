@@ -46,13 +46,6 @@ class MainActivity : AppCompatActivity() {
 
         setupUI()
         checkBatteryOptimization()
-        
-        // 打开应用默认开启监控
-        if (!LiveCheckService.isRunning) {
-            if (checkNotificationPermission()) {
-                startMonitoring()
-            }
-        }
     }
 
     override fun onResume() {
