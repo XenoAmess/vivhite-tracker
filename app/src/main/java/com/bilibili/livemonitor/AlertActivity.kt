@@ -1,5 +1,6 @@
 package com.bilibili.livemonitor
 
+import android.annotation.SuppressLint
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -118,6 +119,7 @@ class AlertActivity : AppCompatActivity() {
         scope.cancel()
     }
 
+    @SuppressLint("MissingSuperCall")
     override fun onBackPressed() {
         // 不处理返回键，强制用户点击按钮
     }
