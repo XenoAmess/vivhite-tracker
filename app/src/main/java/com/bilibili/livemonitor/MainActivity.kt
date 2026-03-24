@@ -23,6 +23,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var preferenceManager: PreferenceManager
 
+    // 本地状态标志，用于立即更新UI
+    private var isServiceStarting = false
+    private var isServiceStopping = false
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -50,16 +54,28 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 重置过渡状态，从Service获取真实状态
+        isServiceStarting = false
+        isServiceStopping = false
         updateUI()
     }
 
     private fun setupUI() {
         binding.apply {
             btnToggle.setOnClickListener {
+                // 防止重复点击
+                if (isServiceStarting || isServiceStopping) {
+                    return@setOnClickListener
+                }
+
                 if (LiveCheckService.isRunning) {
+                    isServiceStopping = true
+                    updateUI() // 立即更新UI
                     stopMonitoring()
                 } else {
                     if (checkNotificationPermission()) {
+                        isServiceStarting = true
+                        updateUI() // 立即更新UI
                         startMonitoring()
                     }
                 }
@@ -72,7 +88,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI() {
-        val isRunning = LiveCheckService.isRunning
+        // 结合Service状态和本地过渡状态来确定UI显示
+        val isRunning = when {
+            isServiceStarting -> true  // 正在启动，显示为运行中
+            isServiceStopping -> false // 正在停止，显示为已停止
+            else -> LiveCheckService.isRunning
+        }
+
         binding.apply {
             tvStatus.text = if (isRunning) "监控状态: 运行中" else "监控状态: 已停止"
             tvStatus.setTextColor(
@@ -81,7 +103,7 @@ class MainActivity : AppCompatActivity() {
                     if (isRunning) android.R.color.holo_green_dark else android.R.color.holo_red_dark
                 )
             )
-            
+
             // 根据状态切换按钮文本和颜色
             if (isRunning) {
                 btnToggle.text = "停止监控"
@@ -141,13 +163,28 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.startForegroundService(this, serviceIntent)
 
         Toast.makeText(this, "已开始监控直播间 11258892", Toast.LENGTH_SHORT).show()
-        updateUI()
+
+        // 使用延迟来确保Service有足够时间启动，然后清除过渡状态
+        binding.root.postDelayed({
+            isServiceStarting = false
+            updateUI()
+        }, 500)
     }
 
     private fun stopMonitoring() {
-        stopService(Intent(this, LiveCheckService::class.java))
+        // 发送停止命令，让服务自己停止（避免自动重启）
+        val stopIntent = Intent(this, LiveCheckService::class.java).apply {
+            action = LiveCheckService.ACTION_STOP_SERVICE
+        }
+        startService(stopIntent)
+
         Toast.makeText(this, "已停止监控", Toast.LENGTH_SHORT).show()
-        updateUI()
+
+        // 使用延迟来确保Service有足够时间停止，然后清除过渡状态
+        binding.root.postDelayed({
+            isServiceStopping = false
+            updateUI()
+        }, 500)
     }
 
     private fun checkBatteryOptimization() {

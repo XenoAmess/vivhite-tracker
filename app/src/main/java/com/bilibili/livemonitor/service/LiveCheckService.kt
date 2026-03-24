@@ -56,6 +56,13 @@ class LiveCheckService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 处理停止命令
+        if (intent?.action == ACTION_STOP_SERVICE) {
+            isUserStopped = true
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val newRoomId = intent?.getLongExtra(EXTRA_ROOM_ID, DEFAULT_ROOM_ID) ?: DEFAULT_ROOM_ID
 
         // 如果房间号改变，重置状态
@@ -298,17 +305,22 @@ class LiveCheckService : Service() {
             checkWakeLock.release()
         }
 
-        // 发送广播重启服务（使用显式 Intent）
-        val broadcastIntent = Intent(this, com.bilibili.livemonitor.receiver.ServiceRestartReceiver::class.java).apply {
-            action = "com.bilibili.livemonitor.RESTART_SERVICE"
+        // 只有非用户手动停止时才发送广播重启服务
+        if (!isUserStopped) {
+            val broadcastIntent = Intent(this, com.bilibili.livemonitor.receiver.ServiceRestartReceiver::class.java).apply {
+                action = "com.bilibili.livemonitor.RESTART_SERVICE"
+            }
+            sendBroadcast(broadcastIntent)
         }
-        sendBroadcast(broadcastIntent)
+        // 重置标志
+        isUserStopped = false
     }
 
     companion object {
         const val EXTRA_ROOM_ID = "room_id"
         const val ACTION_STATUS_CHANGED = "com.bilibili.livemonitor.STATUS_CHANGED"
         const val EXTRA_IS_LIVE = "is_live"
+        const val ACTION_STOP_SERVICE = "com.bilibili.livemonitor.STOP_SERVICE"
         private const val DEFAULT_ROOM_ID = 11258892L
         private const val CHECK_INTERVAL = 60_000L // 60秒
 
@@ -317,5 +329,9 @@ class LiveCheckService : Service() {
 
         @Volatile
         var lastLiveStatus = false
+
+        // 标记是否是用户手动停止，避免自动重启
+        @Volatile
+        var isUserStopped = false
     }
 }
