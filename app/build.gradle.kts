@@ -40,7 +40,15 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            // CI环境没有签名密钥时使用默认debug签名
+            val releaseConfig = signingConfigs.findByName("release")
+            signingConfig = if (releaseConfig != null && 
+                releaseConfig.storeFile != null && 
+                releaseConfig.storeFile!!.exists()) {
+                releaseConfig
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {
