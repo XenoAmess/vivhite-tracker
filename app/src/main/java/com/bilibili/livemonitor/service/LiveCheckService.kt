@@ -34,6 +34,9 @@ class LiveCheckService : Service() {
     private var lastStatus: Boolean? = null
     private lateinit var wakeLock: PowerManager.WakeLock
 
+    // 用于保护检测的轻量级WakeLock
+    private lateinit var checkWakeLock: PowerManager.WakeLock
+
     override fun onCreate() {
         super.onCreate()
         bilibiliApi = BilibiliApi()
@@ -42,18 +45,34 @@ class LiveCheckService : Service() {
             PowerManager.PARTIAL_WAKE_LOCK,
             "BilibiliLiveMonitor::WakeLock"
         )
+        // 初始化用于检测的轻量级WakeLock，防止Doze模式影响检测
+        checkWakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "BilibiliLiveMonitor::CheckWakeLock"
+        ).apply {
+            setReferenceCounted(false)
+        }
         isRunning = true
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        roomId = intent?.getLongExtra(EXTRA_ROOM_ID, DEFAULT_ROOM_ID) ?: DEFAULT_ROOM_ID
-        
+        val newRoomId = intent?.getLongExtra(EXTRA_ROOM_ID, DEFAULT_ROOM_ID) ?: DEFAULT_ROOM_ID
+
+        // 如果房间号改变，重置状态
+        if (newRoomId != roomId) {
+            roomId = newRoomId
+            lastStatus = null
+        }
+
         startForeground(
             LiveMonitorApp.NOTIFICATION_ID_SERVICE,
-            createServiceNotification(false)
+            createServiceNotification(lastLiveStatus)
         )
 
-        startChecking()
+        // 只有在检测没有运行时才开始检测
+        if (checkJob?.isActive != true) {
+            startChecking()
+        }
 
         return START_STICKY
     }
@@ -73,24 +92,42 @@ class LiveCheckService : Service() {
     }
 
     private suspend fun checkLiveStatus() {
-        val isLive = bilibiliApi.isLiveStreaming(roomId)
-        lastLiveStatus = isLive
-
-        // 更新通知栏图标
-        updateNotification(isLive)
-
-        // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播
-        val shouldAlert = if (lastStatus == null) {
-            isLive // 首次检查，如果在播就提醒
-        } else {
-            !lastStatus!! && isLive // 从关播变为开播
+        // 使用WakeLock保护检测过程，防止Doze模式影响
+        if (!checkWakeLock.isHeld) {
+            checkWakeLock.acquire(30_000L) // 最多持有30秒
         }
+        try {
+            // 添加超时保护，确保检测不会挂起太久
+            val isLive = withTimeoutOrNull(25_000L) {
+                bilibiliApi.isLiveStreaming(roomId)
+            } ?: run {
+                // 超时情况下保持上一次的状态，避免误判
+                lastStatus ?: false
+            }
 
-        if (shouldAlert) {
-            triggerAlert()
+            lastLiveStatus = isLive
+
+            // 更新通知栏图标
+            updateNotification(isLive)
+
+            // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播
+            val shouldAlert = if (lastStatus == null) {
+                isLive // 首次检查，如果在播就提醒
+            } else {
+                !lastStatus!! && isLive // 从关播变为开播
+            }
+
+            if (shouldAlert) {
+                triggerAlert()
+            }
+
+            lastStatus = isLive
+        } finally {
+            // 确保释放WakeLock
+            if (checkWakeLock.isHeld) {
+                checkWakeLock.release()
+            }
         }
-
-        lastStatus = isLive
     }
 
     private fun updateNotification(isLive: Boolean) {
@@ -252,6 +289,14 @@ class LiveCheckService : Service() {
         serviceScope.cancel()
         isRunning = false
         lastLiveStatus = false
+
+        // 释放所有WakeLock
+        if (::wakeLock.isInitialized && wakeLock.isHeld) {
+            wakeLock.release()
+        }
+        if (::checkWakeLock.isInitialized && checkWakeLock.isHeld) {
+            checkWakeLock.release()
+        }
 
         // 发送广播重启服务（使用显式 Intent）
         val broadcastIntent = Intent(this, com.bilibili.livemonitor.receiver.ServiceRestartReceiver::class.java).apply {
