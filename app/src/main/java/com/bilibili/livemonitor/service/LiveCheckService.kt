@@ -1,5 +1,6 @@
 package com.bilibili.livemonitor.service
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -17,12 +18,15 @@ import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.bilibili.livemonitor.AlertActivity
 import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.MainActivity
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.api.BilibiliApi
+import com.bilibili.livemonitor.receiver.AlarmReceiver
+import com.bilibili.livemonitor.util.PreferenceManager
 import kotlinx.coroutines.*
 
 class LiveCheckService : Service() {
@@ -39,6 +43,7 @@ class LiveCheckService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "onCreate")
         bilibiliApi = BilibiliApi()
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -53,12 +58,24 @@ class LiveCheckService : Service() {
             setReferenceCounted(false)
         }
         isRunning = true
+        PreferenceManager(this).setServiceRunning(true)
+
+        // 必须在5秒内调用startForeground，放在onCreate确保及时性
+        startForeground(
+            LiveMonitorApp.NOTIFICATION_ID_SERVICE,
+            createServiceNotification(lastLiveStatus)
+        )
+
+        // 设置AlarmManager心跳，确保Service被杀后能被重新拉起
+        scheduleAlarm()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand action=${intent?.action}")
         // 处理停止命令
         if (intent?.action == ACTION_STOP_SERVICE) {
             isUserStopped = true
+            PreferenceManager(this).setServiceRunning(false)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -71,10 +88,8 @@ class LiveCheckService : Service() {
             lastStatus = null
         }
 
-        startForeground(
-            LiveMonitorApp.NOTIFICATION_ID_SERVICE,
-            createServiceNotification(lastLiveStatus)
-        )
+        // startForeground已在onCreate中调用，这里只更新通知
+        updateNotification(lastLiveStatus)
 
         // 只有在检测没有运行时才开始检测
         if (checkJob?.isActive != true) {
@@ -91,7 +106,7 @@ class LiveCheckService : Service() {
                 try {
                     checkLiveStatus()
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e(TAG, "checkLiveStatus error", e)
                 }
                 delay(CHECK_INTERVAL)
             }
@@ -99,6 +114,7 @@ class LiveCheckService : Service() {
     }
 
     private suspend fun checkLiveStatus() {
+        Log.d(TAG, "checkLiveStatus roomId=$roomId")
         // 使用WakeLock保护检测过程，防止Doze模式影响
         if (!checkWakeLock.isHeld) {
             checkWakeLock.acquire(30_000L) // 最多持有30秒
@@ -109,9 +125,11 @@ class LiveCheckService : Service() {
                 bilibiliApi.isLiveStreaming(roomId)
             } ?: run {
                 // 超时情况下保持上一次的状态，避免误判
+                Log.w(TAG, "checkLiveStatus timeout")
                 lastStatus ?: false
             }
 
+            Log.d(TAG, "checkLiveStatus result isLive=$isLive lastStatus=$lastStatus")
             lastLiveStatus = isLive
 
             // 更新通知栏图标
@@ -125,6 +143,7 @@ class LiveCheckService : Service() {
             }
 
             if (shouldAlert) {
+                Log.d(TAG, "triggerAlert")
                 triggerAlert()
             }
 
@@ -292,10 +311,13 @@ class LiveCheckService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "onDestroy isUserStopped=$isUserStopped")
         checkJob?.cancel()
         serviceScope.cancel()
         isRunning = false
         lastLiveStatus = false
+        PreferenceManager(this).setServiceRunning(false)
+        cancelAlarm()
 
         // 释放所有WakeLock
         if (::wakeLock.isInitialized && wakeLock.isHeld) {
@@ -307,13 +329,62 @@ class LiveCheckService : Service() {
 
         // 只有非用户手动停止时才发送广播重启服务
         if (!isUserStopped) {
-            val broadcastIntent = Intent(this, com.bilibili.livemonitor.receiver.ServiceRestartReceiver::class.java).apply {
-                action = "com.bilibili.livemonitor.RESTART_SERVICE"
+            try {
+                val broadcastIntent = Intent(this, com.bilibili.livemonitor.receiver.ServiceRestartReceiver::class.java).apply {
+                    action = ACTION_RESTART_SERVICE
+                }
+                sendBroadcast(broadcastIntent)
+            } catch (e: Exception) {
+                Log.e(TAG, "send restart broadcast failed", e)
             }
-            sendBroadcast(broadcastIntent)
         }
         // 重置标志
         isUserStopped = false
+    }
+
+    private fun scheduleAlarm() {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, AlarmReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                this, ALARM_REQUEST_CODE, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // 使用setExactAndAllowWhileIdle确保即使在Doze模式下也能执行
+            val triggerAt = System.currentTimeMillis() + ALARM_INTERVAL
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt,
+                    pendingIntent
+                )
+            }
+            Log.d(TAG, "scheduleAlarm at $triggerAt")
+        } catch (e: Exception) {
+            Log.e(TAG, "scheduleAlarm failed", e)
+        }
+    }
+
+    private fun cancelAlarm() {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, AlarmReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                this, ALARM_REQUEST_CODE, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarmManager.cancel(pendingIntent)
+            Log.d(TAG, "cancelAlarm")
+        } catch (e: Exception) {
+            Log.e(TAG, "cancelAlarm failed", e)
+        }
     }
 
     companion object {
@@ -321,8 +392,12 @@ class LiveCheckService : Service() {
         const val ACTION_STATUS_CHANGED = "com.bilibili.livemonitor.STATUS_CHANGED"
         const val EXTRA_IS_LIVE = "is_live"
         const val ACTION_STOP_SERVICE = "com.bilibili.livemonitor.STOP_SERVICE"
+        const val ACTION_RESTART_SERVICE = "com.bilibili.livemonitor.RESTART_SERVICE"
         private const val DEFAULT_ROOM_ID = 11258892L
         private const val CHECK_INTERVAL = 60_000L // 60秒
+        private const val ALARM_INTERVAL = 5 * 60_000L // 5分钟心跳
+        private const val ALARM_REQUEST_CODE = 2001
+        private const val TAG = "LiveCheckService"
 
         @Volatile
         var isRunning = false

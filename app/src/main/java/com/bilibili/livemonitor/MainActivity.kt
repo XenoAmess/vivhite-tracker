@@ -48,6 +48,11 @@ class MainActivity : AppCompatActivity() {
 
         preferenceManager = PreferenceManager(this)
 
+        // 如果之前用户在监控，但服务被系统杀掉了，重新打开App时自动恢复
+        if (preferenceManager.isServiceRunning() && !LiveCheckService.isRunning) {
+            startMonitoring()
+        }
+
         setupUI()
         checkBatteryOptimization()
     }
@@ -156,6 +161,7 @@ class MainActivity : AppCompatActivity() {
     private fun startMonitoring() {
         val roomId = 11258892L
         preferenceManager.saveRoomId(roomId)
+        preferenceManager.setServiceRunning(true)
 
         val serviceIntent = Intent(this, LiveCheckService::class.java).apply {
             putExtra(LiveCheckService.EXTRA_ROOM_ID, roomId)
@@ -172,6 +178,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopMonitoring() {
+        preferenceManager.setServiceRunning(false)
         // 发送停止命令，让服务自己停止（避免自动重启）
         val stopIntent = Intent(this, LiveCheckService::class.java).apply {
             action = LiveCheckService.ACTION_STOP_SERVICE
