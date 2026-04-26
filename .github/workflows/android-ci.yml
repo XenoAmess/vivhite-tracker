@@ -24,6 +24,11 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    - name: Decode debug signing key
+      run: |
+        echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > app/debug.keystore
+        ls -la app/debug.keystore
+
     - name: Run lint
       run: ./gradlew lintDebug
 

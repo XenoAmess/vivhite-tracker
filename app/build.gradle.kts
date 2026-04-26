@@ -29,11 +29,15 @@ android {
             keyPassword = System.getenv("KEY_PASSWORD") ?: ""
         }
         getByName("debug") {
-            // 使用项目内置的固定 debug.keystore，确保本地与 CI 签名一致
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            // CI 环境下从 Secrets 注入的固定 debug.keystore，确保多机签名一致
+            // 本地若无此文件则回退到默认 ~/.android/debug.keystore
+            val debugKeyFile = file("debug.keystore")
+            if (debugKeyFile.exists()) {
+                storeFile = debugKeyFile
+                storePassword = System.getenv("DEBUG_KEY_STORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("DEBUG_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("DEBUG_KEY_PASSWORD") ?: "android"
+            }
         }
     }
 
