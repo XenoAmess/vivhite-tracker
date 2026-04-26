@@ -39,6 +39,8 @@ Thumbs.db
 *.keystore
 *.p12
 *.key
+# 保留固定的 debug 签名，确保本地与 CI 构建一致
+!app/debug.keystore
 
 # ===== External Native Build =====
 .cxx/

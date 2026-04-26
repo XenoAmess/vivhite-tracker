@@ -28,6 +28,13 @@ android {
             keyAlias = System.getenv("ALIAS") ?: ""
             keyPassword = System.getenv("KEY_PASSWORD") ?: ""
         }
+        getByName("debug") {
+            // 使用项目内置的固定 debug.keystore，确保本地与 CI 签名一致
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -40,15 +47,7 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            // CI环境没有签名密钥时使用默认debug签名
-            val releaseConfig = signingConfigs.findByName("release")
-            signingConfig = if (releaseConfig != null && 
-                releaseConfig.storeFile != null && 
-                releaseConfig.storeFile!!.exists()) {
-                releaseConfig
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
