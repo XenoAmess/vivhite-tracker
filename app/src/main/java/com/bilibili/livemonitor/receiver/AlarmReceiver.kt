@@ -14,27 +14,24 @@ class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "AlarmReceiver onReceive")
         val preferenceManager = PreferenceManager(context)
-        val shouldRun = preferenceManager.isServiceRunning()
-        val isRunning = LiveCheckService.isRunning
+        if (!preferenceManager.isServiceRunning()) {
+            Log.d(TAG, "Service not supposed to run, skip")
+            return
+        }
 
-        Log.d(TAG, "shouldRun=$shouldRun isRunning=$isRunning")
-
-        if (shouldRun && !isRunning) {
-            Log.d(TAG, "Service should run but not running, restarting...")
-            try {
-                val serviceIntent = Intent(context, LiveCheckService::class.java).apply {
-                    putExtra(LiveCheckService.EXTRA_ROOM_ID, preferenceManager.getRoomId())
-                }
-                ContextCompat.startForegroundService(context, serviceIntent)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to restart service", e)
+        // 无论服务是否活着，都触发一次 startForegroundService
+        // 服务活着会执行检查，死了会重启
+        try {
+            val serviceIntent = Intent(context, LiveCheckService::class.java).apply {
+                putExtra(LiveCheckService.EXTRA_ROOM_ID, preferenceManager.getRoomId())
             }
+            ContextCompat.startForegroundService(context, serviceIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to trigger service", e)
         }
 
-        // 重新调度下一次Alarm，形成循环心跳
-        if (shouldRun) {
-            scheduleNextAlarm(context)
-        }
+        // 重新调度下一次Alarm
+        scheduleNextAlarm(context)
     }
 
     private fun scheduleNextAlarm(context: Context) {
@@ -77,7 +74,7 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        private const val ALARM_INTERVAL = 5 * 60_000L // 5分钟
+        private const val ALARM_INTERVAL = 60_000L // 60秒
         private const val ALARM_REQUEST_CODE = 2001
         private const val TAG = "AlarmReceiver"
     }

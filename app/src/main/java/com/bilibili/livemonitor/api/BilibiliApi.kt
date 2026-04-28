@@ -31,8 +31,8 @@ class BilibiliApi {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
                 setRequestProperty("Referer", "https://live.bilibili.com/")
-                connectTimeout = 10000
-                readTimeout = 10000
+                connectTimeout = 5000
+                readTimeout = 5000
             }
 
             val response = connection.inputStream.bufferedReader().use { it.readText() }
@@ -56,7 +56,7 @@ class BilibiliApi {
             val doc = Jsoup.connect(url)
                 .userAgent(USER_AGENT)
                 .referrer("https://www.bilibili.com/")
-                .timeout(10000)
+                .timeout(5000)
                 .get()
 
             // 查找直播状态相关信息

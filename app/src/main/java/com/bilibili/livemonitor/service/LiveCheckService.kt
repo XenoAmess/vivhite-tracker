@@ -32,7 +32,6 @@ import kotlinx.coroutines.*
 class LiveCheckService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var checkJob: Job? = null
     private lateinit var bilibiliApi: BilibiliApi
     private var roomId: Long = DEFAULT_ROOM_ID
     private var lastStatus: Boolean? = null
@@ -40,6 +39,9 @@ class LiveCheckService : Service() {
 
     // 用于保护检测的轻量级WakeLock
     private lateinit var checkWakeLock: PowerManager.WakeLock
+
+    // 防止并发检查
+    private val isChecking = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -65,9 +67,6 @@ class LiveCheckService : Service() {
             LiveMonitorApp.NOTIFICATION_ID_SERVICE,
             createServiceNotification(lastLiveStatus)
         )
-
-        // 设置AlarmManager心跳，确保Service被杀后能被重新拉起
-        scheduleAlarm()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -91,26 +90,24 @@ class LiveCheckService : Service() {
         // startForeground已在onCreate中调用，这里只更新通知
         updateNotification(lastLiveStatus)
 
-        // 只有在检测没有运行时才开始检测
-        if (checkJob?.isActive != true) {
-            startChecking()
-        }
-
-        return START_STICKY
-    }
-
-    private fun startChecking() {
-        checkJob?.cancel()
-        checkJob = serviceScope.launch {
-            while (isActive) {
+        // 执行检查（由AlarmManager触发或用户启动触发）
+        serviceScope.launch {
+            if (isChecking.compareAndSet(false, true)) {
                 try {
                     checkLiveStatus()
                 } catch (e: Exception) {
                     Log.e(TAG, "checkLiveStatus error", e)
+                } finally {
+                    isChecking.set(false)
                 }
-                delay(CHECK_INTERVAL)
+            } else {
+                Log.d(TAG, "check already in progress, skip")
             }
+            // 检查完成后设置下一次Alarm（作为保底，AlarmReceiver也会设置）
+            scheduleNextCheckAlarm()
         }
+
+        return START_STICKY
     }
 
     private suspend fun checkLiveStatus() {
@@ -312,7 +309,6 @@ class LiveCheckService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "onDestroy isUserStopped=$isUserStopped")
-        checkJob?.cancel()
         serviceScope.cancel()
         isRunning = false
         lastLiveStatus = false
@@ -342,7 +338,7 @@ class LiveCheckService : Service() {
         isUserStopped = false
     }
 
-    private fun scheduleAlarm() {
+    private fun scheduleNextCheckAlarm() {
         try {
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(this, AlarmReceiver::class.java)
@@ -351,7 +347,7 @@ class LiveCheckService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val triggerAt = System.currentTimeMillis() + ALARM_INTERVAL
+            val triggerAt = System.currentTimeMillis() + CHECK_INTERVAL
             when {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() -> {
                     // 未授权精确闹钟权限，回退到非精确版本
@@ -376,11 +372,11 @@ class LiveCheckService : Service() {
                     )
                 }
             }
-            Log.d(TAG, "scheduleAlarm at $triggerAt")
+            Log.d(TAG, "scheduleNextCheckAlarm at $triggerAt")
         } catch (e: SecurityException) {
-            Log.e(TAG, "scheduleAlarm SecurityException", e)
+            Log.e(TAG, "scheduleNextCheckAlarm SecurityException", e)
         } catch (e: Exception) {
-            Log.e(TAG, "scheduleAlarm failed", e)
+            Log.e(TAG, "scheduleNextCheckAlarm failed", e)
         }
     }
 
@@ -407,7 +403,6 @@ class LiveCheckService : Service() {
         const val ACTION_RESTART_SERVICE = "com.bilibili.livemonitor.RESTART_SERVICE"
         private const val DEFAULT_ROOM_ID = 11258892L
         private const val CHECK_INTERVAL = 60_000L // 60秒
-        private const val ALARM_INTERVAL = 5 * 60_000L // 5分钟心跳
         private const val ALARM_REQUEST_CODE = 2001
         private const val TAG = "LiveCheckService"
 
