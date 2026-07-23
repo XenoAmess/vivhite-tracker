@@ -32,7 +32,7 @@ android {
             // CI 环境下从 Secrets 注入的固定 debug.keystore，确保多机签名一致
             // 本地若无此文件则回退到默认 ~/.android/debug.keystore
             val debugKeyFile = file("debug.keystore")
-            if (debugKeyFile.exists()) {
+            if (debugKeyFile.exists() && debugKeyFile.length() > 0) {
                 storeFile = debugKeyFile
                 storePassword = System.getenv("DEBUG_KEY_STORE_PASSWORD") ?: "android"
                 keyAlias = System.getenv("DEBUG_KEY_ALIAS") ?: "androiddebugkey"
