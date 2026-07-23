@@ -1,6 +1,8 @@
 package com.bilibili.livemonitor
 
 import android.Manifest
+import android.app.AlarmManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -15,8 +17,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.bilibili.livemonitor.databinding.ActivityMainBinding
 import com.bilibili.livemonitor.service.LiveCheckService
+import com.bilibili.livemonitor.util.AppLogger
+import com.bilibili.livemonitor.util.OemHelper
 import com.bilibili.livemonitor.util.PreferenceManager
 import com.google.android.material.snackbar.Snackbar
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -26,6 +33,10 @@ class MainActivity : AppCompatActivity() {
     // 本地状态标志，用于立即更新UI
     private var isServiceStarting = false
     private var isServiceStopping = false
+
+    // 标记本次会话是否已弹过权限引导，避免重复打扰
+    private var hasPromptedExactAlarm = false
+    private var hasPromptedOem = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -55,6 +66,8 @@ class MainActivity : AppCompatActivity() {
 
         setupUI()
         checkBatteryOptimization()
+        checkExactAlarmPermission()
+        checkOemRestrictions()
     }
 
     override fun onResume() {
@@ -63,6 +76,10 @@ class MainActivity : AppCompatActivity() {
         isServiceStarting = false
         isServiceStopping = false
         updateUI()
+        // 从设置页返回时复查精确闹钟权限（用户可能刚授权或被系统收回）
+        if (!hasPromptedExactAlarm) {
+            checkExactAlarmPermission()
+        }
     }
 
     private fun setupUI() {
@@ -88,6 +105,14 @@ class MainActivity : AppCompatActivity() {
 
             btnOpenSettings.setOnClickListener {
                 openBatterySettings()
+            }
+
+            btnOemSettings.setOnClickListener {
+                OemHelper.openOemSettings(this@MainActivity)
+            }
+
+            btnViewLog.setOnClickListener {
+                startActivity(Intent(this@MainActivity, LogActivity::class.java))
             }
         }
     }
@@ -127,6 +152,20 @@ class MainActivity : AppCompatActivity() {
                 R.drawable.img_off
             }
             ivStatus.setImageResource(iconRes)
+
+            // 显示上次检测信息
+            val lastTime = preferenceManager.getLastCheckTime()
+            if (lastTime > 0) {
+                val timeStr = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()).format(Date(lastTime))
+                val resultStr = when {
+                    !preferenceManager.isLastCheckSuccess() -> "检测失败"
+                    preferenceManager.isLastCheckLive() -> "🔴 直播中"
+                    else -> "⚫ 未开播"
+                }
+                tvLastCheck.text = "上次检测: $timeStr ($resultStr)"
+            } else {
+                tvLastCheck.text = "上次检测: 暂无记录"
+            }
         }
     }
 
@@ -203,6 +242,52 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun checkExactAlarmPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                hasPromptedExactAlarm = true
+                AppLogger.w("MainActivity", "exact alarm permission not granted")
+                AlertDialog.Builder(this)
+                    .setTitle("需要精确闹钟权限")
+                    .setMessage("没有精确闹钟权限时，黑屏待机状态下检测会被系统延迟到 15 分钟一次，容易漏掉开播提醒。请授予该权限以保证每分钟检测。")
+                    .setPositiveButton("去开启") { _, _ ->
+                        try {
+                            startActivity(
+                                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                    data = Uri.parse("package:$packageName")
+                                }
+                            )
+                        } catch (e: Exception) {
+                            AppLogger.e("MainActivity", "open exact alarm settings failed", e)
+                            openAppDetails()
+                        }
+                    }
+                    .setNegativeButton("稍后") { dialog, _ ->
+                        dialog.dismiss()
+                    }
+                    .show()
+            }
+        }
+    }
+
+    private fun checkOemRestrictions() {
+        val oemInfo = OemHelper.getOemInfo() ?: return
+        if (hasPromptedOem) return
+        hasPromptedOem = true
+        AppLogger.d("MainActivity", "detected OEM: ${oemInfo.displayName}")
+        AlertDialog.Builder(this)
+            .setTitle("${oemInfo.displayName} 后台保活设置")
+            .setMessage(oemInfo.guideText)
+            .setPositiveButton("去设置") { _, _ ->
+                OemHelper.openOemSettings(this)
+            }
+            .setNegativeButton("稍后") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
     private fun showBatteryOptimizationDialog() {
         AlertDialog.Builder(this)
             .setTitle("电池优化提醒")
@@ -232,11 +317,14 @@ class MainActivity : AppCompatActivity() {
         try {
             startActivity(intent)
         } catch (e: Exception) {
-            // 如果打不开特定设置，打开应用详情
-            val appSettings = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:$packageName")
-            }
-            startActivity(appSettings)
+            openAppDetails()
         }
+    }
+
+    private fun openAppDetails() {
+        val appSettings = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        startActivity(appSettings)
     }
 }

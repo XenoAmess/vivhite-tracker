@@ -18,7 +18,6 @@ import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.bilibili.livemonitor.AlertActivity
 import com.bilibili.livemonitor.LiveMonitorApp
@@ -26,13 +25,16 @@ import com.bilibili.livemonitor.MainActivity
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.api.BilibiliApi
 import com.bilibili.livemonitor.receiver.AlarmReceiver
+import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.PreferenceManager
+import com.bilibili.livemonitor.worker.LiveCheckWorker
 import kotlinx.coroutines.*
 
 class LiveCheckService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var bilibiliApi: BilibiliApi
+    private lateinit var preferenceManager: PreferenceManager
     private var roomId: Long = DEFAULT_ROOM_ID
     private var lastStatus: Boolean? = null
     private lateinit var wakeLock: PowerManager.WakeLock
@@ -45,8 +47,9 @@ class LiveCheckService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "onCreate")
+        AppLogger.d(TAG, "onCreate")
         bilibiliApi = BilibiliApi()
+        preferenceManager = PreferenceManager(this)
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -60,7 +63,10 @@ class LiveCheckService : Service() {
             setReferenceCounted(false)
         }
         isRunning = true
-        PreferenceManager(this).setServiceRunning(true)
+        preferenceManager.setServiceRunning(true)
+
+        // 确保WorkManager兜底任务已注册
+        LiveCheckWorker.schedulePeriodic(this)
 
         // 必须在5秒内调用startForeground，放在onCreate确保及时性
         startForeground(
@@ -70,11 +76,12 @@ class LiveCheckService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand action=${intent?.action}")
+        AppLogger.d(TAG, "onStartCommand action=${intent?.action}")
         // 处理停止命令
         if (intent?.action == ACTION_STOP_SERVICE) {
             isUserStopped = true
-            PreferenceManager(this).setServiceRunning(false)
+            preferenceManager.setServiceRunning(false)
+            LiveCheckWorker.cancelAll(this)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -94,14 +101,14 @@ class LiveCheckService : Service() {
         serviceScope.launch {
             if (isChecking.compareAndSet(false, true)) {
                 try {
-                    checkLiveStatus()
+                    checkLiveStatusWithRetry()
                 } catch (e: Exception) {
-                    Log.e(TAG, "checkLiveStatus error", e)
+                    AppLogger.e(TAG, "checkLiveStatus error", e)
                 } finally {
                     isChecking.set(false)
                 }
             } else {
-                Log.d(TAG, "check already in progress, skip")
+                AppLogger.d(TAG, "check already in progress, skip")
             }
             // 检查完成后设置下一次Alarm（作为保底，AlarmReceiver也会设置）
             scheduleNextCheckAlarm()
@@ -110,41 +117,42 @@ class LiveCheckService : Service() {
         return START_STICKY
     }
 
-    private suspend fun checkLiveStatus() {
-        Log.d(TAG, "checkLiveStatus roomId=$roomId")
+    private suspend fun checkLiveStatusWithRetry() {
+        val result = checkLiveStatusOnce()
+        if (result is BilibiliApi.LiveStatus.Error) {
+            AppLogger.w(TAG, "first check failed: ${result.reason}, retry in ${ERROR_RETRY_DELAY / 1000}s")
+            delay(ERROR_RETRY_DELAY)
+            val retryResult = checkLiveStatusOnce()
+            if (retryResult is BilibiliApi.LiveStatus.Error) {
+                AppLogger.e(TAG, "retry also failed: ${retryResult.reason}")
+                // 两次都失败，记录但不更新状态，等待下一个周期
+                preferenceManager.setLastCheck(System.currentTimeMillis(), lastLiveStatus, false)
+            }
+        }
+    }
+
+    private suspend fun checkLiveStatusOnce(): BilibiliApi.LiveStatus {
+        AppLogger.d(TAG, "checkLiveStatus roomId=$roomId")
         // 使用WakeLock保护检测过程，防止Doze模式影响
         if (!checkWakeLock.isHeld) {
-            checkWakeLock.acquire(30_000L) // 最多持有30秒
+            checkWakeLock.acquire(60_000L)
         }
         try {
             // 添加超时保护，确保检测不会挂起太久
-            val isLive = withTimeoutOrNull(25_000L) {
-                bilibiliApi.isLiveStreaming(roomId)
-            } ?: run {
-                // 超时情况下保持上一次的状态，避免误判
-                Log.w(TAG, "checkLiveStatus timeout")
-                lastStatus ?: false
+            val status = withTimeoutOrNull(CHECK_TIMEOUT) {
+                bilibiliApi.checkLiveStatus(roomId)
+            } ?: BilibiliApi.LiveStatus.Error("check timeout after ${CHECK_TIMEOUT}ms")
+
+            AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
+
+            when (status) {
+                is BilibiliApi.LiveStatus.Live -> handleResult(true)
+                is BilibiliApi.LiveStatus.NotLive -> handleResult(false)
+                is BilibiliApi.LiveStatus.Error -> {
+                    // 错误不更新状态，由调用方决定是否重试
+                }
             }
-
-            Log.d(TAG, "checkLiveStatus result isLive=$isLive lastStatus=$lastStatus")
-            lastLiveStatus = isLive
-
-            // 更新通知栏图标
-            updateNotification(isLive)
-
-            // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播
-            val shouldAlert = if (lastStatus == null) {
-                isLive // 首次检查，如果在播就提醒
-            } else {
-                !lastStatus!! && isLive // 从关播变为开播
-            }
-
-            if (shouldAlert) {
-                Log.d(TAG, "triggerAlert")
-                triggerAlert()
-            }
-
-            lastStatus = isLive
+            return status
         } finally {
             // 确保释放WakeLock
             if (checkWakeLock.isHeld) {
@@ -153,11 +161,33 @@ class LiveCheckService : Service() {
         }
     }
 
+    private fun handleResult(isLive: Boolean) {
+        lastLiveStatus = isLive
+        preferenceManager.setLastCheck(System.currentTimeMillis(), isLive, true)
+
+        // 更新通知栏图标
+        updateNotification(isLive)
+
+        // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播
+        val shouldAlert = if (lastStatus == null) {
+            isLive // 首次检查，如果在播就提醒
+        } else {
+            !lastStatus!! && isLive // 从关播变为开播
+        }
+
+        if (shouldAlert) {
+            AppLogger.d(TAG, "triggerAlert")
+            triggerAlert()
+        }
+
+        lastStatus = isLive
+    }
+
     private fun updateNotification(isLive: Boolean) {
         val notification = createServiceNotification(isLive)
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_SERVICE, notification)
-        
+
         // 更新应用图标
         updateAppIcon(isLive)
     }
@@ -210,7 +240,7 @@ class LiveCheckService : Service() {
                 isLooping = true
                 prepare()
                 start()
-                
+
                 // 10秒后停止
                 serviceScope.launch {
                     delay(10000)
@@ -221,7 +251,7 @@ class LiveCheckService : Service() {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLogger.e(TAG, "playAlertSound failed", e)
         }
     }
 
@@ -287,9 +317,9 @@ class LiveCheckService : Service() {
         val iconRes = if (isLive) R.drawable.img_on else R.drawable.img_off
         val smallIconRes = if (isLive) R.drawable.img_on else R.drawable.img_off
         val statusText = if (isLive) "🔴 直播中" else "⚫ 未开播"
-        val contentText = if (isLive) 
-            "白绮正在直播，快去观看吧！" 
-        else 
+        val contentText = if (isLive)
+            "白绮正在直播，快去观看吧！"
+        else
             "正在监控直播间状态..."
 
         return NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_SERVICE_ID)
@@ -304,15 +334,25 @@ class LiveCheckService : Service() {
             .build()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        AppLogger.w(TAG, "onTaskRemoved, scheduling restart")
+        // 部分ROM划掉任务卡片会杀服务，立即排Alarm和Worker双保险拉起
+        if (preferenceManager.isServiceRunning()) {
+            scheduleNextCheckAlarm()
+            LiveCheckWorker.scheduleOneTime(this)
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "onDestroy isUserStopped=$isUserStopped")
+        AppLogger.d(TAG, "onDestroy isUserStopped=$isUserStopped")
         serviceScope.cancel()
         isRunning = false
         lastLiveStatus = false
-        PreferenceManager(this).setServiceRunning(false)
+        preferenceManager.setServiceRunning(false)
         cancelAlarm()
 
         // 释放所有WakeLock
@@ -331,7 +371,7 @@ class LiveCheckService : Service() {
                 }
                 sendBroadcast(broadcastIntent)
             } catch (e: Exception) {
-                Log.e(TAG, "send restart broadcast failed", e)
+                AppLogger.e(TAG, "send restart broadcast failed", e)
             }
         }
         // 重置标志
@@ -350,6 +390,7 @@ class LiveCheckService : Service() {
             val triggerAt = System.currentTimeMillis() + CHECK_INTERVAL
             when {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() -> {
+                    AppLogger.w(TAG, "exact alarm not granted, fallback to inexact")
                     // 未授权精确闹钟权限，回退到非精确版本
                     alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
@@ -372,11 +413,11 @@ class LiveCheckService : Service() {
                     )
                 }
             }
-            Log.d(TAG, "scheduleNextCheckAlarm at $triggerAt")
+            AppLogger.d(TAG, "scheduleNextCheckAlarm at $triggerAt")
         } catch (e: SecurityException) {
-            Log.e(TAG, "scheduleNextCheckAlarm SecurityException", e)
+            AppLogger.e(TAG, "scheduleNextCheckAlarm SecurityException", e)
         } catch (e: Exception) {
-            Log.e(TAG, "scheduleNextCheckAlarm failed", e)
+            AppLogger.e(TAG, "scheduleNextCheckAlarm failed", e)
         }
     }
 
@@ -389,9 +430,9 @@ class LiveCheckService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             alarmManager.cancel(pendingIntent)
-            Log.d(TAG, "cancelAlarm")
+            AppLogger.d(TAG, "cancelAlarm")
         } catch (e: Exception) {
-            Log.e(TAG, "cancelAlarm failed", e)
+            AppLogger.e(TAG, "cancelAlarm failed", e)
         }
     }
 
@@ -403,6 +444,8 @@ class LiveCheckService : Service() {
         const val ACTION_RESTART_SERVICE = "com.bilibili.livemonitor.RESTART_SERVICE"
         private const val DEFAULT_ROOM_ID = 11258892L
         private const val CHECK_INTERVAL = 60_000L // 60秒
+        private const val CHECK_TIMEOUT = 25_000L // 单次检测超时25秒
+        private const val ERROR_RETRY_DELAY = 15_000L // 错误后15秒重试
         private const val ALARM_REQUEST_CODE = 2001
         private const val TAG = "LiveCheckService"
 

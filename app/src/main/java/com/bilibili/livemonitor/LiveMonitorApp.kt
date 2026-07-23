@@ -5,12 +5,22 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import com.bilibili.livemonitor.util.AppLogger
+import com.bilibili.livemonitor.util.PreferenceManager
+import com.bilibili.livemonitor.worker.LiveCheckWorker
 
 class LiveMonitorApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLogger.init(this)
         createNotificationChannels()
+
+        // 如果监控应该在运行，注册WorkManager兜底任务
+        // 服务自己的onCreate也会注册，这里是保险（如服务从未启动但偏好标记为运行）
+        if (PreferenceManager(this).isServiceRunning()) {
+            LiveCheckWorker.schedulePeriodic(this)
+        }
     }
 
     private fun createNotificationChannels() {

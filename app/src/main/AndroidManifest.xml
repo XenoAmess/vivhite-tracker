@@ -46,6 +46,11 @@
             android:turnScreenOn="true"
             tools:targetApi="27" />
 
+        <activity
+            android:name=".LogActivity"
+            android:exported="false"
+            android:label="运行日志" />
+
         <service
             android:name=".service.LiveCheckService"
             android:exported="false"
