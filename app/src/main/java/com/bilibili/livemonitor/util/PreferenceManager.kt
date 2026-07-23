@@ -43,6 +43,14 @@ class PreferenceManager(context: Context) {
         return prefs.getBoolean(KEY_LAST_CHECK_SUCCESS, false)
     }
 
+    // 进程重启时恢复上次状态，避免重复提醒；超过10分钟视为过期（期间可能刚开播，应当提醒）
+    fun getRecentLastStatus(maxAgeMillis: Long = 600_000L): Boolean? {
+        val time = getLastCheckTime()
+        if (time <= 0 || !isLastCheckSuccess()) return null
+        if (System.currentTimeMillis() - time > maxAgeMillis) return null
+        return isLastCheckLive()
+    }
+
     companion object {
         private const val PREF_NAME = "bilibili_live_monitor"
         private const val KEY_ROOM_ID = "room_id"

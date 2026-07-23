@@ -50,6 +50,8 @@ class LiveCheckService : Service() {
         AppLogger.d(TAG, "onCreate")
         bilibiliApi = BilibiliApi()
         preferenceManager = PreferenceManager(this)
+        // 进程重启时恢复上次状态（10分钟内），避免直播中进程死亡导致重复提醒
+        lastStatus = preferenceManager.getRecentLastStatus()
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
