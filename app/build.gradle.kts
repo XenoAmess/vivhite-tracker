@@ -1,6 +1,11 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    jacoco
+}
+
+jacoco {
+    toolVersion = "0.8.12"
 }
 
 android {
@@ -52,6 +57,7 @@ android {
         }
         debug {
             signingConfig = signingConfigs.getByName("debug")
+            enableUnitTestCoverage = true
         }
     }
     compileOptions {
@@ -77,4 +83,29 @@ dependencies {
     implementation("org.jsoup:jsoup:1.17.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+}
+
+tasks.register<JacocoReport>("jacocoUnitTestReport") {
+    dependsOn("testDebugUnitTest")
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        xml.outputLocation.set(file("${layout.buildDirectory.get()}/reports/jacoco/jacoco.xml"))
+        html.outputLocation.set(file("${layout.buildDirectory.get()}/reports/jacoco/html"))
+    }
+    val fileFilter = listOf(
+        "**/R.class", "**/R$*.class", "**/BuildConfig.*", "**/Manifest*.*",
+        "**/*databinding/**", "**/databinding/*Binding*.class"
+    )
+    classDirectories.setFrom(
+        fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/debug") { exclude(fileFilter) }
+    )
+    sourceDirectories.setFrom("src/main/java")
+    executionData.setFrom(
+        fileTree("${layout.buildDirectory.get()}") {
+            include("outputs/unit_test_code_coverage/debugUnitTest/*.exec")
+        }
+    )
 }

@@ -42,13 +42,7 @@ class BilibiliApi {
             val response = connection.inputStream.bufferedReader().use { it.readText() }
             connection.disconnect()
 
-            val json = JSONObject(response)
-            val data = json.optJSONObject("data")
-                ?: return LiveStatus.Error("api response missing data field")
-
-            // live_status: 0=未开播, 1=直播中, 2=轮播中
-            val liveStatus = data.optInt("live_status", 0)
-            if (liveStatus == 1) LiveStatus.Live else LiveStatus.NotLive
+            parseApiResponse(response)
         } catch (e: IOException) {
             LiveStatus.Error("api network error: ${e.message}")
         } catch (e: Exception) {
@@ -68,24 +62,8 @@ class BilibiliApi {
             // 查找直播状态相关信息
             val scripts = doc.select("script")
             for (script in scripts) {
-                val text = script.data()
-                if (text.contains("live_status") || text.contains("\"status\":")) {
-                    val statusMatch = Regex("\"live_status\"\\s*:\\s*(\\d)").find(text)
-                    if (statusMatch != null) {
-                        val status = statusMatch.groupValues[1].toIntOrNull() ?: 0
-                        return if (status == 1) LiveStatus.Live else LiveStatus.NotLive
-                    }
-
-                    val statusMatch2 = Regex("\"status\"\\s*:\\s*\"?([^\"\\s,}]+)\"?").find(text)
-                    if (statusMatch2 != null) {
-                        val status = statusMatch2.groupValues[1]
-                        return if (status == "LIVE" || status == "1" || status == "true") {
-                            LiveStatus.Live
-                        } else {
-                            LiveStatus.NotLive
-                        }
-                    }
-                }
+                val status = parseScriptContent(script.data())
+                if (status != null) return status
             }
 
             // 备用方法：检查页面上的开播标识
@@ -100,5 +78,40 @@ class BilibiliApi {
 
     companion object {
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        // live_status: 0=未开播, 1=直播中, 2=轮播中
+        internal fun parseApiResponse(response: String): LiveStatus {
+            return try {
+                val json = JSONObject(response)
+                val data = json.optJSONObject("data")
+                    ?: return LiveStatus.Error("api response missing data field")
+                val liveStatus = data.optInt("live_status", 0)
+                if (liveStatus == 1) LiveStatus.Live else LiveStatus.NotLive
+            } catch (e: Exception) {
+                LiveStatus.Error("api parse error: ${e.javaClass.simpleName}: ${e.message}")
+            }
+        }
+
+        // 返回null表示脚本中未找到状态信息
+        internal fun parseScriptContent(text: String): LiveStatus? {
+            if (!text.contains("live_status") && !text.contains("\"status\":")) return null
+
+            val statusMatch = Regex("\"live_status\"\\s*:\\s*(\\d)").find(text)
+            if (statusMatch != null) {
+                val status = statusMatch.groupValues[1].toIntOrNull() ?: 0
+                return if (status == 1) LiveStatus.Live else LiveStatus.NotLive
+            }
+
+            val statusMatch2 = Regex("\"status\"\\s*:\\s*\"?([^\"\\s,}]+)\"?").find(text)
+            if (statusMatch2 != null) {
+                val status = statusMatch2.groupValues[1]
+                return if (status == "LIVE" || status == "1" || status == "true") {
+                    LiveStatus.Live
+                } else {
+                    LiveStatus.NotLive
+                }
+            }
+            return null
+        }
     }
 }

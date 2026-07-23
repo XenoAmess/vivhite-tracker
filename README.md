@@ -1,5 +1,7 @@
 # 牢白播了吗
 
+[![Coverage](https://img.shields.io/endpoint?url=https://xenoamess.github.io/vivhite-tracker/coverage.json)](https://xenoamess.github.io/vivhite-tracker/report/coverage.html)
+
 一款专为白绮（Bilibili直播间: 11258892）打造的安卓应用，用于监控直播间开播状态，并在开播时通过响铃、震动和屏幕提醒通知用户。
 
 ![frontispiece.png](resources/frontispiece.png)

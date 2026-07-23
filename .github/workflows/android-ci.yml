@@ -41,6 +41,9 @@ jobs:
     - name: Run unit tests
       run: ./gradlew testDebugUnitTest
 
+    - name: Generate coverage report
+      run: ./gradlew jacocoUnitTestReport
+
     - name: Build debug APK
       run: ./gradlew assembleDebug
 
@@ -58,8 +61,70 @@ jobs:
         name: test-reports
         path: app/build/reports/tests/
 
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage-report-${{ github.sha }}
+        path: app/build/reports/jacoco/
+        retention-days: 7
+
     - name: Upload debug APK
       uses: actions/upload-artifact@v7
       with:
         name: debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
+
+  coverage-pages:
+    name: Deploy Coverage to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [ build ]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+    - name: Download coverage report
+      uses: actions/download-artifact@v8
+      with:
+        name: coverage-report-${{ github.sha }}
+        path: coverage
+
+    - name: Generate coverage badge JSON
+      run: |
+        mkdir -p pages
+        python - <<'PY'
+        import json
+        import xml.etree.ElementTree as ET
+
+        root = ET.parse('coverage/jacoco.xml').getroot()
+        pct = 0
+        for c in root.findall('counter'):
+            if c.get('type') == 'INSTRUCTION':
+                covered = int(c.get('covered'))
+                missed = int(c.get('missed'))
+                pct = round(covered / (covered + missed) * 100)
+                break
+        color = 'green' if pct >= 80 else 'yellow' if pct >= 60 else 'red'
+        with open('pages/coverage.json', 'w') as f:
+            json.dump({
+                "schemaVersion": 1,
+                "label": "coverage",
+                "message": f"{pct}%",
+                "color": color
+            }, f)
+        PY
+        mkdir -p pages/report
+        cp -R coverage/html/* pages/report/
+        mv pages/report/index.html pages/report/coverage.html
+
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: pages/
+
+    - name: Deploy to GitHub Pages
+      uses: actions/deploy-pages@v4
