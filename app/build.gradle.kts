@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     jacoco
 }
 
@@ -10,12 +9,12 @@ jacoco {
 
 android {
     namespace = "com.bilibili.livemonitor"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.bilibili.livemonitor"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         // 使用 Git commit 数作为 versionCode，确保 CI 构建可以覆盖安装
         versionCode = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
         versionName = "1.0.${versionCode}"
@@ -100,7 +99,7 @@ tasks.register<JacocoReport>("jacocoUnitTestReport") {
         "**/*databinding/**", "**/databinding/*Binding*.class"
     )
     classDirectories.setFrom(
-        fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/debug") { exclude(fileFilter) }
+        fileTree("${layout.buildDirectory.get()}/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes") { exclude(fileFilter) }
     )
     sourceDirectories.setFrom("src/main/java")
     executionData.setFrom(
