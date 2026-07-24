@@ -273,8 +273,40 @@ class MainActivityTest {
     }
 
     @Test
-    fun `原生机点后台运行设置 直接打开电池优化设置页`() {
-        setManufacturer("Google")
+    fun `国产ROM厂商引导只弹一次 之后启动不再重复弹`() {
+        // 用户反馈：明明设置过了启动还弹。厂商设置状态无 API 可读，
+        // 只能持久化"已引导"标志，主界面按钮作为再入口
+        setManufacturer("Xiaomi")
+
+        // 首次启动：应弹厂商引导
+        Robolectric.buildActivity(MainActivity::class.java).setup()
+        val firstDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertTrue("首启应弹厂商引导", collectDialogTexts(firstDialog).any { it.contains("后台保活设置") })
+
+        // 二次启动（新 Activity 实例，模拟冷启动）：不应再弹
+        Robolectric.buildActivity(MainActivity::class.java).setup()
+        val secondDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertTrue(
+            "已引导过不应重复弹: ${collectDialogTexts(secondDialog)}",
+            collectDialogTexts(secondDialog).none { it.contains("后台保活设置") }
+        )
+    }
+
+    private fun collectDialogTexts(dialog: android.app.Dialog?): List<String> {
+        if (dialog == null) return emptyList()
+        val texts = mutableListOf<String>()
+        fun collect(view: android.view.View) {
+            if (view is android.widget.TextView) texts.add(view.text.toString())
+            if (view is android.view.ViewGroup) {
+                for (i in 0 until view.childCount) collect(view.getChildAt(i))
+            }
+        }
+        dialog.window?.decorView?.let { collect(it) }
+        return texts
+    }
+
+    @Test
+    fun `原生机点后台运行设置 直接打开电池优化设置页`() {        setManufacturer("Google")
         makeBatteryIntentResolvable()
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 

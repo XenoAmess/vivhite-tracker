@@ -44,6 +44,16 @@ class PreferenceManager(context: Context) {
         return prefs.getBoolean(KEY_LAST_CHECK_SUCCESS, false)
     }
 
+    // 国产 ROM 后台保活引导是否已弹过（厂商自启动设置状态无 API 可读，
+    // 只能记录"已引导"并依赖主界面按钮作为再入 口）
+    fun setOemGuidePrompted(prompted: Boolean) {
+        prefs.edit().putBoolean(KEY_OEM_GUIDE_PROMPTED, prompted).apply()
+    }
+
+    fun isOemGuidePrompted(): Boolean {
+        return prefs.getBoolean(KEY_OEM_GUIDE_PROMPTED, false)
+    }
+
     // 进程重启时恢复上次状态，避免重复提醒；超过10分钟视为过期（期间可能刚开播，应当提醒）
     fun getRecentLastStatus(maxAgeMillis: Long = 600_000L): Boolean? {
         return LiveStateDecider.restoreLastStatus(
@@ -62,6 +72,7 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_CHECK_TIME = "last_check_time"
         private const val KEY_LAST_CHECK_LIVE = "last_check_live"
         private const val KEY_LAST_CHECK_SUCCESS = "last_check_success"
+        private const val KEY_OEM_GUIDE_PROMPTED = "oem_guide_prompted"
         private const val DEFAULT_ROOM_ID = 11258892L
     }
 }

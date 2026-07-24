@@ -332,8 +332,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkOemRestrictions() {
         val oemInfo = OemHelper.getOemInfo() ?: return
-        if (hasPromptedOem) return
+        // 厂商自启动设置状态无 API 可读，弹过一次就持久化跳过，
+        // 否则每次冷启动都会重复弹（用户反馈：明明设置过了还弹）
+        if (hasPromptedOem || preferenceManager.isOemGuidePrompted()) return
         hasPromptedOem = true
+        preferenceManager.setOemGuidePrompted(true)
         AppLogger.d("MainActivity", "detected OEM: ${oemInfo.displayName}")
         AlertDialog.Builder(this)
             .setTitle("${oemInfo.displayName} 后台保活设置")
