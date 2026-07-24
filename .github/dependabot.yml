@@ -15,6 +15,11 @@ updates:
     labels:
       - "dependencies"
       - "android"
+    # core-ktx 1.19+ 需要 compileSdk 37（API 37 尚为预览版），暂忽略；
+    # API 37 稳定版发布后删除此规则
+    ignore:
+      - dependency-name: "androidx.core:core-ktx"
+        versions: [">= 1.19"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
