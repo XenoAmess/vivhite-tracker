@@ -167,7 +167,7 @@ class MainActivityTest {
 
     @Test
     fun `B站App可用时 打开直播间按钮为绿色`() {
-        makeBilibiliResolvable(true)
+        makeBilibiliInstalled("tv.danmaku.bili")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
         val expected = androidx.core.content.ContextCompat.getColor(activity, R.color.green_500)
@@ -179,7 +179,7 @@ class MainActivityTest {
 
     @Test
     fun `B站App不可用时 按钮为灰色且点击跳转浏览器`() {
-        makeBilibiliResolvable(false)
+        makeBilibiliInstalled(null)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
         val expected = androidx.core.content.ContextCompat.getColor(activity, android.R.color.darker_gray)
@@ -200,7 +200,7 @@ class MainActivityTest {
 
     @Test
     fun `B站App可用时 点击直接打开B站App`() {
-        makeBilibiliResolvable(true)
+        makeBilibiliInstalled("tv.danmaku.bili")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         LiveCheckService.isRunning = false
 
@@ -211,12 +211,13 @@ class MainActivityTest {
         val started = shadowOf(context).nextStartedActivity
         assertEquals(Intent.ACTION_VIEW, started?.action)
         assertEquals("bilibili://live/11258892", started?.dataString)
+        assertEquals("应强制投递给B站客户端", "tv.danmaku.bili", started?.`package`)
     }
 
     @Test
     fun `监控中点打开直播间 先停止监控再跳转`() {
         // 用户需求：进直播间看就不再需要监控提醒
-        makeBilibiliResolvable(true)
+        makeBilibiliInstalled("tv.danmaku.bili")
         prefs.setServiceRunning(true)
         LiveCheckService.isRunning = true
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
@@ -235,24 +236,13 @@ class MainActivityTest {
     }
 
     @Test
-    fun `点右上角信息图标 弹出功能说明`() {        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+    fun `底部显示功能说明文案`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        activity.findViewById<android.widget.ImageButton>(R.id.btnInfo).performClick()
-
-        // AppCompat AlertDialog 要用 ShadowDialog.getLatestDialog()
-        // （ShadowAlertDialog.getLatestAlertDialog() 只跟踪 framework AlertDialog）
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-        assertTrue(dialog != null)
-        // 不猜 message id，遍历 decor view 找包含功能说明的 TextView
-        val texts = mutableListOf<String>()
-        fun collectTexts(view: android.view.View) {
-            if (view is android.widget.TextView) texts.add(view.text.toString())
-            if (view is android.view.ViewGroup) {
-                for (i in 0 until view.childCount) collectTexts(view.getChildAt(i))
-            }
-        }
-        dialog.window?.decorView?.let { collectTexts(it) }
-        assertTrue("应含功能说明: $texts", texts.any { it.contains("每分钟检查") })
+        val text = activity.findViewById<android.widget.TextView>(R.id.tvDescription).text.toString()
+        assertTrue(text.contains("每分钟检查直播间状态"))
+        assertTrue(text.contains("开播时响铃"))
+        assertTrue(text.contains("关闭电池优化"))
     }
 
     // ---------- 后台运行设置：统一入口按厂商路由 ----------
@@ -357,22 +347,21 @@ class MainActivityTest {
         )
     }
 
-    private fun makeBilibiliResolvable(resolvable: Boolean) {        val pm = shadowOf(context.packageManager)
-        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("bilibili://live/11258892"))
-        if (resolvable) {
-            pm.addResolveInfoForIntent(
-                intent,
-                android.content.pm.ResolveInfo().apply {
-                    activityInfo = android.content.pm.ActivityInfo().apply {
-                        packageName = "tv.danmaku.bili"
-                        name = "tv.danmaku.bili.MainActivity"
-                    }
-                }
-            )
-        } else {
-            // ShadowPackageManager.resolveInfoForIntent 是 static Map，跨测试方法泄漏，
-            // false 分支必须按包名显式移除（空列表会在 map 里留下 key，行为不等价于无条目）
-            pm.removeResolveInfosForIntent(intent, "tv.danmaku.bili")
+    private fun makeBilibiliInstalled(packageName: String?) {
+        // 包名制检测：安装=注入 PackageInfo，未安装=移除
+        // （ShadowPackageManager 部分状态为 static，显式清理防泄漏）
+        val pm = shadowOf(context.packageManager)
+        val variants = listOf(
+            "tv.danmaku.bili", "com.bilibili.app.blue",
+            "tv.danmaku.bilibilihd", "com.bilibili.app.in"
+        )
+        for (pkg in variants) {
+            pm.removePackage(pkg)
+        }
+        if (packageName != null) {
+            pm.installPackage(android.content.pm.PackageInfo().apply {
+                this.packageName = packageName
+            })
         }
     }
 }

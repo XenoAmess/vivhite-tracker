@@ -122,23 +122,27 @@ class MainActivity : AppCompatActivity() {
                     Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))
                 )
             }
-
-            btnInfo.setOnClickListener {
-                showInfoDialog()
-            }
         }
 
         updateOpenLiveButton()
         binding.tvVersion.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})"
     }
 
-    // B站 App 可解析时醒目绿，否则灰色（两种状态都可点击，灰色走浏览器）
+    // B站 App 已安装（按包名检测）时醒目绿，否则灰色（两种状态都可点击，灰色走浏览器）
     internal fun isBilibiliAppAvailable(): Boolean {
-        return liveRoomAppIntent().resolveActivity(packageManager) != null
+        return installedBilibiliPackage() != null
+    }
+
+    internal fun installedBilibiliPackage(): String? {
+        return OemHelper.installedBilibiliPackage(packageManager)
     }
 
     internal fun liveRoomAppIntent(): Intent {
-        return Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://live/$ROOM_ID"))
+        return Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://live/$ROOM_ID")).apply {
+            // setPackage 强制投递给已安装的客户端，绕开 resolveActivity 的
+            // 包可见性不确定性（荣耀真机实测已装 bilibili 但解析为 null）
+            installedBilibiliPackage()?.let { setPackage(it) }
+        }
     }
 
     internal fun liveRoomWebIntent(): Intent {
@@ -167,19 +171,6 @@ class MainActivity : AppCompatActivity() {
             startActivity(liveRoomWebIntent())
         }
         updateUI()
-    }
-
-    private fun showInfoDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("功能说明")
-            .setMessage(
-                "• 每分钟检查直播间状态\n" +
-                    "• 开播时响铃+震动+屏幕提醒\n" +
-                    "• 保持后台运行需关闭电池优化\n" +
-                    "• 通知栏显示当前直播状态"
-            )
-            .setPositiveButton("知道了", null)
-            .show()
     }
 
     private fun updateUI() {

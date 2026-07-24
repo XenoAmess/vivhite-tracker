@@ -211,6 +211,30 @@ object OemHelper {
         return !manufacturer.contains("huawei") && !manufacturer.contains("honor")
     }
 
+    // bilibili 客户端变体包名表：官方粉版 / 概念版(蓝) / HD版 / 国际版。
+    // 按包名检测比 resolveActivity(scheme) 可靠——Android 11+ 包可见性
+    // 对 scheme-only 查询的匹配在部分 ROM 上不可靠（用户真机实测：
+    // 已装 bilibili 但 resolveActivity 返回 null 导致走了浏览器）
+    private val BILIBILI_PACKAGES = listOf(
+        "tv.danmaku.bili",
+        "com.bilibili.app.blue",
+        "tv.danmaku.bilibilihd",
+        "com.bilibili.app.in"
+    )
+
+    // 返回已安装的 bilibili 客户端包名，未安装返回 null
+    fun installedBilibiliPackage(packageManager: android.content.pm.PackageManager): String? {
+        for (pkg in BILIBILI_PACKAGES) {
+            try {
+                packageManager.getPackageInfo(pkg, 0)
+                return pkg
+            } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+                // 未安装，继续
+            }
+        }
+        return null
+    }
+
     fun openOemSettings(context: Context) {
         val info = getOemInfo() ?: return
         for (intent in info.intents) {
