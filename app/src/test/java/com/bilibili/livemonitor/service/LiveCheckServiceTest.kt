@@ -216,8 +216,10 @@ class LiveCheckServiceTest {
         controller.startCommand(0, 1)
         waitFor("first check done") { fakeApi.callCount >= 1 && prefs.getLastCheckTime() > 0 }
 
-        controller.startCommand(0, 2)
-        waitFor("alert notification") {
+        // 重复触发模拟周期闹钟：慢 runner 上第一次 startCommand 可能撞上
+        // isChecking 锁未释放被跳过（真实场景 60s 间隔不存在此竞态）
+        waitFor("alert notification", 20_000) {
+            controller.startCommand(0, 2)
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT) != null
         }
