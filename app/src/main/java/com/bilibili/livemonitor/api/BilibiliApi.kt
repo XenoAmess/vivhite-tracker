@@ -8,7 +8,7 @@ import java.io.IOException
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
-class BilibiliApi {
+open class BilibiliApi : LiveStatusChecker {
 
     sealed class LiveStatus {
         object Live : LiveStatus()
@@ -16,7 +16,7 @@ class BilibiliApi {
         data class Error(val reason: String) : LiveStatus()
     }
 
-    suspend fun checkLiveStatus(roomId: Long): LiveStatus = withContext(Dispatchers.IO) {
+    override suspend fun checkLiveStatus(roomId: Long): LiveStatus = withContext(Dispatchers.IO) {
         when (val apiResult = checkByApi(roomId)) {
             is LiveStatus.Live, is LiveStatus.NotLive -> apiResult
             is LiveStatus.Error -> {
@@ -27,7 +27,8 @@ class BilibiliApi {
         }
     }
 
-    private fun checkByApi(roomId: Long): LiveStatus {
+    // internal open：测试可注入 fake 实现验证兜底编排
+    internal open suspend fun checkByApi(roomId: Long): LiveStatus {
         return try {
             val url = URL("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId")
             val connection = url.openConnection() as HttpsURLConnection
@@ -50,7 +51,8 @@ class BilibiliApi {
         }
     }
 
-    private fun checkByWebPage(roomId: Long): LiveStatus {
+    // internal open：测试可注入 fake 实现验证兜底编排
+    internal open suspend fun checkByWebPage(roomId: Long): LiveStatus {
         return try {
             val url = "https://live.bilibili.com/$roomId"
             val doc = Jsoup.connect(url)

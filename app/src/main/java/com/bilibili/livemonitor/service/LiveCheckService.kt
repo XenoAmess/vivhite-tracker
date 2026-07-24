@@ -24,6 +24,7 @@ import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.MainActivity
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.api.BilibiliApi
+import com.bilibili.livemonitor.api.LiveStatusChecker
 import com.bilibili.livemonitor.domain.LiveStateDecider
 import com.bilibili.livemonitor.receiver.AlarmReceiver
 import com.bilibili.livemonitor.util.AppLogger
@@ -34,7 +35,9 @@ import kotlinx.coroutines.*
 class LiveCheckService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private lateinit var bilibiliApi: BilibiliApi
+
+    // internal var：测试可注入 fake API 验证检测编排（重试/状态保护/提醒触发）
+    internal var api: LiveStatusChecker = BilibiliApi()
     private lateinit var preferenceManager: PreferenceManager
     private var roomId: Long = DEFAULT_ROOM_ID
     private var lastStatus: Boolean? = null
@@ -49,7 +52,6 @@ class LiveCheckService : Service() {
     override fun onCreate() {
         super.onCreate()
         AppLogger.d(TAG, "onCreate")
-        bilibiliApi = BilibiliApi()
         preferenceManager = PreferenceManager(this)
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -169,7 +171,7 @@ class LiveCheckService : Service() {
         try {
             // 添加超时保护，确保检测不会挂起太久
             val status = withTimeoutOrNull(CHECK_TIMEOUT) {
-                bilibiliApi.checkLiveStatus(roomId)
+                api.checkLiveStatus(roomId)
             } ?: BilibiliApi.LiveStatus.Error("check timeout after ${CHECK_TIMEOUT}ms")
 
             AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
