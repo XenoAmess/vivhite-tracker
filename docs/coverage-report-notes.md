@@ -60,3 +60,14 @@ Android Gradle 变体对本 skill 是新材料，已回写到 SKILL.md（Pitfall
 - 慢 runner 竞态：连续两次 startCommand 会撞 isChecking 锁被跳过，
   测试用"重复触发模拟闹钟"规避（S9，CI 上挂过一次）
 - 剩余未覆盖：root UI 层 8%（P4 未做）、api 网络体（checkByApi/WebPage 真网络）
+
+## 2026-07-24 追加（三）：P4 UI 层补齐 59%→78%
+
+- root 包 8%→76%（MainActivity/AlertActivity/LogActivity/LiveMonitorApp），总 59%→78%，单测 104 例
+- Robolectric UI 测试三个坑：
+  1. OnBackPressedCallback 绑定生命周期，activity 必须 setup() 到 RESUMED 才会拦截（create() 不够）
+  2. MainActivity 的 tvLastCheck 在 onResume 刷新，测试同样要 setup() 而非 create()
+  3. 运行时权限（POST_NOTIFICATIONS）Robolectric 默认未授权，走权限申请分支导致断言不到服务启动；
+     需 shadowOf(app).grantPermissions(...) 显式授权
+- 剩余未覆盖：api 网络体（49%，真 HTTP）、triggerAlert 响铃/震动（系统行为，instrumented 覆盖）、
+  AppLogger trim 边界边角
