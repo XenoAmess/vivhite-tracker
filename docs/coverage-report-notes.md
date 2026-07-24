@@ -38,3 +38,12 @@
 ## skill 反馈
 
 Android Gradle 变体对本 skill 是新材料，已回写到 SKILL.md（Pitfall 12 + worked example）。
+
+## 2026-07-24 追加：场景驱动测试补齐
+
+- 总覆盖率 4% → 27%（domain 100% / util 83% / worker 41% / api 36% / receiver 18%）
+- Robolectric 测试的覆盖率需要 `includeNoLocationClasses=true` + `excludes=["jdk.internal.*"]`
+  （沙箱类加载器绕过 JaCoCo agent；不配的话 Robolectric 覆盖的类全部显示 0%）
+- Robolectric 4.16.1 不支持 sdk=36，`app/src/test/resources/robolectric.properties` 锁 sdk=35
+- instrumented test 发现一个覆盖率之外的真 bug（onCreate 无条件复活已停止的监控），
+  证明"场景驱动 > 数值驱动"：service 包行覆盖率仍为 0%，但其决策已全部有回归保护
