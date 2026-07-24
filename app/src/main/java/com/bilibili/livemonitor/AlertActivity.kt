@@ -1,6 +1,5 @@
 package com.bilibili.livemonitor
 
-import android.annotation.SuppressLint
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -9,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.view.WindowManager
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.bilibili.livemonitor.databinding.ActivityAlertBinding
 import kotlinx.coroutines.*
@@ -48,6 +48,13 @@ class AlertActivity : AppCompatActivity() {
 
         binding = ActivityAlertBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // 拦截返回手势/返回键，强制用户点击按钮（targetSdk 36+ 需用 OnBackPressedDispatcher）
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // 不处理返回，强制用户点击按钮
+            }
+        })
 
         setupUI()
         playAlarm()
@@ -117,10 +124,5 @@ class AlertActivity : AppCompatActivity() {
         }
         mediaPlayer = null
         scope.cancel()
-    }
-
-    @SuppressLint("MissingSuperCall")
-    override fun onBackPressed() {
-        // 不处理返回键，强制用户点击按钮
     }
 }
