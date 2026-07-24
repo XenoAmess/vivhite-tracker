@@ -37,7 +37,7 @@ AlarmManager(60s exact) → AlarmReceiver → startForegroundService
 ## CI / 仓库约定
 
 - master 受保护：必需状态检查名为 `build`（android-ci.yml 的 job 名），strict + 线性历史。改 CI workflow 的 job 名/matrix 后必须同步更新 branch protection。
-- Dependabot：`.github/dependabot.yml`（maven + github-actions，每周一 04:00 Asia/Shanghai）。`auto-merge.yml` 自动合并 patch/minor 及 github-actions 的 major，maven major 留人工。`MYTOKEN` 和 `DEBUG_KEYSTORE_BASE64` 两个 secret 都在 **dependabot** namespace（`gh secret list --app dependabot` 才能看到）——dependabot PR 的 workflow 读不到 actions namespace 的 secret，只放一边会导致 keystore 解码成空文件、签名报 `Tag number over 30 is not supported`。
+- Dependabot：`.github/dependabot.yml`（**gradle**（不是 maven，本项目是 Gradle 没有 pom.xml）+ github-actions，每周一 04:00 Asia/Shanghai）。`auto-merge.yml` 自动合并 patch/minor 及 github-actions 的 major，maven major 留人工。`MYTOKEN` 和 `DEBUG_KEYSTORE_BASE64` 两个 secret 都在 **dependabot** namespace（`gh secret list --app dependabot` 才能看到）——dependabot PR 的 workflow 读不到 actions namespace 的 secret，只放一边会导致 keystore 解码成空文件、签名报 `Tag number over 30 is not supported`。
 - 提交信息：Conventional Commits，中英文混用均可（如 `fix(service): 修复...`、`ci: ...`）。
 - 改动后如无特殊说明，立刻自动 commit + push，不用等用户确认。
 - `kimi.md` 是开发者的个人便签，不是项目约定，别当真也别删。

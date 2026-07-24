@@ -11,7 +11,7 @@
 
 | File | Change |
 |---|---|
-| `.github/dependabot.yml` | **new** — maven + github-actions, weekly Mon 04:00 `Asia/Shanghai`, no `groups`, `open-pull-requests-limit` 10 / 5, labels + commit prefixes |
+| `.github/dependabot.yml` | **new** — gradle + github-actions（初版误用 maven，Gradle 项目无 pom.xml 会报 "couldn't find a pom.xml"，已修正为 gradle）, weekly Mon 04:00 `Asia/Shanghai`, no `groups`, `open-pull-requests-limit` 10 / 5, labels + commit prefixes |
 | `.github/workflows/auto-merge.yml` | **new** — approve + `gh pr merge --auto --rebase` on patch/minor for both ecosystems and on major for `github_actions/*`; maven majors left for human review |
 | `.github/workflows/android-ci.yml` | **edit** — `push: branches: [main, master, develop]` → `push: branches: [master]` to avoid running CI on every feature-branch push (Pitfall 4) |
 
