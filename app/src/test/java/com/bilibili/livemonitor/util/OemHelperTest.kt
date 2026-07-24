@@ -92,6 +92,47 @@ class OemHelperTest {
     }
 
     @Test
+    fun `一加 识别且提示设置可能被重置`() {
+        // dontkillmyapp 评为"史上最狠"：电池优化设置会被系统随机重置
+        setManufacturer("OnePlus")
+        val info = OemHelper.getOemInfo()
+        assertNotNull(info)
+        assertTrue(info!!.displayName.contains("一加"))
+        assertTrue(info.guideText.contains("重置"))
+    }
+
+    @Test
+    fun `魅族 识别`() {
+        setManufacturer("Meizu")
+        val info = OemHelper.getOemInfo()
+        assertNotNull(info)
+        assertTrue(info!!.displayName.contains("魅族"))
+    }
+
+    @Test
+    fun `华硕 识别`() {
+        setManufacturer("asus")
+        val info = OemHelper.getOemInfo()
+        assertNotNull(info)
+        assertTrue(info!!.displayName.contains("华硕"))
+    }
+
+    @Test
+    fun `标准电池优化intent 华为荣耀无效 其余厂商有效`() {
+        // 荣耀真机实测：标准 intent 被系统接收但空转，点了毫无反应
+        setManufacturer("HUAWEI")
+        assertEquals(false, OemHelper.standardBatteryIntentWorksHere())
+        setManufacturer("HONOR")
+        assertEquals(false, OemHelper.standardBatteryIntentWorksHere())
+        setManufacturer("Xiaomi")
+        assertEquals(true, OemHelper.standardBatteryIntentWorksHere())
+        setManufacturer("OnePlus")
+        assertEquals(true, OemHelper.standardBatteryIntentWorksHere())
+        setManufacturer("Google")
+        assertEquals(true, OemHelper.standardBatteryIntentWorksHere())
+    }
+
+    @Test
     fun `Google原生机 返回null不打扰`() {
         // 真机场景：Pixel/模拟器用户不需要 OEM 引导弹窗
         setManufacturer("Google")

@@ -105,12 +105,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            btnOpenSettings.setOnClickListener {
-                openBatterySettings()
-            }
-
-            btnOemSettings.setOnClickListener {
-                OemHelper.openOemSettings(this@MainActivity)
+            btnBackgroundSettings.setOnClickListener {
+                openBackgroundSettings()
             }
 
             btnViewLog.setOnClickListener {
@@ -302,6 +298,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkBatteryOptimization() {
+        // 国产 ROM 的首启引导由 checkOemRestrictions 的厂商弹窗统一负责，
+        // 避免连弹三个对话框；且华为/荣耀上标准电池优化 intent 无效，
+        // 弹了也是把用户带到死路（荣耀真机实测点了毫无反应）
+        if (OemHelper.isProblematicOem()) return
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
@@ -370,6 +370,34 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // 「后台运行设置」统一入口：按厂商路由。
+    // 国产 ROM（含标准电池优化 intent 无效的华为/荣耀）优先厂商自启动页；
+    // 原生 Android 走标准电池优化白名单。
+    internal fun openBackgroundSettings() {
+        val oemInfo = OemHelper.getOemInfo()
+        if (oemInfo == null) {
+            openBatterySettings()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("${oemInfo.displayName} 后台保活设置")
+            .setMessage(oemInfo.guideText)
+            .setPositiveButton("去厂商设置") { _, _ ->
+                OemHelper.openOemSettings(this)
+            }
+            .apply {
+                // 华为/荣耀的标准 intent 是死路，不展示该选项；
+                // 其他国产 ROM（小米/一加等）作为补充入口保留
+                if (OemHelper.standardBatteryIntentWorksHere()) {
+                    setNeutralButton("电池优化设置") { _, _ ->
+                        openBatterySettings()
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
     private fun openBatterySettings() {
         val intent = Intent().apply {
             when {
@@ -383,7 +411,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         try {
-            startActivity(intent)
+            // 部分小众 ROM 同样空转该 intent：解析不到直接降级应用详情页
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+            } else {
+                AppLogger.w("MainActivity", "battery optimization intent not resolvable, fallback to app details")
+                openAppDetails()
+            }
         } catch (e: Exception) {
             openAppDetails()
         }

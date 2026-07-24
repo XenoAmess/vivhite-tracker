@@ -124,33 +124,17 @@
             app:layout_constraintTop_toBottomOf="@id/btnOpenLive" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnOpenSettings"
+            android:id="@+id/btnBackgroundSettings"
             android:layout_width="0dp"
             android:layout_height="52dp"
             android:layout_marginTop="16dp"
-            android:layout_marginEnd="6dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
-            android:text="电池优化"
-            android:textSize="14sp"
-            app:icon="@android:drawable/ic_menu_preferences"
-            app:layout_constraintEnd_toStartOf="@id/btnOemSettings"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnOemSettings"
-            android:layout_width="0dp"
-            android:layout_height="52dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginStart="6dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:text="后台保活"
+            android:text="后台运行设置"
             android:textSize="14sp"
             app:icon="@android:drawable/ic_menu_manage"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/btnOpenSettings"
+            app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/btnToggle" />
 
         <com.google.android.material.button.MaterialButton
@@ -166,7 +150,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toStartOf="@id/btnOpenGithub"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnOpenSettings" />
+            app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenGithub"
@@ -181,7 +165,7 @@
             app:icon="@android:drawable/ic_menu_share"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/btnViewLog"
-            app:layout_constraintTop_toBottomOf="@id/btnOpenSettings" />
+            app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
 
         <TextView
             android:id="@+id/tvVersion"
