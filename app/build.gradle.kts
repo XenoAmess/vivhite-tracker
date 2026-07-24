@@ -15,6 +15,7 @@ android {
         applicationId = "com.bilibili.livemonitor"
         minSdk = 26
         targetSdk = 36
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 使用 Git commit 数作为 versionCode，确保 CI 构建可以覆盖安装
         versionCode = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
         versionName = "1.0.${versionCode}"
@@ -71,6 +72,9 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -84,6 +88,20 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260719")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("androidx.test:core:1.7.0")
+    testImplementation("androidx.work:work-testing:2.11.2")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+}
+
+tasks.withType<Test>().configureEach {
+    // Robolectric 沙箱类加载器重写字节码会绕过 JaCoCo agent，
+    // includeNoLocationClasses 让其覆盖率也能被统计
+    extensions.configure(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java) {
+        setIncludeNoLocationClasses(true)
+        excludes = listOf("jdk.internal.*")
+    }
 }
 
 tasks.register<JacocoReport>("jacocoUnitTestReport") {

@@ -24,6 +24,7 @@ import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.MainActivity
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.api.BilibiliApi
+import com.bilibili.livemonitor.domain.LiveStateDecider
 import com.bilibili.livemonitor.receiver.AlarmReceiver
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.PreferenceManager
@@ -50,8 +51,6 @@ class LiveCheckService : Service() {
         AppLogger.d(TAG, "onCreate")
         bilibiliApi = BilibiliApi()
         preferenceManager = PreferenceManager(this)
-        // 进程重启时恢复上次状态（10分钟内），避免直播中进程死亡导致重复提醒
-        lastStatus = preferenceManager.getRecentLastStatus()
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -64,17 +63,36 @@ class LiveCheckService : Service() {
         ).apply {
             setReferenceCounted(false)
         }
-        isRunning = true
-        preferenceManager.setServiceRunning(true)
-
-        // 确保WorkManager兜底任务已注册
-        LiveCheckWorker.schedulePeriodic(this)
 
         // 必须在5秒内调用startForeground，放在onCreate确保及时性
         startForeground(
             LiveMonitorApp.NOTIFICATION_ID_SERVICE,
             createServiceNotification(lastLiveStatus)
         )
+
+        // 停止权威位：prefs=false 表示用户已停止，本次启动是 START_STICKY 重投
+        // 或残留 Worker/Alarm 的孤儿拉起，必须立即自毁。
+        // （修复 instrumented test 发现的真 bug：此前 onCreate 无条件把
+        // prefs 刷回 true，用户停止后服务会被任意滞留启动复活并继续监控）
+        if (!preferenceManager.isServiceRunning()) {
+            AppLogger.w(TAG, "monitoring disabled in prefs, aborting stray start")
+            isUserStopped = true
+            stopSelf()
+            return
+        }
+
+        // 进程重启时恢复上次状态（10分钟内），避免直播中进程死亡导致重复提醒
+        lastStatus = LiveStateDecider.restoreLastStatus(
+            lastCheckTime = preferenceManager.getLastCheckTime(),
+            lastCheckSuccess = preferenceManager.isLastCheckSuccess(),
+            lastCheckLive = preferenceManager.isLastCheckLive(),
+            now = System.currentTimeMillis(),
+            maxAgeMillis = STATUS_RESTORE_MAX_AGE
+        )
+        isRunning = true
+
+        // 确保WorkManager兜底任务已注册
+        LiveCheckWorker.schedulePeriodic(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -84,6 +102,15 @@ class LiveCheckService : Service() {
             isUserStopped = true
             preferenceManager.setServiceRunning(false)
             LiveCheckWorker.cancelAll(this)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        // 停止权威位二次检查：onCreate 自毁后仍可能有已入队的 intent 被投递，
+        // 这里必须再次确认，不能把 prefs 刷回 true（否则用户停止会被复活）
+        if (!preferenceManager.isServiceRunning()) {
+            AppLogger.w(TAG, "onStartCommand but monitoring disabled, aborting")
+            isUserStopped = true
             stopSelf()
             return START_NOT_STICKY
         }
@@ -121,8 +148,8 @@ class LiveCheckService : Service() {
 
     private suspend fun checkLiveStatusWithRetry() {
         val result = checkLiveStatusOnce()
-        if (result is BilibiliApi.LiveStatus.Error) {
-            AppLogger.w(TAG, "first check failed: ${result.reason}, retry in ${ERROR_RETRY_DELAY / 1000}s")
+        if (LiveStateDecider.shouldRetry(result)) {
+            AppLogger.w(TAG, "first check failed: ${(result as BilibiliApi.LiveStatus.Error).reason}, retry in ${ERROR_RETRY_DELAY / 1000}s")
             delay(ERROR_RETRY_DELAY)
             val retryResult = checkLiveStatusOnce()
             if (retryResult is BilibiliApi.LiveStatus.Error) {
@@ -171,11 +198,7 @@ class LiveCheckService : Service() {
         updateNotification(isLive)
 
         // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播
-        val shouldAlert = if (lastStatus == null) {
-            isLive // 首次检查，如果在播就提醒
-        } else {
-            !lastStatus!! && isLive // 从关播变为开播
-        }
+        val shouldAlert = LiveStateDecider.shouldAlert(lastStatus, isLive)
 
         if (shouldAlert) {
             AppLogger.d(TAG, "triggerAlert")
@@ -354,7 +377,12 @@ class LiveCheckService : Service() {
         serviceScope.cancel()
         isRunning = false
         lastLiveStatus = false
-        preferenceManager.setServiceRunning(false)
+        // 只有用户主动停止才清除运行标记；系统杀进程/异常销毁要保留 true，
+        // 否则 onDestroy→ServiceRestartReceiver 重启链会被自己卡死
+        // （Receiver 启动前检查 prefs，false 会拒绝重启）
+        if (isUserStopped) {
+            preferenceManager.setServiceRunning(false)
+        }
         cancelAlarm()
 
         // 释放所有WakeLock
@@ -448,6 +476,7 @@ class LiveCheckService : Service() {
         private const val CHECK_INTERVAL = 60_000L // 60秒
         private const val CHECK_TIMEOUT = 25_000L // 单次检测超时25秒
         private const val ERROR_RETRY_DELAY = 15_000L // 错误后15秒重试
+        private const val STATUS_RESTORE_MAX_AGE = 600_000L // 进程重启时恢复状态的新鲜度窗口（10分钟）
         private const val ALARM_REQUEST_CODE = 2001
         private const val TAG = "LiveCheckService"
 

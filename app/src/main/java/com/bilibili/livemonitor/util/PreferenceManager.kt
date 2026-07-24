@@ -2,6 +2,7 @@ package com.bilibili.livemonitor.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.bilibili.livemonitor.domain.LiveStateDecider
 
 class PreferenceManager(context: Context) {
 
@@ -45,10 +46,13 @@ class PreferenceManager(context: Context) {
 
     // 进程重启时恢复上次状态，避免重复提醒；超过10分钟视为过期（期间可能刚开播，应当提醒）
     fun getRecentLastStatus(maxAgeMillis: Long = 600_000L): Boolean? {
-        val time = getLastCheckTime()
-        if (time <= 0 || !isLastCheckSuccess()) return null
-        if (System.currentTimeMillis() - time > maxAgeMillis) return null
-        return isLastCheckLive()
+        return LiveStateDecider.restoreLastStatus(
+            lastCheckTime = getLastCheckTime(),
+            lastCheckSuccess = isLastCheckSuccess(),
+            lastCheckLive = isLastCheckLive(),
+            now = System.currentTimeMillis(),
+            maxAgeMillis = maxAgeMillis
+        )
     }
 
     companion object {
