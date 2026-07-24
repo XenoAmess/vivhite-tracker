@@ -47,3 +47,16 @@ Android Gradle 变体对本 skill 是新材料，已回写到 SKILL.md（Pitfall
 - Robolectric 4.16.1 不支持 sdk=36，`app/src/test/resources/robolectric.properties` 锁 sdk=35
 - instrumented test 发现一个覆盖率之外的真 bug（onCreate 无条件复活已停止的监控），
   证明"场景驱动 > 数值驱动"：service 包行覆盖率仍为 0%，但其决策已全部有回归保护
+
+## 2026-07-24 追加（二）：P0-P3 场景补齐 27%→59%
+
+- service 0%→84%（ServiceController 生命周期测试）、receiver 18%→80%、
+  worker 41%→84%、api 36%→49%、总 27%→59%，单测 71 例
+- 测试前提重构：LiveStatusChecker / ServiceStarter 两个注入接口
+- Robolectric API 备忘（4.16）：ServiceController 在
+  `org.robolectric.android.controller`；广播断言用
+  `shadowOf(service).broadcastIntents`（ShadowContextWrapper），
+  ShadowApplication 没有 broadcastsSent
+- 慢 runner 竞态：连续两次 startCommand 会撞 isChecking 锁被跳过，
+  测试用"重复触发模拟闹钟"规避（S9，CI 上挂过一次）
+- 剩余未覆盖：root UI 层 8%（P4 未做）、api 网络体（checkByApi/WebPage 真网络）
