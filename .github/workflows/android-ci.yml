@@ -122,7 +122,7 @@ jobs:
         mv pages/report/index.html pages/report/coverage.html
 
     - name: Upload Pages artifact
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v5
       with:
         path: pages/
 
