@@ -76,6 +76,8 @@ class MainActivity : AppCompatActivity() {
         isServiceStarting = false
         isServiceStopping = false
         updateUI()
+        // B站 App 安装状态可能变化，刷新打开直播间按钮着色
+        updateOpenLiveButton()
         // 从设置页返回时复查精确闹钟权限（用户可能刚授权或被系统收回）
         if (!hasPromptedExactAlarm) {
             checkExactAlarmPermission()
@@ -114,7 +116,74 @@ class MainActivity : AppCompatActivity() {
             btnViewLog.setOnClickListener {
                 startActivity(Intent(this@MainActivity, LogActivity::class.java))
             }
+
+            btnOpenLive.setOnClickListener {
+                openLiveRoom()
+            }
+
+            btnOpenGithub.setOnClickListener {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))
+                )
+            }
+
+            btnInfo.setOnClickListener {
+                showInfoDialog()
+            }
         }
+
+        updateOpenLiveButton()
+        binding.tvVersion.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})"
+    }
+
+    // B站 App 可解析时醒目绿，否则灰色（两种状态都可点击，灰色走浏览器）
+    internal fun isBilibiliAppAvailable(): Boolean {
+        return liveRoomAppIntent().resolveActivity(packageManager) != null
+    }
+
+    internal fun liveRoomAppIntent(): Intent {
+        return Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://live/$ROOM_ID"))
+    }
+
+    internal fun liveRoomWebIntent(): Intent {
+        return Intent(Intent.ACTION_VIEW, Uri.parse("https://live.bilibili.com/$ROOM_ID"))
+    }
+
+    private fun updateOpenLiveButton() {
+        val colorRes = if (isBilibiliAppAvailable()) R.color.green_500 else android.R.color.darker_gray
+        // 用 backgroundTintList 而不是 setBackgroundColor：MaterialButton 的
+        // setBackgroundColor 走 helper 不改 tintList，语义不一致
+        binding.btnOpenLive.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(ContextCompat.getColor(this, colorRes))
+    }
+
+    private fun openLiveRoom() {
+        // 进直播间看就不再需要监控提醒：停止监控（铃声经 STOP→onDestroy 链路停止）
+        if (LiveCheckService.isRunning) {
+            stopMonitoring()
+        }
+        val intent = if (isBilibiliAppAvailable()) liveRoomAppIntent() else liveRoomWebIntent()
+        try {
+            startActivity(intent)
+            Toast.makeText(this, "已停止监控，正在打开直播间", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            // 极端情况：scheme 宣称可解析但启动失败，兜底浏览器
+            startActivity(liveRoomWebIntent())
+        }
+        updateUI()
+    }
+
+    private fun showInfoDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("功能说明")
+            .setMessage(
+                "• 每分钟检查直播间状态\n" +
+                    "• 开播时响铃+震动+屏幕提醒\n" +
+                    "• 保持后台运行需关闭电池优化\n" +
+                    "• 通知栏显示当前直播状态"
+            )
+            .setPositiveButton("知道了", null)
+            .show()
     }
 
     private fun updateUI() {
@@ -198,12 +267,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startMonitoring() {
-        val roomId = 11258892L
-        preferenceManager.saveRoomId(roomId)
+        preferenceManager.saveRoomId(ROOM_ID)
         preferenceManager.setServiceRunning(true)
 
         val serviceIntent = Intent(this, LiveCheckService::class.java).apply {
-            putExtra(LiveCheckService.EXTRA_ROOM_ID, roomId)
+            putExtra(LiveCheckService.EXTRA_ROOM_ID, ROOM_ID)
         }
         ContextCompat.startForegroundService(this, serviceIntent)
 
@@ -326,5 +394,10 @@ class MainActivity : AppCompatActivity() {
             data = Uri.parse("package:$packageName")
         }
         startActivity(appSettings)
+    }
+
+    companion object {
+        private const val ROOM_ID = 11258892L
+        private const val GITHUB_URL = "https://github.com/XenoAmess/vivhite-tracker"
     }
 }

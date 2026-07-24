@@ -229,8 +229,7 @@ class LiveCheckServiceTest {
     }
 
     @Test
-    fun `S10 持续在播 不重复触发提醒`() {
-        // 真机事件：直播中进程重启曾导致重复响铃。恢复状态后 Live→Live 不得再提醒
+    fun `S10 持续在播 不重复触发提醒`() {        // 真机事件：直播中进程重启曾导致重复响铃。恢复状态后 Live→Live 不得再提醒
         prefs.setServiceRunning(true)
         // 预置 10 分钟内的"在播"状态，服务启动时会恢复 lastStatus=true
         prefs.setLastCheck(System.currentTimeMillis() - 60_000, isLive = true, success = true)
@@ -246,5 +245,22 @@ class LiveCheckServiceTest {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT)
         )
         assertNull(shadowOf(context).nextStartedActivity)
+    }
+
+    @Test
+    fun `S11 提醒响铃中停止监控 铃声立即停止并释放`() {
+        // 用户需求：响铃时点停止监控/打开直播间，铃声必须停。
+        // 同时覆盖旧 bug：MediaPlayer 原为局部变量，服务 10 秒内被停则协程
+        // 取消、铃声永循环直到进程死亡。
+        // 注：Robolectric 沙箱无法真正播放铃声，直接挂载 alertPlayer 模拟响铃中
+        prefs.setServiceRunning(true)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        service.alertPlayer = android.media.MediaPlayer()
+        assertTrue(service.alertPlayer != null)
+
+        controller.withIntent(Intent(LiveCheckService.ACTION_STOP_SERVICE)).startCommand(0, 1)
+
+        assertNull("停止监控后铃声播放器必须释放", service.alertPlayer)
     }
 }

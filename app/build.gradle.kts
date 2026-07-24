@@ -19,6 +19,12 @@ android {
         // 使用 Git commit 数作为 versionCode，确保 CI 构建可以覆盖安装
         versionCode = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
         versionName = "1.0.${versionCode}"
+        // 8 位 git 哈希，用于首页版本信息展示
+        buildConfigField(
+            "String",
+            "GIT_HASH",
+            "\"${providers.exec { commandLine("git", "rev-parse", "--short=8", "HEAD") }.standardOutput.asText.get().trim()}\""
+        )
     }
 
     signingConfigs {
@@ -71,6 +77,7 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true

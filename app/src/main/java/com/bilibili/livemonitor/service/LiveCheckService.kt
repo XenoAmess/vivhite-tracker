@@ -104,6 +104,7 @@ class LiveCheckService : Service() {
             isUserStopped = true
             preferenceManager.setServiceRunning(false)
             LiveCheckWorker.cancelAll(this)
+            stopAlertSound()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -250,13 +251,18 @@ class LiveCheckService : Service() {
         }
     }
 
+    // 提醒铃声播放器引用（internal 便于测试）。此前是局部变量：
+    // 服务在 10 秒内被停止时 serviceScope 取消，停止协程被杀，
+    // 铃声会永远循环直到进程死亡
+    internal var alertPlayer: MediaPlayer? = null
+
     private fun playAlertSound() {
         try {
             val ringtoneUri: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
 
-            MediaPlayer().apply {
+            alertPlayer = MediaPlayer().apply {
                 setDataSource(this@LiveCheckService, ringtoneUri)
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -271,15 +277,25 @@ class LiveCheckService : Service() {
                 // 10秒后停止
                 serviceScope.launch {
                     delay(10000)
-                    if (isPlaying) {
-                        stop()
-                        release()
-                    }
+                    stopAlertSound()
                 }
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "playAlertSound failed", e)
         }
+    }
+
+    // 停止提醒铃声（停止监控/onDestroy/10秒自动停止 共用）
+    internal fun stopAlertSound() {
+        alertPlayer?.let {
+            try {
+                if (it.isPlaying) it.stop()
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "stop alert sound failed", e)
+            }
+            it.release()
+        }
+        alertPlayer = null
     }
 
     private fun vibrate() {
@@ -379,6 +395,8 @@ class LiveCheckService : Service() {
         serviceScope.cancel()
         isRunning = false
         lastLiveStatus = false
+        // 停止提醒铃声（用户停止监控/服务销毁时铃声必须停）
+        stopAlertSound()
         // 只有用户主动停止才清除运行标记；系统杀进程/异常销毁要保留 true，
         // 否则 onDestroy→ServiceRestartReceiver 重启链会被自己卡死
         // （Receiver 启动前检查 prefs，false 会拒绝重启）
