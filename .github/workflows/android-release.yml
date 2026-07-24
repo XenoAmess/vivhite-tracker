@@ -12,6 +12,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
+      with:
+        # versionCode 依赖完整 git 历史（git rev-list --count HEAD），浅克隆会塌成 1
+        fetch-depth: 0
 
     - name: Set up JDK 17
       uses: actions/setup-java@v5
@@ -24,9 +27,16 @@ jobs:
       run: chmod +x gradlew
 
     - name: Decode signing key
+      env:
+        SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
       run: |
-        echo "${{ secrets.SIGNING_KEY }}" | base64 -d > app/release.keystore
-        ls -la app/release.keystore
+        if [ -n "$SIGNING_KEY" ]; then
+          echo "$SIGNING_KEY" | base64 -d > app/release.keystore
+          ls -la app/release.keystore
+        else
+          echo "SIGNING_KEY unavailable; release signing will fail" >&2
+          exit 1
+        fi
 
     - name: Build signed release APK
       run: ./gradlew assembleRelease
