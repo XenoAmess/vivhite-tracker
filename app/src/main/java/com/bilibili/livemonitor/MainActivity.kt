@@ -170,11 +170,15 @@ class MainActivity : AppCompatActivity() {
             startService(muteIntent)
             Toast.makeText(this, "已静音观播，下播后恢复提醒", Toast.LENGTH_SHORT).show()
         }
+        // 诊断日志：记录 B站客户端探测结果（运行日志页可查，方便真机排障）
+        val installedPkg = installedBilibiliPackage()
+        AppLogger.d("MainActivity", "openLiveRoom bilibili detected=${installedPkg ?: "none"}")
         val intent = if (isBilibiliAppAvailable()) liveRoomAppIntent() else liveRoomWebIntent()
         try {
             startActivity(intent)
         } catch (e: Exception) {
             // 极端情况：scheme 宣称可解析但启动失败，兜底浏览器
+            AppLogger.w("MainActivity", "start bilibili failed, fallback to browser", e)
             startActivity(liveRoomWebIntent())
         }
         updateUI()
