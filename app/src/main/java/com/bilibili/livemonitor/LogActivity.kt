@@ -18,6 +18,16 @@ class LogActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_log)
 
+        // targetSdk 35+ 强制 edge-to-edge，内容会顶到状态栏下面被遮挡；
+        // 把系统栏高度加进顶部 padding（保留原有 16dp 内边距）
+        val root = findViewById<android.widget.LinearLayout>(R.id.logRoot)
+        val basePaddingTop = root.paddingTop
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, basePaddingTop + bars.top, v.paddingRight, v.paddingBottom)
+            insets
+        }
+
         tvLog = findViewById(R.id.tvLog)
         val btnCopy: MaterialButton = findViewById(R.id.btnCopy)
         val btnClear: MaterialButton = findViewById(R.id.btnClear)
