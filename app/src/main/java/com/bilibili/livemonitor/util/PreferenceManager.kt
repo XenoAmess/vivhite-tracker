@@ -54,6 +54,15 @@ class PreferenceManager(context: Context) {
         return prefs.getBoolean(KEY_OEM_GUIDE_PROMPTED, false)
     }
 
+    // 首次启动标记：控制邓煜名言首启必出
+    fun setFirstLaunchDone(done: Boolean) {
+        prefs.edit().putBoolean(KEY_FIRST_LAUNCH_DONE, done).apply()
+    }
+
+    fun isFirstLaunchDone(): Boolean {
+        return prefs.getBoolean(KEY_FIRST_LAUNCH_DONE, false)
+    }
+
     // 进程重启时恢复上次状态，避免重复提醒；超过10分钟视为过期（期间可能刚开播，应当提醒）
     fun getRecentLastStatus(maxAgeMillis: Long = 600_000L): Boolean? {
         return LiveStateDecider.restoreLastStatus(
@@ -73,6 +82,7 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_CHECK_LIVE = "last_check_live"
         private const val KEY_LAST_CHECK_SUCCESS = "last_check_success"
         private const val KEY_OEM_GUIDE_PROMPTED = "oem_guide_prompted"
+        private const val KEY_FIRST_LAUNCH_DONE = "first_launch_done"
         private const val DEFAULT_ROOM_ID = 11258892L
     }
 }

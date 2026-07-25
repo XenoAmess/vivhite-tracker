@@ -245,6 +245,30 @@ class MainActivityTest {
         assertTrue(text.contains("关闭电池优化"))
     }
 
+    @Test
+    fun `首次启动底部展示邓煜名言`() {
+        // 新装首启（firstLaunchDone 默认 false）：必须展示邓煜那条
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        val text = activity.findViewById<android.widget.TextView>(R.id.tvQuote).text.toString()
+        assertTrue("首启应展示邓煜名言: $text", text.contains("有哪些优秀的百合同人作品"))
+        assertTrue(text.contains("邓煜"))
+        assertTrue(text.contains("——"))
+        // 且首启标记应落盘
+        assertTrue(prefs.isFirstLaunchDone())
+    }
+
+    @Test
+    fun `非首启底部名言含作者分隔符`() {
+        prefs.setFirstLaunchDone(true)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        val text = activity.findViewById<android.widget.TextView>(R.id.tvQuote).text.toString()
+        assertTrue("名言非空: $text", text.length > 6)
+        assertTrue("应含作者分隔符: $text", text.contains("——"))
+        assertTrue(text.startsWith("「"))
+    }
+
     // ---------- 后台运行设置：统一入口按厂商路由 ----------
 
     private val originalManufacturer: String = android.os.Build.MANUFACTURER

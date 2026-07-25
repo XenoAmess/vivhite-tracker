@@ -78,6 +78,8 @@ class MainActivity : AppCompatActivity() {
         updateUI()
         // B站 App 安装状态可能变化，刷新打开直播间按钮着色
         updateOpenLiveButton()
+        // 每次回到主页换一条名言
+        refreshQuote()
         // 从设置页返回时复查精确闹钟权限（用户可能刚授权或被系统收回）
         if (!hasPromptedExactAlarm) {
             checkExactAlarmPermission()
@@ -424,8 +426,24 @@ class MainActivity : AppCompatActivity() {
         startActivity(appSettings)
     }
 
+    // 每次回到主页随机展示一条名言（首启必出邓煜，1/10 概率白绮，其余常规池防重复）
+    internal fun refreshQuote() {
+        val quote = com.bilibili.livemonitor.domain.QuotePicker.pick(
+            isFirstLaunchDone = preferenceManager.isFirstLaunchDone(),
+            lastIndex = lastQuoteIndex
+        )
+        if (!preferenceManager.isFirstLaunchDone()) {
+            preferenceManager.setFirstLaunchDone(true)
+        }
+        lastQuoteIndex = com.bilibili.livemonitor.domain.QuotePicker.poolIndexOf(quote)
+        binding.tvQuote.text = "「${quote.text}」—— ${quote.author}"
+    }
+
     companion object {
         private const val ROOM_ID = 11258892L
         private const val GITHUB_URL = "https://github.com/XenoAmess/vivhite-tracker"
+
+        // 上次展示的常规池下标，防连续重复（静态保存，跨 Activity 实例有效）
+        private var lastQuoteIndex: Int? = null
     }
 }
