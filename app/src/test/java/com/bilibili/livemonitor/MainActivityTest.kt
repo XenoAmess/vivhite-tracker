@@ -215,11 +215,12 @@ class MainActivityTest {
     }
 
     @Test
-    fun `监控中点打开直播间 先停止监控再跳转`() {
-        // 用户需求：进直播间看就不再需要监控提醒
+    fun `监控中点打开直播间 置观播静音但不停止监控`() {
+        // 用户需求：点打开直播间后持续监控，本场直播结束前不再响铃
         makeBilibiliInstalled("tv.danmaku.bili")
         prefs.setServiceRunning(true)
         LiveCheckService.isRunning = true
+        LiveCheckService.lastLiveStatus = true
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         // 消费冷启动自动恢复的启动 intent
         shadowOf(context).peekNextStartedService()
@@ -228,11 +229,16 @@ class MainActivityTest {
             R.id.btnOpenLive
         ).performClick()
 
-        val stopIntent = shadowOf(context).peekNextStartedService()
-        assertEquals("应先发出停止命令", LiveCheckService.ACTION_STOP_SERVICE, stopIntent?.action)
-        assertFalse(prefs.isServiceRunning())
+        val muteIntent = shadowOf(context).peekNextStartedService()
+        assertEquals("应发观播静音命令而非停止命令", LiveCheckService.ACTION_WATCH_LIVE, muteIntent?.action)
+        assertTrue("监控标记必须保持 true", prefs.isServiceRunning())
+        assertTrue("应置观播静音", prefs.isAlertSuppressed())
         val jumpIntent = shadowOf(context).nextStartedActivity
         assertEquals("bilibili://live/11258892", jumpIntent?.dataString)
+
+        // tvStatus 应显示本场静音
+        val statusText = activity.findViewById<android.widget.TextView>(R.id.tvStatus).text.toString()
+        assertTrue("应显示本场静音: $statusText", statusText.contains("本场静音"))
     }
 
     @Test

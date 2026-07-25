@@ -103,10 +103,20 @@ class LiveCheckService : Service() {
         if (intent?.action == ACTION_STOP_SERVICE) {
             isUserStopped = true
             preferenceManager.setServiceRunning(false)
+            preferenceManager.setAlertSuppressed(false)
             LiveCheckWorker.cancelAll(this)
             stopAlertSound()
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        // 观播静音命令（点"打开直播间"）：监控不停，本场直播结束前不提醒
+        if (intent?.action == ACTION_WATCH_LIVE) {
+            AppLogger.d(TAG, "enter watch-live muted mode")
+            preferenceManager.setAlertSuppressed(true)
+            stopAlertSound()
+            updateNotification(lastLiveStatus)
+            return START_STICKY
         }
 
         // 停止权威位二次检查：onCreate 自毁后仍可能有已入队的 intent 被投递，
@@ -194,14 +204,22 @@ class LiveCheckService : Service() {
     }
 
     private fun handleResult(isLive: Boolean) {
+        // 观播静音：下播（NotLive）自动解除，之后下次开播恢复提醒
+        var suppressed = preferenceManager.isAlertSuppressed()
+        if (suppressed && LiveStateDecider.shouldClearSuppression(isLive)) {
+            suppressed = false
+            preferenceManager.setAlertSuppressed(false)
+            AppLogger.d(TAG, "stream ended, watch-live mute cleared")
+        }
+
         lastLiveStatus = isLive
         preferenceManager.setLastCheck(System.currentTimeMillis(), isLive, true)
 
         // 更新通知栏图标
         updateNotification(isLive)
 
-        // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播
-        val shouldAlert = LiveStateDecider.shouldAlert(lastStatus, isLive)
+        // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播（静音期不提醒）
+        val shouldAlert = LiveStateDecider.shouldAlert(lastStatus, isLive, suppressed)
 
         if (shouldAlert) {
             AppLogger.d(TAG, "triggerAlert")
@@ -491,6 +509,7 @@ class LiveCheckService : Service() {
         const val ACTION_STATUS_CHANGED = "com.bilibili.livemonitor.STATUS_CHANGED"
         const val EXTRA_IS_LIVE = "is_live"
         const val ACTION_STOP_SERVICE = "com.bilibili.livemonitor.STOP_SERVICE"
+        const val ACTION_WATCH_LIVE = "com.bilibili.livemonitor.WATCH_LIVE"
         const val ACTION_RESTART_SERVICE = "com.bilibili.livemonitor.RESTART_SERVICE"
         private const val DEFAULT_ROOM_ID = 11258892L
         private const val CHECK_INTERVAL = 60_000L // 60秒

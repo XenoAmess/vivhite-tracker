@@ -12,15 +12,26 @@ object LiveStateDecider {
 
     /**
      * 是否触发开播提醒。
+     * - suppressed（观播静音）为 true 时恒不提醒：用户已进直播间观看，
+     *   本场直播结束前不需要再响铃
      * - lastStatus == null（首次检查/状态未知）：在播就提醒
      * - 否则仅在 未开播→开播 跳变时提醒，避免重复打扰
      */
-    fun shouldAlert(lastStatus: Boolean?, isLive: Boolean): Boolean {
+    fun shouldAlert(lastStatus: Boolean?, isLive: Boolean, suppressed: Boolean = false): Boolean {
+        if (suppressed) return false
         return if (lastStatus == null) {
             isLive
         } else {
             !lastStatus && isLive
         }
+    }
+
+    /**
+     * 观播静音何时解除：下播（NotLive）即解除，
+     * 之后下次开播恢复正常提醒
+     */
+    fun shouldClearSuppression(isLive: Boolean): Boolean {
+        return !isLive
     }
 
     /**

@@ -160,14 +160,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openLiveRoom() {
-        // 进直播间看就不再需要监控提醒：停止监控（铃声经 STOP→onDestroy 链路停止）
-        if (LiveCheckService.isRunning) {
-            stopMonitoring()
+        // 观播静音：监控不停，本场直播结束前不提醒（正在响的铃立即停）。
+        // 仅在监控中且当前在播时才置静音；其余情况只跳转
+        if (LiveCheckService.isRunning && LiveCheckService.lastLiveStatus) {
+            preferenceManager.setAlertSuppressed(true)
+            val muteIntent = Intent(this, LiveCheckService::class.java).apply {
+                action = LiveCheckService.ACTION_WATCH_LIVE
+            }
+            startService(muteIntent)
+            Toast.makeText(this, "已静音观播，下播后恢复提醒", Toast.LENGTH_SHORT).show()
         }
         val intent = if (isBilibiliAppAvailable()) liveRoomAppIntent() else liveRoomWebIntent()
         try {
             startActivity(intent)
-            Toast.makeText(this, "已停止监控，正在打开直播间", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             // 极端情况：scheme 宣称可解析但启动失败，兜底浏览器
             startActivity(liveRoomWebIntent())
@@ -184,7 +189,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.apply {
-            tvStatus.text = if (isRunning) "监控状态: 运行中" else "监控状态: 已停止"
+            val muted = isRunning && preferenceManager.isAlertSuppressed()
+            tvStatus.text = when {
+                muted -> "监控状态: 运行中（本场静音）"
+                isRunning -> "监控状态: 运行中"
+                else -> "监控状态: 已停止"
+            }
             tvStatus.setTextColor(
                 ContextCompat.getColor(
                     this@MainActivity,

@@ -248,8 +248,67 @@ class LiveCheckServiceTest {
     }
 
     @Test
-    fun `S11 提醒响铃中停止监控 铃声立即停止并释放`() {
-        // 用户需求：响铃时点停止监控/打开直播间，铃声必须停。
+    fun `S12 观播静音命令 置静音标记且服务不停`() {
+        // 用户需求：点"打开直播间"后持续监控，但本场直播结束前不再响铃
+        prefs.setServiceRunning(true)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        service.alertPlayer = android.media.MediaPlayer()
+
+        controller.withIntent(Intent(LiveCheckService.ACTION_WATCH_LIVE)).startCommand(0, 1)
+
+        assertTrue("应置观播静音标记", prefs.isAlertSuppressed())
+        assertNull("当前响铃应立即停止", service.alertPlayer)
+        assertFalse("监控不得停止", shadowOf(service).isStoppedBySelf)
+        assertTrue("监控保持运行", LiveCheckService.isRunning)
+    }
+
+    @Test
+    fun `S13 静音中开播跳变不提醒 下播自动解除后恢复`() {
+        // 场景：静音中 NotLive→Live 不提醒；随后 NotLive 解除静音；再 Live 恢复提醒
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(
+            BilibiliApi.LiveStatus.NotLive, // 初始 NotLive
+            BilibiliApi.LiveStatus.Live,    // 开播（静音中，不应提醒）
+            BilibiliApi.LiveStatus.NotLive, // 下播（解除静音）
+            BilibiliApi.LiveStatus.Live     // 再开播（恢复，应提醒）
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        // 进入静音
+        controller.withIntent(Intent(LiveCheckService.ACTION_WATCH_LIVE)).startCommand(0, 1)
+        assertTrue(prefs.isAlertSuppressed())
+        // withIntent 会替换控制器的 intent，恢复为普通启动 intent 才能触发后续检测
+        controller.withIntent(Intent(context, LiveCheckService::class.java))
+
+        // 静音中开播：重复触发直到检查进去
+        waitFor("muted live check", 20_000) {
+            controller.startCommand(0, 2)
+            fakeApi.callCount >= 2
+        }
+        waitFor("no alert settles", 2_000) { true }
+        assertNull(
+            "静音中不得触发提醒",
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT)
+        )
+
+        // 下播：静音自动解除
+        waitFor("offline check", 20_000) {
+            controller.startCommand(0, 3)
+            fakeApi.callCount >= 3
+        }
+        waitFor("mute cleared", 5_000) { !prefs.isAlertSuppressed() }
+
+        // 再开播：恢复提醒
+        waitFor("alert after unmute", 20_000) {
+            controller.startCommand(0, 4)
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT) != null
+        }
+    }
+
+    @Test
+    fun `S11 提醒响铃中停止监控 铃声立即停止并释放`() {        // 用户需求：响铃时点停止监控/打开直播间，铃声必须停。
         // 同时覆盖旧 bug：MediaPlayer 原为局部变量，服务 10 秒内被停则协程
         // 取消、铃声永循环直到进程死亡。
         // 注：Robolectric 沙箱无法真正播放铃声，直接挂载 alertPlayer 模拟响铃中

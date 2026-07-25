@@ -42,6 +42,29 @@ class LiveStateDeciderTest {
         assertFalse(LiveStateDecider.shouldAlert(lastStatus = true, isLive = true))
     }
 
+    // ---------- 观播静音 ----------
+
+    @Test
+    fun `观播静音中 任何跳变都不提醒`() {
+        // 场景：用户已点"打开直播间"进直播间观看，本场直播结束前不需要响铃
+        assertFalse(LiveStateDecider.shouldAlert(null, true, suppressed = true))
+        assertFalse(LiveStateDecider.shouldAlert(false, true, suppressed = true))
+        assertFalse(LiveStateDecider.shouldAlert(true, true, suppressed = true))
+    }
+
+    @Test
+    fun `静音默认参数 兼容旧行为`() {
+        assertTrue(LiveStateDecider.shouldAlert(false, true))
+        assertTrue(LiveStateDecider.shouldAlert(false, true, suppressed = false))
+    }
+
+    @Test
+    fun `下播时应解除静音 在播时保持`() {
+        // 场景：观播静音持续到本场结束，检测到 NotLive 才恢复提醒
+        assertTrue(LiveStateDecider.shouldClearSuppression(isLive = false))
+        assertFalse(LiveStateDecider.shouldClearSuppression(isLive = true))
+    }
+
     // ---------- restoreLastStatus（真机事件：2026-07-23 实测发现重复提醒 bug） ----------
 
     @Test
