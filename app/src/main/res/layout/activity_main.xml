@@ -163,7 +163,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:gravity="center"
-            android:text="• 每分钟检查直播间状态 • 开播时响铃+震动+屏幕提醒\n• 保持后台运行需关闭电池优化 • 通知栏显示当前直播状态"
+            android:text="• 每分钟检查直播状态 • 开播响铃+震动+屏幕提醒\n• 后台运行需关闭电池优化 • 通知栏显示直播状态"
             android:textColor="@android:color/darker_gray"
             android:textSize="13sp"
             app:layout_constraintEnd_toEndOf="parent"

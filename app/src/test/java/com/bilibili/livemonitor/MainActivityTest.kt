@@ -240,9 +240,11 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
         val text = activity.findViewById<android.widget.TextView>(R.id.tvDescription).text.toString()
-        assertTrue(text.contains("每分钟检查直播间状态"))
-        assertTrue(text.contains("开播时响铃"))
-        assertTrue(text.contains("关闭电池优化"))
+        // 断言稳定子串，不绑定易变措辞（文案曾压缩防跨行）
+        assertTrue(text.contains("每分钟检查"))
+        assertTrue(text.contains("响铃"))
+        assertTrue(text.contains("电池优化"))
+        assertTrue(text.contains("通知栏"))
     }
 
     @Test
