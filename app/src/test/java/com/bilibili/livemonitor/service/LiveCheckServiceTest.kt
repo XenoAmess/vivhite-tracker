@@ -265,11 +265,11 @@ class LiveCheckServiceTest {
 
     @Test
     fun `S13 静音中开播跳变不提醒 下播自动解除后恢复`() {
-        // 场景：静音中 NotLive→Live 不提醒；随后 NotLive 解除静音；再 Live 恢复提醒
+        // 场景（对齐生产流程）：直播中点"打开直播间"进入静音 →
+        // Live（保持静音不提醒）→ NotLive（下播自动解除）→ Live（恢复提醒）
         prefs.setServiceRunning(true)
         fakeApi.enqueue(
-            BilibiliApi.LiveStatus.NotLive, // 初始 NotLive
-            BilibiliApi.LiveStatus.Live,    // 开播（静音中，不应提醒）
+            BilibiliApi.LiveStatus.Live,    // 在播（静音中，不应提醒）
             BilibiliApi.LiveStatus.NotLive, // 下播（解除静音）
             BilibiliApi.LiveStatus.Live     // 再开播（恢复，应提醒）
         )
@@ -282,27 +282,31 @@ class LiveCheckServiceTest {
         // withIntent 会替换控制器的 intent，恢复为普通启动 intent 才能触发后续检测
         controller.withIntent(Intent(context, LiveCheckService::class.java))
 
-        // 静音中开播：重复触发直到检查进去
-        waitFor("muted live check", 20_000) {
-            controller.startCommand(0, 2)
-            fakeApi.callCount >= 2
+        // 逐次驱动检测（每次等 handleResult 落盘再继续，避免轮询 startCommand
+        // 把响应队列推进过头——CI 慢 runner 上曾因此误触发提醒）
+        fun driveOneCheck(startId: Int) {
+            val before = prefs.getLastCheckTime()
+            waitFor("check advances", 15_000) {
+                controller.startCommand(0, startId)
+                prefs.getLastCheckTime() != before
+            }
         }
-        waitFor("no alert settles", 2_000) { true }
+
+        // 1: 静音中在播，不得提醒
+        driveOneCheck(2)
         assertNull(
             "静音中不得触发提醒",
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT)
         )
 
-        // 下播：静音自动解除
-        waitFor("offline check", 20_000) {
-            controller.startCommand(0, 3)
-            fakeApi.callCount >= 3
-        }
-        waitFor("mute cleared", 5_000) { !prefs.isAlertSuppressed() }
+        // 2: 下播，静音自动解除
+        driveOneCheck(3)
+        assertFalse("下播后静音应解除", prefs.isAlertSuppressed())
 
-        // 再开播：恢复提醒
-        waitFor("alert after unmute", 20_000) {
-            controller.startCommand(0, 4)
+        // 3: 再开播，恢复提醒（lastCheckTime 在 handleResult 前段写入，
+        // 提醒通知在其后的 triggerAlert 发出，需轮询等待）
+        driveOneCheck(4)
+        waitFor("alert after unmute", 10_000) {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT) != null
         }
     }
