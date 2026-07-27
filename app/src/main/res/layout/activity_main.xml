@@ -13,29 +13,6 @@
         android:layout_height="wrap_content"
         android:padding="24dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnShare"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginTop="36dp"
-            android:layout_marginEnd="16dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:text="分享"
-            android:textSize="13sp"
-            android:textColor="@android:color/white"
-            app:backgroundTint="@color/green_500"
-            app:cornerRadius="20dp"
-            app:icon="@android:drawable/ic_menu_share"
-            app:iconSize="16dp"
-            app:iconTint="@android:color/white"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
-
         <androidx.cardview.widget.CardView
             android:id="@+id/cvStatus"
             android:layout_width="96dp"
@@ -57,18 +34,39 @@
 
         </androidx.cardview.widget.CardView>
 
-        <TextView
-            android:id="@+id/tvTitle"
+        <LinearLayout
+            android:id="@+id/titleRow"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="牢白播了吗"
-            android:textSize="26sp"
-            android:textStyle="bold"
-            android:textColor="@color/purple_500"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cvStatus" />
+            app:layout_constraintTop_toBottomOf="@id/cvStatus">
+
+            <TextView
+                android:id="@+id/tvTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="牢白播了吗"
+                android:textSize="26sp"
+                android:textStyle="bold"
+                android:textColor="@color/purple_500" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnShare"
+                style="@style/Widget.Material3.Button.IconButton.Outlined"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="10dp"
+                android:contentDescription="分享直播间"
+                app:icon="@drawable/ic_share"
+                app:iconSize="20dp"
+                app:iconTint="@color/purple_500"
+                app:strokeColor="@color/purple_500" />
+
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tvStatus"
@@ -80,7 +78,7 @@
             android:textColor="@android:color/holo_red_dark"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvTitle" />
+            app:layout_constraintTop_toBottomOf="@id/titleRow" />
 
         <TextView
             android:id="@+id/tvRoomId"
