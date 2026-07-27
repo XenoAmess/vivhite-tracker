@@ -489,6 +489,19 @@ class MainActivityTest {
     }
 
     @Test
+    fun `分享兜底复制链接 剪贴板含bbid归因链接`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.copyShareLinkToClipboard()
+
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val text = cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+        assertTrue("应含直播间链接: $text", text.contains("live.bilibili.com/11258892"))
+        assertTrue("应含 bbid 归因: $text", text.contains("bbid=8945059"))
+        assertTrue("应含 share_source: $text", text.contains("share_source=copy_link"))
+    }
+
+    @Test
     fun `三个QQ群项渲染且头像互不相同`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 

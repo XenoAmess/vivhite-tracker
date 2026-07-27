@@ -176,10 +176,13 @@ class MainActivity : AppCompatActivity() {
 
     // 未装 QQ（或拉起失败）时展示群号，一键复制后用户可自行搜索加入
     // 分享直播间到 QQ：mqqapi 富卡片（标题+封面+来源），链接按 B 站原生规则
-    // 带 bbid 归因到指定用户；未装 QQ 兜底系统分享
+    // 带 bbid 归因到指定用户；未装 QQ 兜底系统分享；
+    // mqqapi 拉起失败时级联降级：setPackage → 隐式 → 复制链接
     internal fun shareLiveRoom() {
         val qqPackage = OemHelper.installedQqPackage(packageManager)
+        AppLogger.d("MainActivity", "shareLiveRoom qq detected=${qqPackage ?: "none"}")
         if (qqPackage == null) {
+            AppLogger.d("MainActivity", "no QQ installed, fallback to system share")
             startActivity(QqShare.buildSystemShareIntent())
             return
         }
@@ -190,8 +193,33 @@ class MainActivity : AppCompatActivity() {
                 BilibiliApi().fetchRoomCover(QqShare.ROOM_ID)
             } ?: QqShare.FALLBACK_COVER_URL
             AppLogger.d("MainActivity", "share cover=$cover")
-            startActivity(QqShare.buildQqShareIntent(cover, qqPackage))
+            // 级联：setPackage 强制投递 → 隐式让系统解析 → 复制链接兜底
+            if (tryLaunchShare(QqShare.buildQqShareIntent(cover, qqPackage), "setPackage")) return@launch
+            if (tryLaunchShare(QqShare.buildQqShareIntent(cover, null), "implicit")) return@launch
+            AppLogger.e("MainActivity", "mqqapi share failed on all launch paths, link copied to clipboard")
+            copyShareLinkToClipboard()
         }
+    }
+
+    // 尝试启动分享 intent，返回是否成功（失败写日志不崩协程）
+    private fun tryLaunchShare(intent: Intent, tag: String): Boolean {
+        return try {
+            startActivity(intent)
+            AppLogger.d("MainActivity", "mqqapi share launched ($tag)")
+            true
+        } catch (e: Exception) {
+            AppLogger.w("MainActivity", "mqqapi share launch failed ($tag)", e)
+            false
+        }
+    }
+
+    // 最终兜底：把带 bbid 归因的分享链接复制到剪贴板
+    internal fun copyShareLinkToClipboard() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(
+            android.content.ClipData.newPlainText("bilibili_live", QqShare.buildShareUrl())
+        )
+        Toast.makeText(this, "QQ 分享拉起失败，链接已复制到剪贴板", Toast.LENGTH_LONG).show()
     }
 
     private val shareScope = kotlinx.coroutines.CoroutineScope(
