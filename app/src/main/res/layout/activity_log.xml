@@ -35,6 +35,14 @@
             android:layout_weight="1"
             android:text="清空" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnExport"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="导出" />
+
     </LinearLayout>
 
     <ScrollView

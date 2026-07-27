@@ -3,10 +3,12 @@ package com.bilibili.livemonitor
 import android.app.Application
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.util.AppLogger
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -26,9 +28,19 @@ class LogActivityTest {
 
     @Before
     fun setUp() {
+        // AppLogger 是单例，logFile 只在 init 时绑定一次且跨 Robolectric 沙箱残留
+        // 旧沙箱路径（导出功能 FileProvider 会拿它对比当前沙箱 roots 导致不匹配），
+        // 每个用例前重置让其重新绑定到当前沙箱
+        resetAppLoggerFile()
         AppLogger.init(context)
         AppLogger.clear()
         waitFor { AppLogger.readAll().isEmpty() }
+    }
+
+    private fun resetAppLoggerFile() {
+        val field = AppLogger::class.java.getDeclaredField("logFile")
+        field.isAccessible = true
+        field.set(null, null)
     }
 
     private fun waitFor(timeoutMillis: Long = 5_000, cond: () -> Boolean) {
@@ -91,5 +103,44 @@ class LogActivityTest {
 
         val text = activity.findViewById<TextView>(R.id.tvLog).text.toString()
         assertTrue(text.contains("refresh-marker"))
+    }
+
+    @Test
+    fun `日志超过2000行时 只显示尾部并提示`() {
+        // 真机崩溃根因：全量 ~1MB 塞进 TextView 排版卡死。必须只读尾部
+        AppLogger.d("TestTag", "HEAD_MARKER_SHOULD_BE_TRIMMED")
+        repeat(2100) { AppLogger.d("T", "padding-line-$it") }
+        AppLogger.d("TestTag", "TAIL_MARKER_SHOULD_SHOW")
+        waitFor(timeoutMillis = 30_000) { AppLogger.readAll().contains("TAIL_MARKER_SHOULD_SHOW") }
+
+        val activity = Robolectric.buildActivity(LogActivity::class.java).create().get()
+
+        val text = activity.findViewById<TextView>(R.id.tvLog).text.toString()
+        assertTrue("应有截断提示: ${text.take(100)}", text.contains("仅显示最近"))
+        assertTrue("尾部标记应显示", text.contains("TAIL_MARKER_SHOULD_SHOW"))
+        assertFalse("头部标记应被截掉", text.contains("HEAD_MARKER_SHOULD_BE_TRIMMED"))
+        assertTrue("显示长度应受控", text.length < 200_000)
+    }
+
+    @Test
+    fun `点导出 发出带FileProvider链接的分享intent`() {
+        AppLogger.d("TestTag", "export-marker")
+        waitFor { AppLogger.readAll().contains("export-marker") }
+        val activity = Robolectric.buildActivity(LogActivity::class.java).create().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnExport
+        ).performClick()
+        val started = shadowOf(context).nextStartedActivity
+        // startActivity(createChooser(...))：外层是 CHOOSER，内嵌 ACTION_SEND
+        assertTrue(started != null)
+        val sendIntent = started.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT)
+        if (started.action == Intent.ACTION_CHOOSER && sendIntent != null) {
+            assertEquals(Intent.ACTION_SEND, sendIntent.action)
+            val uri = sendIntent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+            assertTrue("应带 FileProvider 链接: $uri", uri.toString().contains("com.bilibili.livemonitor.fileprovider"))
+        } else {
+            assertEquals(Intent.ACTION_SEND, started.action)
+        }
     }
 }

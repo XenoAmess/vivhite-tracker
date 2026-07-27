@@ -92,6 +92,9 @@ object AppLogger {
         }
     }
 
+    // 供导出功能使用（FileProvider 分享完整日志文件）
+    fun getLogFile(): File? = logFile
+
     fun clear() {
         executor.execute {
             try {
