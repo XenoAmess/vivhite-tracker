@@ -459,7 +459,7 @@ class MainActivityTest {
             }
         }
 
-        activity.findViewById<android.widget.ImageButton>(R.id.btnShare).performClick()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
 
         // 分享流程是异步的（取封面 3s 超时），Robolectric 无真网络会走兜底封面
         val deadline = System.currentTimeMillis() + 10_000
@@ -489,7 +489,7 @@ class MainActivityTest {
             }
         }
 
-        activity.findViewById<android.widget.ImageButton>(R.id.btnShare).performClick()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
 
         val deadline = System.currentTimeMillis() + 10_000
         var started: android.content.Intent? = null
@@ -517,7 +517,7 @@ class MainActivityTest {
             }
         }
 
-        activity.findViewById<android.widget.ImageButton>(R.id.btnShare).performClick()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
 
         val deadline = System.currentTimeMillis() + 10_000
         while (!invoked && System.currentTimeMillis() < deadline) {

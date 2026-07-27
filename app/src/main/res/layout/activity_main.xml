@@ -13,13 +13,26 @@
         android:layout_height="wrap_content"
         android:padding="24dp">
 
-        <ImageButton
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnShare"
-            android:layout_width="40dp"
+            android:layout_width="wrap_content"
             android:layout_height="40dp"
-            android:src="@android:drawable/ic_menu_share"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="分享直播间"
+            android:layout_marginTop="36dp"
+            android:layout_marginEnd="16dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="分享"
+            android:textSize="13sp"
+            android:textColor="@android:color/white"
+            app:backgroundTint="@color/green_500"
+            app:cornerRadius="20dp"
+            app:icon="@android:drawable/ic_menu_share"
+            app:iconSize="16dp"
+            app:iconTint="@android:color/white"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
