@@ -212,27 +212,72 @@
             android:textSize="12sp"
             android:textStyle="italic"
             android:textColor="@android:color/darker_gray"
-            app:layout_constraintBottom_toTopOf="@id/tvVersion"
+            app:layout_constraintBottom_toTopOf="@id/versionRow"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/tvDescription"
             app:layout_constraintVertical_bias="0.25"
             tools:text="「数学是科学的皇后。」—— 高斯" />
 
-        <TextView
-            android:id="@+id/tvVersion"
+        <LinearLayout
+            android:id="@+id/versionRow"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
             android:layout_marginBottom="8dp"
-            android:textSize="12sp"
-            android:textColor="@android:color/darker_gray"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/tvQuote"
-            app:layout_constraintVertical_bias="0.25"
-            tools:text="v1.0.61 (a1b2c3d4)" />
+            app:layout_constraintVertical_bias="0.25">
+
+            <TextView
+                android:id="@+id/tvVersion"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="@android:color/darker_gray"
+                tools:text="v1.0.61 (a1b2c3d4)" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCheckUpdate"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:layout_marginStart="10dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="检查更新"
+                android:textSize="11sp"
+                android:textColor="@color/purple_500"
+                app:strokeColor="@color/purple_500" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnUpdateSettings"
+                style="@style/Widget.Material3.Button.IconButton.Outlined"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginStart="6dp"
+                android:contentDescription="更新设置"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:padding="0dp"
+                app:icon="@android:drawable/ic_menu_manage"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="16dp"
+                app:iconTint="@color/purple_500"
+                app:strokeColor="@color/purple_500" />
+
+        </LinearLayout>
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </ScrollView>

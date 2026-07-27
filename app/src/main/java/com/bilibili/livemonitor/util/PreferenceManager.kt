@@ -72,6 +72,42 @@ class PreferenceManager(context: Context) {
         return prefs.getBoolean(KEY_FIRST_LAUNCH_DONE, false)
     }
 
+    // 自动检查更新（前台每日一次），默认开
+    fun setAutoCheckUpdate(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATE, enabled).apply()
+    }
+
+    fun isAutoCheckUpdate(): Boolean {
+        return prefs.getBoolean(KEY_AUTO_CHECK_UPDATE, true)
+    }
+
+    // Wi-Fi 下自动下载更新包，默认关
+    fun setAutoDownloadUpdate(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_DOWNLOAD_UPDATE, enabled).apply()
+    }
+
+    fun isAutoDownloadUpdate(): Boolean {
+        return prefs.getBoolean(KEY_AUTO_DOWNLOAD_UPDATE, false)
+    }
+
+    // 上次更新检查时间，用于 24h 节流
+    fun setLastUpdateCheckTime(timeMillis: Long) {
+        prefs.edit().putLong(KEY_LAST_UPDATE_CHECK_TIME, timeMillis).apply()
+    }
+
+    fun getLastUpdateCheckTime(): Long {
+        return prefs.getLong(KEY_LAST_UPDATE_CHECK_TIME, 0L)
+    }
+
+    // 用户点了「忽略此版本」的 versionCode，自动检测不再弹；-1 表示无
+    fun setDismissedVersionCode(code: Int) {
+        prefs.edit().putInt(KEY_DISMISSED_VERSION_CODE, code).apply()
+    }
+
+    fun getDismissedVersionCode(): Int {
+        return prefs.getInt(KEY_DISMISSED_VERSION_CODE, -1)
+    }
+
     // 进程重启时恢复上次状态，避免重复提醒；超过10分钟视为过期（期间可能刚开播，应当提醒）
     fun getRecentLastStatus(maxAgeMillis: Long = 600_000L): Boolean? {
         return LiveStateDecider.restoreLastStatus(
@@ -93,6 +129,10 @@ class PreferenceManager(context: Context) {
         private const val KEY_OEM_GUIDE_PROMPTED = "oem_guide_prompted"
         private const val KEY_FIRST_LAUNCH_DONE = "first_launch_done"
         private const val KEY_ALERT_SUPPRESSED = "alert_suppressed"
+        private const val KEY_AUTO_CHECK_UPDATE = "auto_check_update"
+        private const val KEY_AUTO_DOWNLOAD_UPDATE = "auto_download_update"
+        private const val KEY_LAST_UPDATE_CHECK_TIME = "last_update_check_time"
+        private const val KEY_DISMISSED_VERSION_CODE = "dismissed_version_code"
         private const val DEFAULT_ROOM_ID = 11258892L
     }
 }

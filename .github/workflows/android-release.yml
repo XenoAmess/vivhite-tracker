@@ -48,11 +48,21 @@ jobs:
         ALIAS: ${{ secrets.ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
+    # App 内更新检查依赖：APK 文件名带 versionName 供正则解析，version.json 供精确比较
+    - name: Prepare versioned artifacts
+      run: |
+        VERSION_CODE=$(git rev-list --count HEAD)
+        VERSION_NAME="1.1.${VERSION_CODE}"
+        cp app/build/outputs/apk/release/app-release.apk "vivhite-tracker-${VERSION_NAME}.apk"
+        printf '{"versionCode":%s,"versionName":"%s"}\n' "$VERSION_CODE" "$VERSION_NAME" > version.json
+        cat version.json
+
     - name: Create Release
       uses: softprops/action-gh-release@v3
       with:
         files: |
-          app/build/outputs/apk/release/app-release.apk
+          vivhite-tracker-*.apk
+          version.json
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

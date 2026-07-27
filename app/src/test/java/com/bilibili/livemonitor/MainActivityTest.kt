@@ -37,6 +37,9 @@ class MainActivityTest {
         LiveCheckService.isUserStopped = false
         // 授权通知权限，否则点开始监控会走权限申请分支而不启动服务
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        // 节流自动更新检查，避免 onCreate 对 api.github.com 发起真实网络请求；
+        // 测自动检测的用例自行重置该时间戳
+        prefs.setLastUpdateCheckTime(System.currentTimeMillis())
     }
 
     @After
@@ -683,6 +686,182 @@ class MainActivityTest {
             android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
             started?.action
         )
+    }
+
+    // ---------- 应用内更新 ----------
+
+    private class FakeUpdateChecker(
+        private val responses: Map<String, String?>
+    ) : com.bilibili.livemonitor.api.UpdateChecker() {
+        override suspend fun httpGet(url: String): String? = responses[url]
+    }
+
+    private fun fakeUpdateCheckerWithUpdate(versionCode: Int = 95): FakeUpdateChecker {
+        val releaseJson = """{
+            "tag_name": "v1.1.2",
+            "body": "更新日志内容",
+            "assets": [
+                {"name": "vivhite-tracker-1.1.$versionCode.apk", "browser_download_url": "https://example.com/vivhite-tracker-1.1.$versionCode.apk"},
+                {"name": "version.json", "browser_download_url": "https://example.com/version.json"}
+            ]
+        }"""
+        return FakeUpdateChecker(
+            mapOf(
+                com.bilibili.livemonitor.api.UpdateChecker.LATEST_RELEASE_API to releaseJson,
+                "https://example.com/version.json" to
+                    """{"versionCode":$versionCode,"versionName":"1.1.$versionCode"}"""
+            )
+        )
+    }
+
+    // onCreate 可能已弹权限引导对话框，必须等待「新实例」而不是拿最新的旧对话框
+    private fun waitForNewDialog(
+        baseline: android.app.Dialog?,
+        timeoutMs: Long = 10_000
+    ): androidx.appcompat.app.AlertDialog? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            if (dialog != null && dialog !== baseline) {
+                return dialog as androidx.appcompat.app.AlertDialog
+            }
+            Thread.sleep(100)
+        }
+        return null
+    }
+
+    @Test
+    fun `检查更新按钮与设置入口存在`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        val btn = activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnCheckUpdate
+        )
+        assertEquals("检查更新", btn.text.toString())
+        val settings = activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnUpdateSettings
+        )
+        assertEquals("更新设置", settings.contentDescription.toString())
+    }
+
+    @Test
+    fun `手动检查更新 有新版本时弹更新对话框`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.updateChecker = fakeUpdateCheckerWithUpdate()
+
+        val baseline = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnCheckUpdate
+        ).performClick()
+
+        val dialog = waitForNewDialog(baseline)
+        assertTrue("应弹出更新对话框", dialog != null)
+        val title = dialog!!.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)
+        assertTrue(
+            "标题应含新版本号: ${title?.text}",
+            title?.text?.contains("发现新版本 v1.1.95") == true
+        )
+        val message = dialog.findViewById<android.widget.TextView>(android.R.id.message)
+        assertTrue("应含更新日志: ${message?.text}", message?.text?.contains("更新日志内容") == true)
+    }
+
+    @Test
+    fun `手动检查更新 已最新时 Toast 提示`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        // 远端版本号远低于本地 → UpToDate
+        activity.updateChecker = fakeUpdateCheckerWithUpdate(versionCode = 1)
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnCheckUpdate
+        ).performClick()
+
+        val deadline = System.currentTimeMillis() + 10_000
+        var toast: String? = null
+        while (System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            toast = org.robolectric.shadows.ShadowToast.getTextOfLatestToast()
+            if (toast == "已是最新版本") break
+            Thread.sleep(100)
+        }
+        assertEquals("已是最新版本", toast)
+    }
+
+    @Test
+    fun `更新设置对话框 开关状态与prefs双向同步`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnUpdateSettings
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        assertTrue(dialog.isShowing)
+        val switchAutoCheck = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
+            R.id.switchAutoCheck
+        )!!
+        val switchAutoDownload = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
+            R.id.switchAutoDownload
+        )!!
+        // 默认：自动检查开、自动下载关
+        assertTrue(switchAutoCheck.isChecked)
+        assertFalse(switchAutoDownload.isChecked)
+
+        switchAutoCheck.isChecked = false
+        switchAutoDownload.isChecked = true
+        assertFalse(prefs.isAutoCheckUpdate())
+        assertTrue(prefs.isAutoDownloadUpdate())
+    }
+
+    @Test
+    fun `自动检测到新版本 弹对话框且可忽略此版本`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.updateChecker = fakeUpdateCheckerWithUpdate(versionCode = 95)
+        prefs.setLastUpdateCheckTime(0L)
+
+        activity.autoCheckUpdateIfDue()
+
+        val dialog = waitForNewDialog(
+            org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        )
+        assertTrue("自动检测应弹更新对话框", dialog != null)
+        // 点「忽略此版本」后持久化 versionCode，且对话框消失
+        dialog!!.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(95, prefs.getDismissedVersionCode())
+        assertFalse(dialog.isShowing)
+
+        // 再次自动检测：被忽略的版本不再弹
+        val before = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        activity.checkForUpdate(manual = false)
+        val deadline = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            Thread.sleep(100)
+            // 等协程跑完一轮即可（无新对话框创建）
+            if (org.robolectric.shadows.ShadowDialog.getLatestDialog() !== before) break
+        }
+        assertTrue(
+            "被忽略的版本不应再弹",
+            org.robolectric.shadows.ShadowDialog.getLatestDialog() === before
+        )
+    }
+
+    @Test
+    fun `自动检测未到时 不发起检查`() {
+        var apiCalled = false
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.updateChecker = object : com.bilibili.livemonitor.api.UpdateChecker() {
+            override suspend fun httpGet(url: String): String? {
+                apiCalled = true
+                return null
+            }
+        }
+        // setUp 已写入当前时间，24h 内不应再检查
+        activity.autoCheckUpdateIfDue()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertFalse(apiCalled)
     }
 
     private fun makeBilibiliInstalled(vararg variants: Pair<String, String>) {

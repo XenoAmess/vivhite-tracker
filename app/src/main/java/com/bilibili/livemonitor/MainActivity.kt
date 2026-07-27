@@ -17,8 +17,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.bilibili.livemonitor.databinding.ActivityMainBinding
 import com.bilibili.livemonitor.api.BilibiliApi
+import com.bilibili.livemonitor.api.UpdateChecker
+import com.bilibili.livemonitor.domain.UpdateDecider
 import com.bilibili.livemonitor.service.LiveCheckService
 import com.bilibili.livemonitor.util.AppLogger
+import com.bilibili.livemonitor.util.AppUpdater
 import com.bilibili.livemonitor.util.OemHelper
 import com.bilibili.livemonitor.util.QqGroups
 import com.bilibili.livemonitor.util.QqShare
@@ -76,6 +79,7 @@ class MainActivity : AppCompatActivity() {
         checkBatteryOptimization()
         checkExactAlarmPermission()
         checkOemRestrictions()
+        autoCheckUpdateIfDue()
     }
 
     override fun onResume() {
@@ -136,11 +140,139 @@ class MainActivity : AppCompatActivity() {
             btnShare.setOnClickListener {
                 shareLiveRoom()
             }
+
+            btnCheckUpdate.setOnClickListener {
+                checkForUpdate(manual = true)
+            }
+
+            btnUpdateSettings.setOnClickListener {
+                showUpdateSettingsDialog()
+            }
         }
 
         setupQqGroups()
         updateOpenLiveButton()
         binding.tvVersion.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})"
+    }
+
+    // 应用内更新：检查源为 GitHub Releases（version.json 优先，APK 文件名兜底）
+    internal var updateChecker: UpdateChecker = UpdateChecker()
+
+    private val updateScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob()
+    )
+
+    // 前台每日一次静默自动检测：到点先落时间戳（失败也节流，避免每次进 App 都打 API）
+    internal fun autoCheckUpdateIfDue(now: Long = System.currentTimeMillis()) {
+        if (!preferenceManager.isAutoCheckUpdate()) return
+        if (now - preferenceManager.getLastUpdateCheckTime() < UPDATE_CHECK_INTERVAL_MS) return
+        preferenceManager.setLastUpdateCheckTime(now)
+        checkForUpdate(manual = false)
+    }
+
+    internal fun checkForUpdate(manual: Boolean) {
+        if (manual) {
+            Toast.makeText(this, "正在检查更新…", Toast.LENGTH_SHORT).show()
+        }
+        updateScope.launch {
+            when (val state = updateChecker.checkLatestRelease(BuildConfig.VERSION_CODE)) {
+                is UpdateDecider.UpdateState.UpdateAvailable -> {
+                    val info = state.info
+                    val dismissed = !manual && info.versionCode == preferenceManager.getDismissedVersionCode()
+                    if (dismissed) return@launch
+                    if (!manual && preferenceManager.isAutoDownloadUpdate() && AppUpdater.isOnWifi(this@MainActivity)) {
+                        startUpdateDownload(info)
+                    } else {
+                        showUpdateDialog(info)
+                    }
+                }
+                UpdateDecider.UpdateState.UpToDate -> {
+                    if (manual) Toast.makeText(this@MainActivity, "已是最新版本", Toast.LENGTH_SHORT).show()
+                }
+                is UpdateDecider.UpdateState.Error -> {
+                    AppLogger.w("MainActivity", "update check failed: ${state.reason}")
+                    if (manual) Toast.makeText(this@MainActivity, "检查更新失败，请稍后再试", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    internal fun showUpdateDialog(info: UpdateDecider.ReleaseInfo) {
+        AlertDialog.Builder(this)
+            .setTitle("发现新版本 v${info.versionName}")
+            .setMessage(info.changelog.trim().ifBlank { "暂无更新说明" }.take(500))
+            .setPositiveButton("立即更新") { _, _ -> startUpdateDownload(info) }
+            .setNeutralButton("忽略此版本") { _, _ ->
+                preferenceManager.setDismissedVersionCode(info.versionCode)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    internal fun startUpdateDownload(info: UpdateDecider.ReleaseInfo) {
+        if (!AppUpdater.canRequestInstalls(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("需要安装权限")
+                .setMessage("系统要求授予「安装未知应用」权限后才能更新。开启后请重新点击检查更新。")
+                .setPositiveButton("去开启") { _, _ ->
+                    try {
+                        startActivity(AppUpdater.unknownSourcesIntent(this))
+                    } catch (e: Exception) {
+                        AppLogger.e("MainActivity", "open unknown sources settings failed", e)
+                        openAppDetails()
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .show()
+            return
+        }
+        val dialogView = layoutInflater.inflate(R.layout.dialog_update_progress, null)
+        val bar = dialogView.findViewById<android.widget.ProgressBar>(R.id.updateProgressBar)
+        val label = dialogView.findViewById<android.widget.TextView>(R.id.tvUpdateProgressLabel)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("正在下载更新 v${info.versionName}")
+            .setView(dialogView)
+            .setCancelable(false)
+            .show()
+        val dest = AppUpdater.apkFile(this, info.versionName)
+        updateScope.launch {
+            val ok = updateChecker.downloadApk(info.apkUrl, dest) { percent ->
+                bar.post {
+                    bar.progress = percent
+                    label.text = "$percent%"
+                }
+            }
+            dialog.dismiss()
+            if (ok) {
+                try {
+                    startActivity(AppUpdater.buildInstallIntent(this@MainActivity, dest))
+                } catch (e: Exception) {
+                    AppLogger.e("MainActivity", "launch apk installer failed", e)
+                    Toast.makeText(this@MainActivity, "无法打开安装器", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this@MainActivity, "更新包下载失败，请稍后再试", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    internal fun showUpdateSettingsDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_update_settings, null)
+        val switchAutoCheck = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoCheck)
+        val switchAutoDownload = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoDownload)
+        switchAutoCheck.isChecked = preferenceManager.isAutoCheckUpdate()
+        switchAutoDownload.isChecked = preferenceManager.isAutoDownloadUpdate()
+        switchAutoCheck.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.setAutoCheckUpdate(isChecked)
+        }
+        switchAutoDownload.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.setAutoDownloadUpdate(isChecked)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("更新设置")
+            .setView(view)
+            .setPositiveButton("完成", null)
+            .show()
     }
 
     // 三个 QQ 交流群项：头像+群名；装 QQ 拉起群资料卡，未装弹群号+复制
@@ -586,6 +718,9 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val ROOM_ID = 11258892L
         private const val GITHUB_URL = "https://github.com/XenoAmess/vivhite-tracker"
+
+        // 自动检查更新的最小间隔：24 小时
+        internal const val UPDATE_CHECK_INTERVAL_MS = 24 * 3600 * 1000L
 
         // 上次展示的常规池下标，防连续重复（静态保存，跨 Activity 实例有效）
         private var lastQuoteIndex: Int? = null

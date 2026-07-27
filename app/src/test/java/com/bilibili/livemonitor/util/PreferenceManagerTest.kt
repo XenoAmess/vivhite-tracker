@@ -72,4 +72,24 @@ class PreferenceManagerTest {
     fun `从未检测 状态不可恢复`() {
         assertNull(prefs.getRecentLastStatus())
     }
+
+    @Test
+    fun `更新设置默认值`() {
+        assertEquals(true, prefs.isAutoCheckUpdate())
+        assertEquals(false, prefs.isAutoDownloadUpdate())
+        assertEquals(0L, prefs.getLastUpdateCheckTime())
+        assertEquals(-1, prefs.getDismissedVersionCode())
+    }
+
+    @Test
+    fun `更新设置存取 round trip`() {
+        prefs.setAutoCheckUpdate(false)
+        assertEquals(false, prefs.isAutoCheckUpdate())
+        prefs.setAutoDownloadUpdate(true)
+        assertEquals(true, prefs.isAutoDownloadUpdate())
+        prefs.setLastUpdateCheckTime(123456L)
+        assertEquals(123456L, prefs.getLastUpdateCheckTime())
+        prefs.setDismissedVersionCode(92)
+        assertEquals(92, prefs.getDismissedVersionCode())
+    }
 }
