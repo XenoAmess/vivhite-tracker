@@ -1,12 +1,13 @@
 package com.bilibili.livemonitor.util
 
 import android.content.Intent
-import android.net.Uri
-import java.net.URLEncoder
 
 /**
- * QQ 分享卡片（mqqapi scheme 免 SDK 方案）。
- * 分享链接按 B 站原生分享规则带 bbid 归因到指定用户。
+ * 直播间分享（系统分享路径）。
+ * mqqapi scheme 已被证实在新版 QQ 上被静默忽略（用户真机日志：
+ * intent launched 但 QQ 无任何响应），不可靠，故主路径改用
+ * ACTION_SEND——QQ 在系统分享面板中会基于链接自动生成卡片。
+ * 链接按 B 站原生分享规则带 bbid 归因到指定用户。
  */
 object QqShare {
 
@@ -17,7 +18,6 @@ object QqShare {
 
     private const val SHARE_TITLE = "白绮开播啦！"
     private const val SHARE_DESC = "B站直播间 11258892，快来看！"
-    private const val APP_NAME = "牢白播了吗"
 
     // 实时封面获取失败时的兜底静态图（仓库内白绮头像）
     const val FALLBACK_COVER_URL =
@@ -30,26 +30,12 @@ object QqShare {
             "&bbid=$SHARER_UID&ts=$ts"
     }
 
-    // mqqapi 富卡片分享 intent：标题+描述+封面+来源(app_name)
-    fun buildQqShareIntent(coverUrl: String, qqPackage: String?): Intent {
-        val url = "mqqapi://share/to_friend?src_type=app&version=1&file_type=news" +
-            "&image_url=${enc(coverUrl)}" +
-            "&title=${enc(SHARE_TITLE)}" +
-            "&description=${enc(SHARE_DESC)}" +
-            "&url=${enc(buildShareUrl())}" +
-            "&app_name=${enc(APP_NAME)}"
-        return Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-            if (!qqPackage.isNullOrEmpty()) setPackage(qqPackage)
-        }
-    }
-
-    // 未装 QQ 时的系统分享兜底（纯文本）
+    // 系统分享 intent：标题 + 描述 + 归因链接
     fun buildSystemShareIntent(): Intent {
         return Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, "$SHARE_TITLE $SHARE_DESC ${buildShareUrl()}")
+            putExtra(Intent.EXTRA_SUBJECT, SHARE_TITLE)
+            putExtra(Intent.EXTRA_TEXT, "$SHARE_DESC ${buildShareUrl()}")
         }
     }
-
-    private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
 }

@@ -448,7 +448,7 @@ class MainActivityTest {
     }
 
     @Test
-    fun `装QQ时点分享 发出mqqapi分享卡片且含bbid归因`() {
+    fun `装QQ时点分享 发出系统分享面板且文本含bbid归因`() {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
@@ -463,29 +463,33 @@ class MainActivityTest {
             if (started == null) Thread.sleep(100)
         }
         assertTrue("应发出分享 intent", started != null)
-        val url = started?.dataString ?: ""
-        assertTrue("应为 mqqapi 分享: $url", url.startsWith("mqqapi://share/to_friend"))
-        assertTrue("应含 file_type=news: $url", url.contains("file_type=news"))
-        val decoded = java.net.URLDecoder.decode(url, "UTF-8")
-        assertTrue("应含来源 app_name: $decoded", decoded.contains("app_name=牢白播了吗"))
-        assertTrue("应含 bbid 归因: $decoded", decoded.contains("bbid=8945059"))
-        assertTrue("应含直播间链接: $decoded", decoded.contains("live.bilibili.com/11258892"))
-        assertEquals("com.tencent.mobileqq", started?.`package`)
+        // 主路径为 ACTION_SEND（可能被 createChooser 包装为 ACTION_CHOOSER）
+        val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT)
+        val sendAction = inner?.action ?: started?.action
+        assertEquals(Intent.ACTION_SEND, sendAction)
+        val text = (inner ?: started)?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        assertTrue("应含 bbid 归因: $text", text.contains("bbid=8945059"))
+        assertTrue("应含直播间链接: $text", text.contains("live.bilibili.com/11258892"))
     }
 
     @Test
-    fun `未装QQ时点分享 兜底系统分享`() {
+    fun `未装QQ时点分享 同样走系统分享面板`() {
         makeQqInstalled(false)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
         activity.findViewById<android.widget.ImageButton>(R.id.btnShare).performClick()
 
-        val started = shadowOf(context).nextStartedActivity
-        assertEquals(Intent.ACTION_SEND, started?.action)
-        assertEquals("text/plain", started?.type)
-        val text = started?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-        assertTrue(text.contains("白绮开播啦"))
-        assertTrue(text.contains("bbid=8945059"))
+        val deadline = System.currentTimeMillis() + 10_000
+        var started: android.content.Intent? = null
+        while (started == null && System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            started = shadowOf(context).nextStartedActivity
+            if (started == null) Thread.sleep(100)
+        }
+        assertTrue(started != null)
+        val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT)
+        val sendAction = inner?.action ?: started?.action
+        assertEquals(Intent.ACTION_SEND, sendAction)
     }
 
     @Test

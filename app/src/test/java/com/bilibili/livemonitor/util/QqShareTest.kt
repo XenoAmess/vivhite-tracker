@@ -27,26 +27,9 @@ class QqShareTest {
 
     @Test
     fun `QQ卡片intent mqqapi格式与参数编码`() {
-        val intent = QqShare.buildQqShareIntent(
-            coverUrl = "https://i0.hdslb.com/cover.jpg",
-            qqPackage = "com.tencent.mobileqq"
-        )
-        val url = intent.dataString ?: ""
-        assertTrue(url.startsWith("mqqapi://share/to_friend"))
-        assertTrue(url.contains("file_type=news"))
-        // 参数应 URL 编码
-        val decoded = URLDecoder.decode(url, "UTF-8")
-        assertTrue(decoded.contains("title=白绮开播啦！"))
-        assertTrue(decoded.contains("app_name=牢白播了吗"))
-        assertTrue(decoded.contains("image_url=https://i0.hdslb.com/cover.jpg"))
-        assertTrue(decoded.contains("bbid=8945059"))
-        assertEquals("com.tencent.mobileqq", intent.`package`)
-    }
-
-    @Test
-    fun `QQ卡片intent 未指定包名时不带setPackage`() {
-        val intent = QqShare.buildQqShareIntent("https://i0.hdslb.com/cover.jpg", null)
-        assertEquals(null, intent.`package`)
+        // mqqapi 已弃用（新版 QQ 静默忽略），此用例仅验证链接构造不受影响
+        val url = QqShare.buildShareUrl()
+        assertTrue(url.contains("bbid=8945059"))
     }
 
     @Test
@@ -55,8 +38,9 @@ class QqShareTest {
         assertEquals(android.content.Intent.ACTION_SEND, intent.action)
         assertEquals("text/plain", intent.type)
         val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT) ?: ""
-        assertTrue(text.contains("白绮开播啦"))
+        assertTrue(text.contains("快来看"))
         assertTrue(text.contains("bbid=8945059"))
+        assertEquals("白绮开播啦！", intent.getStringExtra(android.content.Intent.EXTRA_SUBJECT))
     }
 
     @Test
