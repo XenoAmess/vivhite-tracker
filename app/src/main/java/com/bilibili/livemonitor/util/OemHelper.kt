@@ -222,17 +222,38 @@ object OemHelper {
         "com.bilibili.app.in"
     )
 
-    // 返回已安装的 bilibili 客户端包名，未安装返回 null
-    fun installedBilibiliPackage(packageManager: android.content.pm.PackageManager): String? {
-        for (pkg in BILIBILI_PACKAGES) {
+    data class BilibiliVariant(val packageName: String, val label: String)
+
+    // 返回全部已安装的 bilibili 客户端（多装全列），label 读真实应用名
+    fun installedBilibiliVariants(packageManager: android.content.pm.PackageManager): List<BilibiliVariant> {
+        return BILIBILI_PACKAGES.mapNotNull { pkg ->
             try {
-                packageManager.getPackageInfo(pkg, 0)
-                return pkg
+                val appInfo = packageManager.getApplicationInfo(pkg, 0)
+                BilibiliVariant(pkg, packageManager.getApplicationLabel(appInfo).toString())
             } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
-                // 未安装，继续
+                null
             }
         }
-        return null
+    }
+
+    // 返回已安装的 bilibili 客户端包名，未安装返回 null
+    fun installedBilibiliPackage(packageManager: android.content.pm.PackageManager): String? {
+        return installedBilibiliVariants(packageManager).firstOrNull()?.packageName
+    }
+
+    // 枚举全部可打开 https 的浏览器类应用：
+    // 按包名去重、排除 bilibili 自家（已在客户端段列出）和本应用。
+    // queries 里已声明 https scheme，可见性现成
+    fun installedBrowsers(
+        packageManager: android.content.pm.PackageManager,
+        httpsIntent: android.content.Intent,
+        selfPackageName: String
+    ): List<BilibiliVariant> {
+        return packageManager.queryIntentActivities(httpsIntent, 0)
+            .distinctBy { it.activityInfo.packageName }
+            .filter { it.activityInfo.packageName !in BILIBILI_PACKAGES }
+            .filter { it.activityInfo.packageName != selfPackageName }
+            .map { BilibiliVariant(it.activityInfo.packageName, it.loadLabel(packageManager).toString()) }
     }
 
     fun openOemSettings(context: Context) {

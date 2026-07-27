@@ -167,7 +167,7 @@ class MainActivityTest {
 
     @Test
     fun `B站App可用时 打开直播间按钮为绿色`() {
-        makeBilibiliInstalled("tv.danmaku.bili")
+        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
         val expected = androidx.core.content.ContextCompat.getColor(activity, R.color.green_500)
@@ -179,7 +179,7 @@ class MainActivityTest {
 
     @Test
     fun `B站App不可用时 按钮为灰色且点击跳转浏览器`() {
-        makeBilibiliInstalled(null)
+        makeBilibiliInstalled()
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
         val expected = androidx.core.content.ContextCompat.getColor(activity, android.R.color.darker_gray)
@@ -199,8 +199,9 @@ class MainActivityTest {
     }
 
     @Test
-    fun `B站App可用时 点击直接打开B站App`() {
-        makeBilibiliInstalled("tv.danmaku.bili")
+    fun `B站App可用时 弹选择器点客户端项直接打开B站App`() {
+        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
+        makeBrowsers()
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         LiveCheckService.isRunning = false
 
@@ -208,16 +209,99 @@ class MainActivityTest {
             R.id.btnOpenLive
         ).performClick()
 
+        // 单客户端 + 通用浏览器 = 两个选项，弹选择器，点第 0 项（客户端）
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        clickDialogItem(dialog, 0)
+
         val started = shadowOf(context).nextStartedActivity
         assertEquals(Intent.ACTION_VIEW, started?.action)
         assertEquals("bilibili://live/11258892", started?.dataString)
         assertEquals("应强制投递给B站客户端", "tv.danmaku.bili", started?.`package`)
     }
 
+    // ---------- 多客户端/多浏览器选择器 ----------
+
     @Test
-    fun `监控中点打开直播间 置观播静音但不停止监控`() {
-        // 用户需求：点打开直播间后持续监控，本场直播结束前不再响铃
-        makeBilibiliInstalled("tv.danmaku.bili")
+    fun `装两个客户端 弹选择器且浏览器在最后`() {
+        makeBilibiliInstalled(
+            "tv.danmaku.bili" to "哔哩哔哩",
+            "com.bilibili.app.blue" to "哔哩哔哩概念"
+        )
+        // 无已探测浏览器时补通用浏览器项
+        makeBrowsers()
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnOpenLive
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        assertTrue(dialog.isShowing)
+        val labels = (0 until dialog.listView.adapter.count).map {
+            dialog.listView.adapter.getItem(it).toString()
+        }
+        assertEquals(listOf("哔哩哔哩", "哔哩哔哩概念", "浏览器"), labels)
+
+        // 点概念版：bilibili:// + setPackage(blue)
+        clickDialogItem(dialog, 1)
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals("bilibili://live/11258892", started?.dataString)
+        assertEquals("com.bilibili.app.blue", started?.`package`)
+    }
+
+    @Test
+    fun `一个客户端多个浏览器 全部列出且浏览器可点选`() {
+        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
+        makeBrowsers(
+            "com.android.chrome" to "Chrome",
+            "com.quark.browser" to "夸克"
+        )
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnOpenLive
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        val labels = (0 until dialog.listView.adapter.count).map {
+            dialog.listView.adapter.getItem(it).toString()
+        }
+        assertEquals("bilibili 客户端必须在浏览器之前", listOf("哔哩哔哩", "Chrome", "夸克"), labels)
+
+        // 点夸克：https + setPackage(夸克)
+        clickDialogItem(dialog, 2)
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals("https://live.bilibili.com/11258892", started?.dataString)
+        assertEquals("com.quark.browser", started?.`package`)
+    }
+
+    @Test
+    fun `bilibili也注册了https时 不出现在浏览器段`() {
+        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
+        makeBrowsers(
+            "tv.danmaku.bili" to "哔哩哔哩", // bilibili 自身也能开 https
+            "com.android.chrome" to "Chrome"
+        )
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnOpenLive
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        val labels = (0 until dialog.listView.adapter.count).map {
+            dialog.listView.adapter.getItem(it).toString()
+        }
+        assertEquals("bilibili 不得在浏览器段重复出现", listOf("哔哩哔哩", "Chrome"), labels)
+    }
+
+    @Test
+    fun `监控中点打开直播间 置观播静音但不停止监控`() {        // 用户需求：点打开直播间后持续监控，本场直播结束前不再响铃
+        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
         prefs.setServiceRunning(true)
         LiveCheckService.isRunning = true
         LiveCheckService.lastLiveStatus = true
@@ -228,6 +312,11 @@ class MainActivityTest {
         activity.findViewById<com.google.android.material.button.MaterialButton>(
             R.id.btnOpenLive
         ).performClick()
+
+        // 弹选择器后点客户端项才触发静音+跳转
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        clickDialogItem(dialog, 0)
 
         val muteIntent = shadowOf(context).peekNextStartedService()
         assertEquals("应发观播静音命令而非停止命令", LiveCheckService.ACTION_WATCH_LIVE, muteIntent?.action)
@@ -411,21 +500,50 @@ class MainActivityTest {
         )
     }
 
-    private fun makeBilibiliInstalled(packageName: String?) {
-        // 包名制检测：安装=注入 PackageInfo，未安装=移除
-        // （ShadowPackageManager 部分状态为 static，显式清理防泄漏）
+    private fun makeBilibiliInstalled(vararg variants: Pair<String, String>) {
+        // 多变体注入：label 供选择器展示（getApplicationLabel 读取）
+        // ShadowPackageManager 部分状态为 static，先清空变体表防泄漏
         val pm = shadowOf(context.packageManager)
-        val variants = listOf(
+        val all = listOf(
             "tv.danmaku.bili", "com.bilibili.app.blue",
             "tv.danmaku.bilibilihd", "com.bilibili.app.in"
         )
-        for (pkg in variants) {
-            pm.removePackage(pkg)
-        }
-        if (packageName != null) {
+        for (pkg in all) pm.removePackage(pkg)
+        for ((pkg, label) in variants) {
             pm.installPackage(android.content.pm.PackageInfo().apply {
-                this.packageName = packageName
+                packageName = pkg
+                applicationInfo = android.content.pm.ApplicationInfo().apply {
+                    this.packageName = pkg
+                    nonLocalizedLabel = label
+                }
             })
         }
+    }
+
+    private fun makeBrowsers(vararg browsers: Pair<String, String>) {
+        // 注入 https VIEW 的 resolveInfo，模拟多个已装浏览器。
+        // setResolveInfosForIntent 整体替换，保证列表确定（避开 static Map 泄漏）
+        val intent = Intent(
+            Intent.ACTION_VIEW,
+            android.net.Uri.parse("https://live.bilibili.com/11258892")
+        )
+        val infos = browsers.map { (pkg, label) ->
+            android.content.pm.ResolveInfo().apply {
+                activityInfo = android.content.pm.ActivityInfo().apply {
+                    packageName = pkg
+                    name = "$pkg.MainActivity"
+                    nonLocalizedLabel = label
+                }
+            }
+        }
+        shadowOf(context.packageManager).setResolveInfosForIntent(intent, infos)
+    }
+
+    private fun clickDialogItem(dialog: androidx.appcompat.app.AlertDialog, position: Int) {
+        val lv = dialog.listView
+        val adapter = lv.adapter
+        val view = adapter.getView(position, null, lv)
+        lv.performItemClick(view, position, adapter.getItemId(position))
+        shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 }

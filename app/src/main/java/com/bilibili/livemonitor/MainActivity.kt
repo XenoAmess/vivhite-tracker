@@ -130,25 +130,24 @@ class MainActivity : AppCompatActivity() {
         binding.tvVersion.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})"
     }
 
-    // B站 App 已安装（按包名检测）时醒目绿，否则灰色（两种状态都可点击，灰色走浏览器）
+    // B站 App 已安装（按包名检测）时醒目绿，否则灰色（两种状态都可点击）
     internal fun isBilibiliAppAvailable(): Boolean {
-        return installedBilibiliPackage() != null
+        return OemHelper.installedBilibiliVariants(packageManager).isNotEmpty()
     }
 
-    internal fun installedBilibiliPackage(): String? {
-        return OemHelper.installedBilibiliPackage(packageManager)
-    }
-
-    internal fun liveRoomAppIntent(): Intent {
+    internal fun liveRoomAppIntent(pkg: String?): Intent {
         return Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://live/$ROOM_ID")).apply {
-            // setPackage 强制投递给已安装的客户端，绕开 resolveActivity 的
+            // setPackage 强制投递给指定客户端，绕开 resolveActivity 的
             // 包可见性不确定性（荣耀真机实测已装 bilibili 但解析为 null）
-            installedBilibiliPackage()?.let { setPackage(it) }
+            if (!pkg.isNullOrEmpty()) setPackage(pkg)
         }
     }
 
-    internal fun liveRoomWebIntent(): Intent {
-        return Intent(Intent.ACTION_VIEW, Uri.parse("https://live.bilibili.com/$ROOM_ID"))
+    internal fun liveRoomWebIntent(pkg: String? = null): Intent {
+        return Intent(Intent.ACTION_VIEW, Uri.parse("https://live.bilibili.com/$ROOM_ID")).apply {
+            // 用户显式选择某个浏览器时强制用它打开；空包名=系统自选
+            if (!pkg.isNullOrEmpty()) setPackage(pkg)
+        }
     }
 
     private fun updateOpenLiveButton() {
@@ -160,6 +159,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openLiveRoom() {
+        // 汇总可选项：全部已装 bilibili 客户端（前）+ 全部浏览器（后）。
+        // 装了客户端但没探测到浏览器时，补一个通用"浏览器"项保证网页路径可达
+        val variants = OemHelper.installedBilibiliVariants(packageManager)
+        val detectedBrowsers = OemHelper.installedBrowsers(packageManager, liveRoomWebIntent(), packageName)
+        val browsers = detectedBrowsers.ifEmpty {
+            listOf(OemHelper.BilibiliVariant("", "浏览器"))
+        }
+        AppLogger.d(
+            "MainActivity",
+            "openLiveRoom bilibili=${variants.map { it.packageName }} browsers=${browsers.map { it.packageName }}"
+        )
+        val targets = variants.map { it to false } + browsers.map { it to true }
+
+        when (targets.size) {
+            0 -> jumpToLiveRoom(null, true) // 理论不可能，兜底普通 https
+            1 -> jumpToLiveRoom(targets[0].first, targets[0].second) // 仅一个选项，直跳不弹框
+            else -> showLiveRoomChooser(targets)
+        }
+    }
+
+    private fun showLiveRoomChooser(targets: List<Pair<OemHelper.BilibiliVariant, Boolean>>) {
+        val labels = targets.map { it.first.label }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("打开直播间")
+            .setItems(labels) { dialog, which ->
+                val (target, isWeb) = targets[which]
+                jumpToLiveRoom(target, isWeb)
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    // isWeb=false 表示 bilibili 客户端（bilibili:// scheme + setPackage），
+    // isWeb=true 表示浏览器（https + setPackage，包名为空时系统自选）
+    private fun jumpToLiveRoom(target: OemHelper.BilibiliVariant?, isWeb: Boolean) {
         // 观播静音：监控不停，本场直播结束前不提醒（正在响的铃立即停）。
         // 仅在监控中且当前在播时才置静音；其余情况只跳转
         if (LiveCheckService.isRunning && LiveCheckService.lastLiveStatus) {
@@ -170,15 +204,16 @@ class MainActivity : AppCompatActivity() {
             startService(muteIntent)
             Toast.makeText(this, "已静音观播，下播后恢复提醒", Toast.LENGTH_SHORT).show()
         }
-        // 诊断日志：记录 B站客户端探测结果（运行日志页可查，方便真机排障）
-        val installedPkg = installedBilibiliPackage()
-        AppLogger.d("MainActivity", "openLiveRoom bilibili detected=${installedPkg ?: "none"}")
-        val intent = if (isBilibiliAppAvailable()) liveRoomAppIntent() else liveRoomWebIntent()
+        val intent = if (isWeb) {
+            liveRoomWebIntent(target?.packageName)
+        } else {
+            liveRoomAppIntent(target?.packageName)
+        }
         try {
             startActivity(intent)
         } catch (e: Exception) {
-            // 极端情况：scheme 宣称可解析但启动失败，兜底浏览器
-            AppLogger.w("MainActivity", "start bilibili failed, fallback to browser", e)
+            // 极端情况：scheme 宣称可解析但启动失败，兜底不带包的 https
+            AppLogger.w("MainActivity", "start failed, fallback to plain https", e)
             startActivity(liveRoomWebIntent())
         }
         updateUI()
