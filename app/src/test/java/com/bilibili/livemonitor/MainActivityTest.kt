@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.service.LiveCheckService
 import com.bilibili.livemonitor.util.PreferenceManager
+import com.bilibili.livemonitor.util.QqShare
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -448,34 +449,45 @@ class MainActivityTest {
     }
 
     @Test
-    fun `装QQ时点分享 发出系统分享面板且文本含bbid归因`() {
+    fun `装QQ时点分享 走SDK真卡片路径且参数正确`() {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        var capturedParams: android.os.Bundle? = null
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun shareToQQ(activity: android.app.Activity, params: android.os.Bundle) {
+                capturedParams = params
+            }
+        }
 
         activity.findViewById<android.widget.ImageButton>(R.id.btnShare).performClick()
 
         // 分享流程是异步的（取封面 3s 超时），Robolectric 无真网络会走兜底封面
         val deadline = System.currentTimeMillis() + 10_000
-        var started: android.content.Intent? = null
-        while (started == null && System.currentTimeMillis() < deadline) {
+        while (capturedParams == null && System.currentTimeMillis() < deadline) {
             shadowOf(android.os.Looper.getMainLooper()).idle()
-            started = shadowOf(context).nextStartedActivity
-            if (started == null) Thread.sleep(100)
+            Thread.sleep(100)
         }
-        assertTrue("应发出分享 intent", started != null)
-        // 主路径为 ACTION_SEND（可能被 createChooser 包装为 ACTION_CHOOSER）
-        val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT)
-        val sendAction = inner?.action ?: started?.action
-        assertEquals(Intent.ACTION_SEND, sendAction)
-        val text = (inner ?: started)?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-        assertTrue("应含 bbid 归因: $text", text.contains("bbid=8945059"))
-        assertTrue("应含直播间链接: $text", text.contains("live.bilibili.com/11258892"))
+        assertTrue("应调用 SDK 分享", capturedParams != null)
+        val target = capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TARGET_URL)!!
+        assertTrue("应含 bbid 归因: $target", target.contains("bbid=8945059"))
+        assertTrue("应含直播间链接: $target", target.contains("live.bilibili.com/11258892"))
+        assertEquals("白绮开播啦！", capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
+        assertEquals("牢白播了吗", capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_APP_NAME))
+        val cover = capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_IMAGE_URL)!!
+        assertTrue("封面应为有效 https 地址: $cover", cover.startsWith("https://"))
+        // SDK 路径成功时不应再发系统分享
+        assertNull(shadowOf(context).peekNextStartedActivity())
     }
 
     @Test
-    fun `未装QQ时点分享 同样走系统分享面板`() {
-        makeQqInstalled(false)
+    fun `SDK分享异常时 兜底系统分享面板`() {
+        makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun shareToQQ(activity: android.app.Activity, params: android.os.Bundle) {
+                throw RuntimeException("simulated sdk failure")
+            }
+        }
 
         activity.findViewById<android.widget.ImageButton>(R.id.btnShare).performClick()
 
@@ -486,10 +498,33 @@ class MainActivityTest {
             started = shadowOf(context).nextStartedActivity
             if (started == null) Thread.sleep(100)
         }
-        assertTrue(started != null)
+        assertTrue("异常时应兜底系统分享", started != null)
         val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT)
         val sendAction = inner?.action ?: started?.action
         assertEquals(Intent.ACTION_SEND, sendAction)
+    }
+
+    @Test
+    fun `未装QQ时点分享 走SDK路径由SDK自身处理未装场景`() {
+        // 设计上分享不再做 installedQqPackage 判断：SDK 未装 QQ 时由其自身
+        // AssistActivity 引导安装；SDK 异常则兜底系统分享。这里验证不崩即可。
+        makeQqInstalled(false)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        var invoked = false
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun shareToQQ(activity: android.app.Activity, params: android.os.Bundle) {
+                invoked = true
+            }
+        }
+
+        activity.findViewById<android.widget.ImageButton>(R.id.btnShare).performClick()
+
+        val deadline = System.currentTimeMillis() + 10_000
+        while (!invoked && System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            Thread.sleep(100)
+        }
+        assertTrue(invoked)
     }
 
     @Test

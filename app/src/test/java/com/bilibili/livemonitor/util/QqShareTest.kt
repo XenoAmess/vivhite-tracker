@@ -33,6 +33,18 @@ class QqShareTest {
     }
 
     @Test
+    fun `SDK分享参数 卡片字段完整且归因正确`() {
+        val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg")
+        assertEquals("白绮开播啦！", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
+        assertTrue(params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY)!!.contains("11258892"))
+        val target = params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TARGET_URL)!!
+        assertTrue(target.contains("live.bilibili.com/11258892"))
+        assertTrue(target.contains("bbid=8945059"))
+        assertEquals("https://i0.hdslb.com/cover.jpg", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_IMAGE_URL))
+        assertEquals("牢白播了吗", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_APP_NAME))
+    }
+
+    @Test
     fun `系统分享兜底 intent 为ACTION_SEND纯文本`() {
         val intent = QqShare.buildSystemShareIntent()
         assertEquals(android.content.Intent.ACTION_SEND, intent.action)

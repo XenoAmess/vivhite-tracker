@@ -175,19 +175,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     // 未装 QQ（或拉起失败）时展示群号，一键复制后用户可自行搜索加入
-    // 分享直播间：系统分享面板（QQ 在其中会基于链接自动生成卡片）。
+    // 分享直播间：QQ 互联官方 SDK 真卡片（标题+封面+来源），失败兜底系统分享。
     // 链接按 B 站原生规则带 bbid 归因到指定用户。
-    // 注：mqqapi scheme 已弃用——新版 QQ 会静默忽略它（真机日志证实
-    // intent launched 但 QQ 无响应），系统分享是全版本可靠路径。
+    internal var qqSdkSharer: com.bilibili.livemonitor.util.QqSdkSharer =
+        com.bilibili.livemonitor.util.DefaultQqSdkSharer()
+
     internal fun shareLiveRoom() {
         Toast.makeText(this, "正在生成分享卡片…", Toast.LENGTH_SHORT).show()
         shareScope.launch {
             val cover = withTimeoutOrNull(3000) {
                 BilibiliApi().fetchRoomCover(QqShare.ROOM_ID)
-            }
+            } ?: QqShare.FALLBACK_COVER_URL
             AppLogger.d("MainActivity", "share cover=$cover")
-            startActivity(Intent.createChooser(QqShare.buildSystemShareIntent(), "分享直播间"))
-            AppLogger.d("MainActivity", "system share sheet launched")
+            try {
+                qqSdkSharer.shareToQQ(this@MainActivity, QqShare.buildSdkShareParams(cover))
+                AppLogger.d("MainActivity", "qq sdk shareToQQ invoked")
+            } catch (e: Exception) {
+                AppLogger.e("MainActivity", "qq sdk share failed, fallback to system share", e)
+                startActivity(Intent.createChooser(QqShare.buildSystemShareIntent(), "分享直播间"))
+            }
         }
     }
 
