@@ -157,6 +157,17 @@
             app:layout_constraintStart_toEndOf="@id/btnViewLog"
             app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
 
+        <LinearLayout
+            android:id="@+id/qqGroupRow"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/btnViewLog" />
+
         <TextView
             android:id="@+id/tvDescription"
             android:layout_width="0dp"
@@ -168,7 +179,7 @@
             android:textSize="13sp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnViewLog" />
+            app:layout_constraintTop_toBottomOf="@id/qqGroupRow" />
 
         <TextView
             android:id="@+id/tvQuote"

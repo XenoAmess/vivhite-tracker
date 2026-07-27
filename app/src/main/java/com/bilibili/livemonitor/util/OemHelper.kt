@@ -241,6 +241,27 @@ object OemHelper {
         return installedBilibiliVariants(packageManager).firstOrNull()?.packageName
     }
 
+    // QQ 客户端变体包名表：正式版 / TIM / 国际版 / 极速版
+    private val QQ_PACKAGES = listOf(
+        "com.tencent.mobileqq",
+        "com.tencent.tim",
+        "com.tencent.mobileqqi",
+        "com.tencent.qqlite"
+    )
+
+    // 返回已安装的 QQ 客户端包名，未安装返回 null（用于群跳转 setPackage 强制投递）
+    fun installedQqPackage(packageManager: android.content.pm.PackageManager): String? {
+        for (pkg in QQ_PACKAGES) {
+            try {
+                packageManager.getPackageInfo(pkg, 0)
+                return pkg
+            } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+                // 未安装，继续
+            }
+        }
+        return null
+    }
+
     // 枚举全部可打开 https 的浏览器类应用：
     // 按包名去重、排除 bilibili 自家（已在客户端段列出）和本应用。
     // queries 里已声明 https scheme，可见性现成

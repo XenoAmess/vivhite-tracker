@@ -2,6 +2,7 @@ package com.bilibili.livemonitor
 
 import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.service.LiveCheckService
@@ -424,6 +425,97 @@ class MainActivityTest {
         }
         dialog.window?.decorView?.let { collect(it) }
         return texts
+    }
+
+    // ---------- QQ 群 ----------
+
+    private fun makeQqInstalled(installed: Boolean) {
+        val pm = shadowOf(context.packageManager)
+        val variants = listOf(
+            "com.tencent.mobileqq", "com.tencent.tim",
+            "com.tencent.mobileqqi", "com.tencent.qqlite"
+        )
+        for (pkg in variants) pm.removePackage(pkg)
+        if (installed) {
+            pm.installPackage(android.content.pm.PackageInfo().apply {
+                packageName = "com.tencent.mobileqq"
+                applicationInfo = android.content.pm.ApplicationInfo().apply {
+                    this.packageName = "com.tencent.mobileqq"
+                    nonLocalizedLabel = "QQ"
+                }
+            })
+        }
+    }
+
+    @Test
+    fun `三个QQ群项渲染且头像互不相同`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        val row = activity.findViewById<android.widget.LinearLayout>(R.id.qqGroupRow)
+        assertEquals(3, row.childCount)
+        val names = (0 until row.childCount).map {
+            row.getChildAt(it).findViewById<android.widget.TextView>(R.id.tvQqName).text.toString()
+        }
+        assertEquals(listOf("数学研讨", "游戏联机", "慕白者琉"), names)
+        val avatars = com.bilibili.livemonitor.util.QqGroups.groups.map { it.avatarRes }.toSet()
+        assertEquals(3, avatars.size)
+    }
+
+    @Test
+    fun `装QQ时点群 拉起mqqapi群卡片且强制投递`() {
+        makeQqInstalled(true)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<android.widget.LinearLayout>(R.id.qqGroupRow)
+            .getChildAt(0).performClick()
+
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals(Intent.ACTION_VIEW, started?.action)
+        val url = started?.dataString ?: ""
+        assertTrue("应为 mqqapi scheme: $url", url.startsWith("mqqapi://card/show_pslcard"))
+        assertTrue("应含数学研讨群号: $url", url.contains("uin=774800912"))
+        assertTrue("应含 card_type=group: $url", url.contains("card_type=group"))
+        assertEquals("com.tencent.mobileqq", started?.`package`)
+    }
+
+    @Test
+    fun `装QQ时点第三个群 群号为慕白者琉`() {
+        makeQqInstalled(true)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<android.widget.LinearLayout>(R.id.qqGroupRow)
+            .getChildAt(2).performClick()
+
+        val started = shadowOf(context).nextStartedActivity
+        assertTrue(started?.dataString?.contains("uin=292901300") == true)
+    }
+
+    @Test
+    fun `未装QQ时点群 弹群号且可复制`() {
+        makeQqInstalled(false)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<android.widget.LinearLayout>(R.id.qqGroupRow)
+            .getChildAt(1).performClick()
+
+        assertNull(shadowOf(context).peekNextStartedActivity())
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        assertTrue(dialog.isShowing)
+        val texts = mutableListOf<String>()
+        fun collect(view: android.view.View) {
+            if (view is android.widget.TextView) texts.add(view.text.toString())
+            if (view is android.view.ViewGroup) {
+                for (i in 0 until view.childCount) collect(view.getChildAt(i))
+            }
+        }
+        dialog.window?.decorView?.let { collect(it) }
+        assertTrue("应含游戏联机群号: $texts", texts.any { it.contains("775455331") })
+
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        assertEquals("775455331", cm.primaryClip?.getItemAt(0)?.text?.toString())
     }
 
     @Test

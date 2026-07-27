@@ -19,6 +19,7 @@ import com.bilibili.livemonitor.databinding.ActivityMainBinding
 import com.bilibili.livemonitor.service.LiveCheckService
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.OemHelper
+import com.bilibili.livemonitor.util.QqGroups
 import com.bilibili.livemonitor.util.PreferenceManager
 import com.google.android.material.snackbar.Snackbar
 import java.text.SimpleDateFormat
@@ -126,8 +127,56 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        setupQqGroups()
         updateOpenLiveButton()
         binding.tvVersion.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})"
+    }
+
+    // 三个 QQ 交流群项：头像+群名；装 QQ 拉起群资料卡，未装弹群号+复制
+    private fun setupQqGroups() {
+        val row = binding.qqGroupRow
+        QqGroups.groups.forEach { group ->
+            val item = layoutInflater.inflate(R.layout.item_qq_group, row, false)
+            item.layoutParams = android.widget.LinearLayout.LayoutParams(
+                0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+            )
+            item.findViewById<android.widget.ImageView>(R.id.ivQqAvatar)
+                .setImageResource(group.avatarRes)
+            item.findViewById<android.widget.TextView>(R.id.tvQqName).text = group.displayName
+            item.setOnClickListener { openQqGroup(group) }
+            row.addView(item)
+        }
+    }
+
+    internal fun openQqGroup(group: QqGroups.QqGroup) {
+        val qqPackage = OemHelper.installedQqPackage(packageManager)
+        AppLogger.d("MainActivity", "openQqGroup ${group.number} qq detected=${qqPackage ?: "none"}")
+        if (qqPackage != null) {
+            try {
+                startActivity(QqGroups.groupCardIntent(group, qqPackage))
+            } catch (e: Exception) {
+                AppLogger.w("MainActivity", "open qq group failed", e)
+                showQqNumberDialog(group)
+            }
+        } else {
+            showQqNumberDialog(group)
+        }
+    }
+
+    // 未装 QQ（或拉起失败）时展示群号，一键复制后用户可自行搜索加入
+    private fun showQqNumberDialog(group: QqGroups.QqGroup) {
+        AlertDialog.Builder(this)
+            .setTitle(group.displayName)
+            .setMessage("未检测到 QQ 客户端。\n\n群号：${group.number}\n\n复制后打开 QQ 搜索群号即可加入。")
+            .setPositiveButton("复制群号") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(
+                    android.content.ClipData.newPlainText("qq_group", group.number)
+                )
+                Toast.makeText(this, "群号已复制", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // B站 App 已安装（按包名检测）时醒目绿，否则灰色（两种状态都可点击）
