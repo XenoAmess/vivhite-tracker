@@ -81,4 +81,20 @@ class BilibiliApiTest {
         val script = """var live_status = "unknown";"""
         assertNull(BilibiliApi.parseScriptContent(script))
     }
+
+    @Test
+    fun `parseRoomCover 有user_cover时返回URL`() {
+        val json = """{"code":0,"data":{"room_id":11258892,"user_cover":"https://i0.hdslb.com/bfs/live/cover123.jpg"}}"""
+        assertEquals(
+            "https://i0.hdslb.com/bfs/live/cover123.jpg",
+            BilibiliApi.parseRoomCover(json)
+        )
+    }
+
+    @Test
+    fun `parseRoomCover 无字段或非字符串时返回null`() {
+        assertNull(BilibiliApi.parseRoomCover("""{"code":0,"data":{"room_id":1}}"""))
+        assertNull(BilibiliApi.parseRoomCover("""{"code":0,"data":{"user_cover":""}}"""))
+        assertNull(BilibiliApi.parseRoomCover("not a json"))
+    }
 }

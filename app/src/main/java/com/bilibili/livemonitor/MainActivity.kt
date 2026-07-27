@@ -16,12 +16,19 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.bilibili.livemonitor.databinding.ActivityMainBinding
+import com.bilibili.livemonitor.api.BilibiliApi
 import com.bilibili.livemonitor.service.LiveCheckService
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.OemHelper
 import com.bilibili.livemonitor.util.QqGroups
+import com.bilibili.livemonitor.util.QqShare
 import com.bilibili.livemonitor.util.PreferenceManager
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -125,6 +132,10 @@ class MainActivity : AppCompatActivity() {
                     Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))
                 )
             }
+
+            btnShare.setOnClickListener {
+                shareLiveRoom()
+            }
         }
 
         setupQqGroups()
@@ -164,6 +175,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     // 未装 QQ（或拉起失败）时展示群号，一键复制后用户可自行搜索加入
+    // 分享直播间到 QQ：mqqapi 富卡片（标题+封面+来源），链接按 B 站原生规则
+    // 带 bbid 归因到指定用户；未装 QQ 兜底系统分享
+    internal fun shareLiveRoom() {
+        val qqPackage = OemHelper.installedQqPackage(packageManager)
+        if (qqPackage == null) {
+            startActivity(QqShare.buildSystemShareIntent())
+            return
+        }
+        Toast.makeText(this, "正在生成分享卡片…", Toast.LENGTH_SHORT).show()
+        // 实时取直播间封面，3 秒超时直接用兜底静态图
+        shareScope.launch {
+            val cover = withTimeoutOrNull(3000) {
+                BilibiliApi().fetchRoomCover(QqShare.ROOM_ID)
+            } ?: QqShare.FALLBACK_COVER_URL
+            AppLogger.d("MainActivity", "share cover=$cover")
+            startActivity(QqShare.buildQqShareIntent(cover, qqPackage))
+        }
+    }
+
+    private val shareScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob()
+    )
+
     private fun showQqNumberDialog(group: QqGroups.QqGroup) {
         AlertDialog.Builder(this)
             .setTitle(group.displayName)

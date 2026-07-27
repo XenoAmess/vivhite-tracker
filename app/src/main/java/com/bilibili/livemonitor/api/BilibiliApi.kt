@@ -78,8 +78,39 @@ open class BilibiliApi : LiveStatusChecker {
         }
     }
 
+    // 取直播间封面 URL（user_cover 字段），用于 QQ 分享卡片封面；失败返回 null
+    suspend fun fetchRoomCover(roomId: Long): String? = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId")
+            val connection = url.openConnection() as HttpsURLConnection
+            connection.apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Referer", "https://live.bilibili.com/")
+                connectTimeout = 5000
+                readTimeout = 5000
+            }
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            connection.disconnect()
+            parseRoomCover(response)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     companion object {
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        // internal 便于单测：从 get_info 响应里解析封面 URL
+        internal fun parseRoomCover(response: String): String? {
+            return try {
+                val json = JSONObject(response)
+                val data = json.optJSONObject("data") ?: return null
+                data.optString("user_cover").takeIf { it.isNotBlank() }
+            } catch (e: Exception) {
+                null
+            }
+        }
 
         // live_status: 0=未开播, 1=直播中, 2=轮播中
         internal fun parseApiResponse(response: String): LiveStatus {
