@@ -74,9 +74,16 @@ open class BilibiliActivityApi {
         mid: Long,
         prefs: PreferenceManager
     ): ActivityResult<DynamicInfo> = withContext(Dispatchers.IO) {
-        val buvid3 = prefs.getBuvid3()
+        var buvid3 = prefs.getBuvid3()
         if (buvid3.isBlank()) {
-            return@withContext ActivityResult.Err("buvid3 missing")
+            // 首次需要 buvid3，从 B 站首页自动获取
+            buvid3 = HttpClient.fetchCookie("https://www.bilibili.com/", "buvid3") ?: ""
+            if (buvid3.isNotBlank()) {
+                prefs.setBuvid3(buvid3)
+                AppLogger.d(TAG, "buvid3 auto-fetched: ${buvid3.take(16)}...")
+            } else {
+                return@withContext ActivityResult.Err("buvid3 fetch failed")
+            }
         }
         if (!WbiSigner.refreshKeysIfNeeded(prefs)) {
             return@withContext ActivityResult.Err("wbi key refresh failed")

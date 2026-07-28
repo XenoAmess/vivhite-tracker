@@ -129,4 +129,18 @@ class BilibiliActivityApiTest {
         // 守护硬编码值不被意外修改
         assertEquals(251990176L, BilibiliActivityApi.MONITOR_MID)
     }
+
+    // ---------- buvid3 自动获取 ----------
+
+    @Test
+    fun `fetchLatestDynamic buvid3 为空时返回 Err`() = kotlinx.coroutines.runBlocking {
+        // prefs 为空（新装），且网络不可达 → Err
+        val prefs = com.bilibili.livemonitor.util.PreferenceManager(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext()
+        )
+        prefs.setBuvid3("")  // 确保空
+        val result = api.fetchLatestDynamic(BilibiliActivityApi.MONITOR_MID, prefs)
+        // 网络不可达时 fetchCookie 返回 null → Err("buvid3 fetch failed")
+        assertTrue(result is BilibiliActivityApi.ActivityResult.Err)
+    }
 }
