@@ -792,6 +792,34 @@ class MainActivityTest {
     }
 
     @Test
+    fun `手动检查更新 网络失败时弹错误对话框可跳发布页`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.updateChecker = FakeUpdateChecker(emptyMap()) // 所有请求返回 null → network error
+
+        val baseline = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnCheckUpdate
+        ).performClick()
+
+        val dialog = waitForNewDialog(baseline)
+        assertTrue("应弹出错误对话框", dialog != null)
+        val message = dialog!!.findViewById<android.widget.TextView>(android.R.id.message)
+        assertTrue(
+            "应提示网络错误: ${message?.text}",
+            message?.text?.contains("无法连接 GitHub") == true
+        )
+
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals(Intent.ACTION_VIEW, started?.action)
+        assertTrue(
+            "应跳最新发布页: ${started?.dataString}",
+            started?.dataString?.contains("releases/latest") == true
+        )
+    }
+
+    @Test
     fun `更新设置对话框 开关状态与prefs双向同步`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 

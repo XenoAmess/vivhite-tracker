@@ -191,10 +191,33 @@ class MainActivity : AppCompatActivity() {
                 }
                 is UpdateDecider.UpdateState.Error -> {
                     AppLogger.w("MainActivity", "update check failed: ${state.reason}")
-                    if (manual) Toast.makeText(this@MainActivity, "检查更新失败，请稍后再试", Toast.LENGTH_SHORT).show()
+                    if (manual) showUpdateErrorDialog(state.reason)
                 }
             }
         }
+    }
+
+    // 检查失败不再只有一个 Toast：区分网络错误/发布页格式，给出 Releases 页出口
+    internal fun showUpdateErrorDialog(reason: String) {
+        val message = if (reason == "network error") {
+            "无法连接 GitHub，请检查网络后重试"
+        } else {
+            "暂时无法获取更新信息（$reason）"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("检查更新失败")
+            .setMessage(message)
+            .setPositiveButton("打开发布页") { _, _ ->
+                try {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("$GITHUB_URL/releases/latest"))
+                    )
+                } catch (e: Exception) {
+                    AppLogger.e("MainActivity", "open releases page failed", e)
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     internal fun showUpdateDialog(info: UpdateDecider.ReleaseInfo) {
