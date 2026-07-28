@@ -10,8 +10,6 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.media.RingtoneManager
-import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -28,6 +26,7 @@ import com.bilibili.livemonitor.api.LiveStatusChecker
 import com.bilibili.livemonitor.domain.LiveStateDecider
 import com.bilibili.livemonitor.receiver.AlarmReceiver
 import com.bilibili.livemonitor.util.AppLogger
+import com.bilibili.livemonitor.util.AlertSoundProvider
 import com.bilibili.livemonitor.util.PreferenceManager
 import com.bilibili.livemonitor.worker.LiveCheckWorker
 import kotlinx.coroutines.*
@@ -274,14 +273,20 @@ class LiveCheckService : Service() {
     // 铃声会永远循环直到进程死亡
     internal var alertPlayer: MediaPlayer? = null
 
+    // 铃声源加载器（internal 便于测试注入 fake）
+    internal var alertSoundProvider: AlertSoundProvider = AlertSoundProvider()
+
     private fun playAlertSound() {
         try {
-            val ringtoneUri: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-
             alertPlayer = MediaPlayer().apply {
-                setDataSource(this@LiveCheckService, ringtoneUri)
+                if (!alertSoundProvider.setupDataSource(
+                        this@LiveCheckService, this, preferenceManager.getAlertSoundUri()
+                    )) {
+                    AppLogger.w(TAG, "all sound sources failed, skip alert")
+                    release()
+                    alertPlayer = null
+                    return@apply
+                }
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)

@@ -897,6 +897,81 @@ class MainActivityTest {
         assertFalse(apiCalled)
     }
 
+    // ---------- 提醒铃声自定义 ----------
+
+    @Test
+    fun `点提醒铃声按钮 弹出铃声设置对话框`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnAlertSound
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertTrue("应弹出 AlertDialog", dialog is androidx.appcompat.app.AlertDialog)
+    }
+
+    @Test
+    fun `铃声对话框显示 4 个内置铃声选项`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnAlertSound
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        assertEquals(4, container.childCount)
+    }
+
+    @Test
+    fun `点恢复默认 清空 prefs 并关闭对话框`() {
+        prefs.setAlertSoundUri("builtin:alert_gentle")
+        prefs.setAlertSoundTitle("柔和提示")
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnAlertSound
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        dialog.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnRestoreDefault
+        )!!.performClick()
+
+        assertEquals("", prefs.getAlertSoundUri())
+        assertEquals("", prefs.getAlertSoundTitle())
+    }
+
+    @Test
+    fun `未设置铃声时 内置默认项被勾选`() {
+        prefs.setAlertSoundUri("")
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnAlertSound
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        // 第 1 个是 CLASSIC_1（DEFAULT），应被勾选
+        val firstRb = container.getChildAt(0).findViewById<android.widget.RadioButton>(R.id.rbSound)!!
+        assertTrue("默认应勾选经典提醒 1", firstRb.isChecked)
+    }
+
+    @Test
+    fun `已选内置铃声时 对应项被勾选`() {
+        prefs.setAlertSoundUri("builtin:alert_gentle")
+        prefs.setAlertSoundTitle("柔和提示")
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnAlertSound
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        // alert_gentle 是第 3 个（CLASSIC_1, CLASSIC_2, GENTLE, URGENT）
+        val gentleRb = container.getChildAt(2).findViewById<android.widget.RadioButton>(R.id.rbSound)!!
+        assertTrue("应勾选柔和提示", gentleRb.isChecked)
+    }
+
     private fun makeBilibiliInstalled(vararg variants: Pair<String, String>) {
         // 多变体注入：label 供选择器展示（getApplicationLabel 读取）
         // ShadowPackageManager 部分状态为 static，先清空变体表防泄漏

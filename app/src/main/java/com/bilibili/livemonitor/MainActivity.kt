@@ -5,11 +5,15 @@ import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -22,10 +26,13 @@ import com.bilibili.livemonitor.domain.UpdateDecider
 import com.bilibili.livemonitor.service.LiveCheckService
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.AppUpdater
+import com.bilibili.livemonitor.util.AlertSoundProvider
+import com.bilibili.livemonitor.util.BuiltInSound
 import com.bilibili.livemonitor.util.OemHelper
 import com.bilibili.livemonitor.util.QqGroups
 import com.bilibili.livemonitor.util.QqShare
 import com.bilibili.livemonitor.util.PreferenceManager
+import com.bilibili.livemonitor.domain.AlertSoundDecider
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -60,6 +67,46 @@ class MainActivity : AppCompatActivity() {
                 "需要通知权限才能正常运行",
                 Snackbar.LENGTH_LONG
             ).show()
+        }
+    }
+
+    // 系统铃声库 picker：ACTION_RINGTONE_PICKER 返回的 uri 在 onActivityResult 里拿
+    private val systemRingtoneLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+                ?.let { uri ->
+                    val title = resolveRingtoneTitle(uri)
+                    val encoded = AlertSoundDecider.encodeSystem(uri.toString())
+                    preferenceManager.setAlertSoundUri(encoded)
+                    preferenceManager.setAlertSoundTitle(title)
+                    AppLogger.d("MainActivity", "system ringtone picked: $uri ($title)")
+                    Toast.makeText(this, "已设置铃声：$title", Toast.LENGTH_SHORT).show()
+                }
+        }
+    }
+
+    // 音频文件 picker：SAF OPEN_DOCUMENT，返回的 uri 必须 takePersistableUriPermission
+    // 否则进程被杀后读不出（这是 SAF 自定义铃声的最大坑）
+    private val audioFileLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+                val title = resolveRingtoneTitle(uri)
+                val encoded = AlertSoundDecider.encodeFile(uri.toString())
+                preferenceManager.setAlertSoundUri(encoded)
+                preferenceManager.setAlertSoundTitle(title)
+                AppLogger.d("MainActivity", "audio file picked: $uri ($title)")
+                Toast.makeText(this, "已设置铃声：$title", Toast.LENGTH_SHORT).show()
+            } catch (e: SecurityException) {
+                AppLogger.e("MainActivity", "takePersistableUriPermission failed", e)
+                Toast.makeText(this, "无法获取该文件的长期访问权限，请换一个文件", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -121,6 +168,10 @@ class MainActivity : AppCompatActivity() {
 
             btnBackgroundSettings.setOnClickListener {
                 openBackgroundSettings()
+            }
+
+            btnAlertSound.setOnClickListener {
+                showAlertDialogSoundDialog()
             }
 
             btnViewLog.setOnClickListener {
@@ -296,6 +347,149 @@ class MainActivity : AppCompatActivity() {
             .setView(view)
             .setPositiveButton("完成", null)
             .show()
+    }
+
+    // ========== 提醒铃声自定义 ==========
+
+    // 试听播放器（dialog dismiss 时必须释放，避免泄漏）
+    private var previewPlayer: MediaPlayer? = null
+    private val alertSoundProvider = AlertSoundProvider()
+
+    internal fun showAlertDialogSoundDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_alert_sound, null)
+        val container = view.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)
+        val currentUri = preferenceManager.getAlertSoundUri()
+
+        // 手动管理单选（RadioGroup 只能管理直接子 RadioButton，
+        // 但我们的 item 是 LinearLayout 包含 RadioButton，所以用手动方式）
+        val radioButtons = mutableListOf<android.widget.RadioButton>()
+
+        // 解析当前铃声源，判断该勾哪个内置项
+        val currentSource = AlertSoundDecider.resolve(currentUri)
+
+        // 填充内置铃声池
+        BuiltInSound.values().forEach { sound ->
+            val item = layoutInflater.inflate(R.layout.item_builtin_sound, container, false)
+            val rb = item.findViewById<android.widget.RadioButton>(R.id.rbSound)!!
+            val tvName = item.findViewById<TextView>(R.id.tvSoundName)
+            val btnPreview = item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
+
+            tvName.text = sound.title
+            radioButtons.add(rb)
+
+            // 勾选当前生效的内置项：Default → CLASSIC_1，BuiltIn → 匹配 key 的项
+            val isSelected = when (currentSource) {
+                is com.bilibili.livemonitor.domain.SoundSource.Default -> sound == BuiltInSound.DEFAULT
+                is com.bilibili.livemonitor.domain.SoundSource.BuiltIn -> currentSource.key == sound.key
+                else -> false  // System/File 不勾任何内置项
+            }
+            if (isSelected) rb.isChecked = true
+
+            // 点整行 = 选中这一项（先清其他，再勾自己）
+            item.setOnClickListener {
+                radioButtons.forEach { it.isChecked = false }
+                rb.isChecked = true
+                preferenceManager.setAlertSoundUri(AlertSoundDecider.encodeBuiltIn(sound.key))
+                preferenceManager.setAlertSoundTitle(sound.title)
+                AppLogger.d("MainActivity", "builtin sound selected: ${sound.key}")
+            }
+
+            // 点试听按钮 = 播 2 秒预览
+            btnPreview.setOnClickListener {
+                previewSound(sound)
+            }
+
+            container.addView(item)
+        }
+
+        // 如果当前是自定义（system/file），不勾任何内置项
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("提醒铃声")
+            .setView(view)
+            .setPositiveButton("完成", null)
+            .setOnDismissListener {
+                stopPreview()
+            }
+            .show()
+
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickSystemRingtone)
+            .setOnClickListener {
+                stopPreview()
+                val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "选择提醒铃声")
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                }
+                systemRingtoneLauncher.launch(intent)
+                dialog.dismiss()
+            }
+
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickAudioFile)
+            .setOnClickListener {
+                stopPreview()
+                audioFileLauncher.launch(arrayOf("audio/*"))
+                dialog.dismiss()
+            }
+
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRestoreDefault)
+            .setOnClickListener {
+                preferenceManager.setAlertSoundUri("")
+                preferenceManager.setAlertSoundTitle("")
+                AppLogger.d("MainActivity", "alert sound restored to default")
+                Toast.makeText(this, "已恢复默认铃声", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+    }
+
+    // 试听内置铃声 2 秒（用 android.resource:// uri，与 AlertSoundProvider 一致）
+    private fun previewSound(sound: BuiltInSound) {
+        stopPreview()
+        try {
+            previewPlayer = MediaPlayer().apply {
+                val uri = Uri.parse("android.resource://$packageName/${sound.resId}")
+                setDataSource(this@MainActivity, uri)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                isLooping = false
+                prepare()
+                start()
+                setOnCompletionListener {
+                    it.release()
+                    previewPlayer = null
+                }
+            }
+            // 兜底：2 秒后强制停（防止某些 ogg 解码异常导致不触发 onCompletion）
+            binding.root.postDelayed({ stopPreview() }, 2000)
+        } catch (e: Exception) {
+            AppLogger.e("MainActivity", "preview sound ${sound.key} failed", e)
+        }
+    }
+
+    private fun stopPreview() {
+        previewPlayer?.let { p ->
+            try {
+                if (p.isPlaying) p.stop()
+                p.release()
+            } catch (_: Exception) {}
+        }
+        previewPlayer = null
+    }
+
+    // 取铃声展示名：系统铃声库用 RingtoneManager 取标题，文件用 uri 最后一段
+    private fun resolveRingtoneTitle(uri: Uri): String {
+        return try {
+            RingtoneManager.getRingtone(this, uri)?.getTitle(this)
+                ?: uri.lastPathSegment ?: "自定义铃声"
+        } catch (e: Exception) {
+            AppLogger.w("MainActivity", "resolve ringtone title failed for $uri", e)
+            uri.lastPathSegment ?: "自定义铃声"
+        }
     }
 
     // 三个 QQ 交流群项：头像+群名；装 QQ 拉起群资料卡，未装弹群号+复制

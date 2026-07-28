@@ -2,8 +2,6 @@ package com.bilibili.livemonitor
 
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.media.RingtoneManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -91,14 +89,20 @@ class AlertActivity : AppCompatActivity() {
         }
     }
 
+    private val alertSoundProvider = com.bilibili.livemonitor.util.AlertSoundProvider()
+
     private fun playAlarm() {
         try {
-            val ringtoneUri: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-
+            val prefs = com.bilibili.livemonitor.util.PreferenceManager(this)
             mediaPlayer = MediaPlayer().apply {
-                setDataSource(this@AlertActivity, ringtoneUri)
+                if (!alertSoundProvider.setupDataSource(
+                        this@AlertActivity, this, prefs.getAlertSoundUri()
+                    )) {
+                    com.bilibili.livemonitor.util.AppLogger.w("AlertActivity", "all sound sources failed, skip alarm")
+                    release()
+                    mediaPlayer = null
+                    return@apply
+                }
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)

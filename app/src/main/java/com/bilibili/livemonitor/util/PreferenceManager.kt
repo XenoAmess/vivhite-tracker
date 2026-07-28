@@ -108,6 +108,24 @@ class PreferenceManager(context: Context) {
         return prefs.getInt(KEY_DISMISSED_VERSION_CODE, -1)
     }
 
+    // 提醒铃声：带前缀的 uri 字符串（builtin:/system:/file:），空串 = 内置默认
+    fun setAlertSoundUri(uri: String) {
+        prefs.edit().putString(KEY_ALERT_SOUND_URI, uri).apply()
+    }
+
+    fun getAlertSoundUri(): String {
+        return prefs.getString(KEY_ALERT_SOUND_URI, "") ?: ""
+    }
+
+    // 提醒铃声展示名（UI 显示用，避免只看到一串 content://）
+    fun setAlertSoundTitle(title: String) {
+        prefs.edit().putString(KEY_ALERT_SOUND_TITLE, title).apply()
+    }
+
+    fun getAlertSoundTitle(): String {
+        return prefs.getString(KEY_ALERT_SOUND_TITLE, "") ?: ""
+    }
+
     // 进程重启时恢复上次状态，避免重复提醒；超过10分钟视为过期（期间可能刚开播，应当提醒）
     fun getRecentLastStatus(maxAgeMillis: Long = 600_000L): Boolean? {
         return LiveStateDecider.restoreLastStatus(
@@ -133,6 +151,8 @@ class PreferenceManager(context: Context) {
         private const val KEY_AUTO_DOWNLOAD_UPDATE = "auto_download_update"
         private const val KEY_LAST_UPDATE_CHECK_TIME = "last_update_check_time"
         private const val KEY_DISMISSED_VERSION_CODE = "dismissed_version_code"
+        private const val KEY_ALERT_SOUND_URI = "alert_sound_uri"
+        private const val KEY_ALERT_SOUND_TITLE = "alert_sound_title"
         private const val DEFAULT_ROOM_ID = 11258892L
     }
 }

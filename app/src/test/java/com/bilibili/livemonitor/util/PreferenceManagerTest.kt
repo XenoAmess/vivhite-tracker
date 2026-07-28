@@ -92,4 +92,35 @@ class PreferenceManagerTest {
         prefs.setDismissedVersionCode(92)
         assertEquals(92, prefs.getDismissedVersionCode())
     }
+
+    @Test
+    fun `提醒铃声默认值是空串`() {
+        // 新装应用未设置时，空串 = 使用内置默认铃声
+        assertEquals("", prefs.getAlertSoundUri())
+        assertEquals("", prefs.getAlertSoundTitle())
+    }
+
+    @Test
+    fun `提醒铃声 uri 存取 round trip`() {
+        prefs.setAlertSoundUri("builtin:alert_gentle")
+        assertEquals("builtin:alert_gentle", prefs.getAlertSoundUri())
+        prefs.setAlertSoundUri("system:content://settings/system/alarm_alert")
+        assertEquals("system:content://settings/system/alarm_alert", prefs.getAlertSoundUri())
+    }
+
+    @Test
+    fun `提醒铃声 title 存取 round trip`() {
+        prefs.setAlertSoundTitle("柔和提示")
+        assertEquals("柔和提示", prefs.getAlertSoundTitle())
+        prefs.setAlertSoundTitle("我的录音.mp3")
+        assertEquals("我的录音.mp3", prefs.getAlertSoundTitle())
+    }
+
+    @Test
+    fun `提醒铃声 uri 可清空`() {
+        // 用户点「恢复默认」时存空串
+        prefs.setAlertSoundUri("builtin:alert_gentle")
+        prefs.setAlertSoundUri("")
+        assertEquals("", prefs.getAlertSoundUri())
+    }
 }
