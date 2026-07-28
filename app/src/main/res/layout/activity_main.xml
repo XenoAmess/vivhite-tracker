@@ -140,12 +140,13 @@
             android:layout_width="0dp"
             android:layout_height="46dp"
             android:layout_marginTop="10dp"
+            android:layout_marginEnd="6dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:text="后台运行设置"
             android:textSize="14sp"
             app:icon="@android:drawable/ic_menu_manage"
-            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/btnAlertSound"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/btnToggle" />
 
@@ -153,15 +154,16 @@
             android:id="@+id/btnAlertSound"
             android:layout_width="0dp"
             android:layout_height="46dp"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginStart="6dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:text="提醒铃声"
             android:textSize="14sp"
             app:icon="@android:drawable/ic_media_play"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
+            app:layout_constraintStart_toEndOf="@id/btnBackgroundSettings"
+            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnViewLog"
@@ -176,7 +178,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toStartOf="@id/btnOpenGithub"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnAlertSound" />
+            app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenGithub"
@@ -191,7 +193,7 @@
             app:icon="@android:drawable/ic_menu_share"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/btnViewLog"
-            app:layout_constraintTop_toBottomOf="@id/btnAlertSound" />
+            app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
 
         <LinearLayout
             android:id="@+id/qqGroupRow"
