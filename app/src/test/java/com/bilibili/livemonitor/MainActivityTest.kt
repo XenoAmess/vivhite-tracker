@@ -183,7 +183,7 @@ class MainActivityTest {
     }
 
     @Test
-    fun `B站App不可用时 按钮为灰色且点击跳转浏览器`() {
+    fun `B站App不可用时 按钮为灰色且点击启动系统选择器`() {
         makeBilibiliInstalled()
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
@@ -198,15 +198,17 @@ class MainActivityTest {
             R.id.btnOpenLive
         ).performClick()
 
+        // 应启动系统选择器（ACTION_CHOOSER），主 intent 是 https
         val started = shadowOf(context).nextStartedActivity
-        assertEquals(Intent.ACTION_VIEW, started?.action)
-        assertEquals("https://live.bilibili.com/11258892", started?.dataString)
+        assertEquals(Intent.ACTION_CHOOSER, started?.action)
+        val mainIntent = started?.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        assertEquals("https://live.bilibili.com/11258892", mainIntent?.dataString)
     }
 
     @Test
-    fun `B站App可用时 弹选择器点客户端项直接打开B站App`() {
+    fun `点击打开直播间 启动系统选择器且bilibili注入EXTRA_INITIAL_INTENTS`() {
         makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
-        makeBrowsers()
+        makeBrowsers("com.android.chrome" to "Chrome")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         LiveCheckService.isRunning = false
 
@@ -214,94 +216,23 @@ class MainActivityTest {
             R.id.btnOpenLive
         ).performClick()
 
-        // 单客户端 + 通用浏览器 = 两个选项，弹选择器，点第 0 项（客户端）
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-            as androidx.appcompat.app.AlertDialog
-        clickDialogItem(dialog, 0)
-
         val started = shadowOf(context).nextStartedActivity
-        assertEquals(Intent.ACTION_VIEW, started?.action)
-        assertEquals("bilibili://live/11258892", started?.dataString)
-        assertEquals("应强制投递给B站客户端", "tv.danmaku.bili", started?.`package`)
-    }
+        assertEquals(Intent.ACTION_CHOOSER, started?.action)
 
-    // ---------- 多客户端/多浏览器选择器 ----------
+        // 主 intent 是 https（浏览器列表来源）
+        val mainIntent = started?.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        assertEquals(Intent.ACTION_VIEW, mainIntent?.action)
+        assertEquals("https://live.bilibili.com/11258892", mainIntent?.dataString)
 
-    @Test
-    fun `装两个客户端 弹选择器且浏览器在最后`() {
-        makeBilibiliInstalled(
-            "tv.danmaku.bili" to "哔哩哔哩",
-            "com.bilibili.app.blue" to "哔哩哔哩概念"
-        )
-        // 无已探测浏览器时补通用浏览器项
-        makeBrowsers()
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnOpenLive
-        ).performClick()
-
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-            as androidx.appcompat.app.AlertDialog
-        assertTrue(dialog.isShowing)
-        val labels = (0 until dialog.listView.adapter.count).map {
-            dialog.listView.adapter.getItem(it).toString()
-        }
-        assertEquals(listOf("哔哩哔哩", "哔哩哔哩概念", "浏览器"), labels)
-
-        // 点概念版：bilibili:// + setPackage(blue)
-        clickDialogItem(dialog, 1)
-        val started = shadowOf(context).nextStartedActivity
-        assertEquals("bilibili://live/11258892", started?.dataString)
-        assertEquals("com.bilibili.app.blue", started?.`package`)
-    }
-
-    @Test
-    fun `一个客户端多个浏览器 全部列出且浏览器可点选`() {
-        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
-        makeBrowsers(
-            "com.android.chrome" to "Chrome",
-            "com.quark.browser" to "夸克"
-        )
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnOpenLive
-        ).performClick()
-
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-            as androidx.appcompat.app.AlertDialog
-        val labels = (0 until dialog.listView.adapter.count).map {
-            dialog.listView.adapter.getItem(it).toString()
-        }
-        assertEquals("bilibili 客户端必须在浏览器之前", listOf("哔哩哔哩", "Chrome", "夸克"), labels)
-
-        // 点夸克：https + setPackage(夸克)
-        clickDialogItem(dialog, 2)
-        val started = shadowOf(context).nextStartedActivity
-        assertEquals("https://live.bilibili.com/11258892", started?.dataString)
-        assertEquals("com.quark.browser", started?.`package`)
-    }
-
-    @Test
-    fun `bilibili也注册了https时 不出现在浏览器段`() {
-        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
-        makeBrowsers(
-            "tv.danmaku.bili" to "哔哩哔哩", // bilibili 自身也能开 https
-            "com.android.chrome" to "Chrome"
-        )
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnOpenLive
-        ).performClick()
-
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-            as androidx.appcompat.app.AlertDialog
-        val labels = (0 until dialog.listView.adapter.count).map {
-            dialog.listView.adapter.getItem(it).toString()
-        }
-        assertEquals("bilibili 不得在浏览器段重复出现", listOf("哔哩哔哩", "Chrome"), labels)
+        // EXTRA_INITIAL_INTENTS 注入 bilibili:// intent，排在选择器最前
+        val initialIntents = started?.getParcelableArrayExtra(Intent.EXTRA_INITIAL_INTENTS)
+        assertTrue("应有 EXTRA_INITIAL_INTENTS", initialIntents != null)
+        assertEquals("应注入 1 个 initial intent", 1, initialIntents!!.size)
+        val bilibiliIntent = initialIntents[0] as Intent
+        assertEquals(Intent.ACTION_VIEW, bilibiliIntent.action)
+        assertEquals("bilibili://live/11258892", bilibiliIntent.dataString)
+        // 不带 setPackage，让系统选择器自己列所有能解析的 bilibili 客户端
+        assertEquals(null, bilibiliIntent.`package`)
     }
 
     @Test
@@ -318,17 +249,15 @@ class MainActivityTest {
             R.id.btnOpenLive
         ).performClick()
 
-        // 弹选择器后点客户端项才触发静音+跳转
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-            as androidx.appcompat.app.AlertDialog
-        clickDialogItem(dialog, 0)
-
+        // 观播静音命令在启动选择器之前发出
         val muteIntent = shadowOf(context).peekNextStartedService()
         assertEquals("应发观播静音命令而非停止命令", LiveCheckService.ACTION_WATCH_LIVE, muteIntent?.action)
         assertTrue("监控标记必须保持 true", prefs.isServiceRunning())
         assertTrue("应置观播静音", prefs.isAlertSuppressed())
-        val jumpIntent = shadowOf(context).nextStartedActivity
-        assertEquals("bilibili://live/11258892", jumpIntent?.dataString)
+
+        // 随后启动系统选择器
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals(Intent.ACTION_CHOOSER, started?.action)
 
         // tvStatus 应显示本场静音
         val statusText = activity.findViewById<android.widget.TextView>(R.id.tvStatus).text.toString()
@@ -1009,13 +938,5 @@ class MainActivityTest {
             }
         }
         shadowOf(context.packageManager).setResolveInfosForIntent(intent, infos)
-    }
-
-    private fun clickDialogItem(dialog: androidx.appcompat.app.AlertDialog, position: Int) {
-        val lv = dialog.listView
-        val adapter = lv.adapter
-        val view = adapter.getView(position, null, lv)
-        lv.performItemClick(view, position, adapter.getItemId(position))
-        shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 }

@@ -603,43 +603,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openLiveRoom() {
-        // 汇总可选项：全部已装 bilibili 客户端（前）+ 全部浏览器（后）。
-        // 装了客户端但没探测到浏览器时，补一个通用"浏览器"项保证网页路径可达
-        val variants = OemHelper.installedBilibiliVariants(packageManager)
-        val detectedBrowsers = OemHelper.installedBrowsers(packageManager, liveRoomWebIntent(), packageName)
-        val browsers = detectedBrowsers.ifEmpty {
-            listOf(OemHelper.BilibiliVariant("", "浏览器"))
-        }
-        AppLogger.d(
-            "MainActivity",
-            "openLiveRoom bilibili=${variants.map { it.packageName }} browsers=${browsers.map { it.packageName }}"
-        )
-        val targets = variants.map { it to false } + browsers.map { it to true }
-
-        when (targets.size) {
-            0 -> jumpToLiveRoom(null, true) // 理论不可能，兜底普通 https
-            1 -> jumpToLiveRoom(targets[0].first, targets[0].second) // 仅一个选项，直跳不弹框
-            else -> showLiveRoomChooser(targets)
-        }
-    }
-
-    private fun showLiveRoomChooser(targets: List<Pair<OemHelper.BilibiliVariant, Boolean>>) {
-        val labels = targets.map { it.first.label }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("打开直播间")
-            .setItems(labels) { dialog, which ->
-                val (target, isWeb) = targets[which]
-                jumpToLiveRoom(target, isWeb)
-                dialog.dismiss()
-            }
-            .show()
-    }
-
-    // isWeb=false 表示 bilibili 客户端（bilibili:// scheme + setPackage），
-    // isWeb=true 表示浏览器（https + setPackage，包名为空时系统自选）
-    private fun jumpToLiveRoom(target: OemHelper.BilibiliVariant?, isWeb: Boolean) {
         // 观播静音：监控不停，本场直播结束前不提醒（正在响的铃立即停）。
-        // 仅在监控中且当前在播时才置静音；其余情况只跳转
+        // 仅在监控中且当前在播时才置静音；无论用户选 bilibili 还是浏览器都该静音
         if (LiveCheckService.isRunning && LiveCheckService.lastLiveStatus) {
             preferenceManager.setAlertSuppressed(true)
             val muteIntent = Intent(this, LiveCheckService::class.java).apply {
@@ -648,16 +613,18 @@ class MainActivity : AppCompatActivity() {
             startService(muteIntent)
             Toast.makeText(this, "已静音观播，下播后恢复提醒", Toast.LENGTH_SHORT).show()
         }
-        val intent = if (isWeb) {
-            liveRoomWebIntent(target?.packageName)
-        } else {
-            liveRoomAppIntent(target?.packageName)
+        // 主 intent：https（浏览器列表）
+        // EXTRA_INITIAL_INTENTS：bilibili:// 注入，排在系统选择器最前
+        val httpsIntent = liveRoomWebIntent()
+        val bilibiliIntent = liveRoomAppIntent(null)
+        val chooser = Intent.createChooser(httpsIntent, "打开直播间").apply {
+            putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(bilibiliIntent))
         }
         try {
-            startActivity(intent)
+            startActivity(chooser)
         } catch (e: Exception) {
-            // 极端情况：scheme 宣称可解析但启动失败，兜底不带包的 https
-            AppLogger.w("MainActivity", "start failed, fallback to plain https", e)
+            // 极端情况：chooser 无法启动，兜底不带包的 https
+            AppLogger.w("MainActivity", "chooser failed, fallback to plain https", e)
             startActivity(liveRoomWebIntent())
         }
         updateUI()
