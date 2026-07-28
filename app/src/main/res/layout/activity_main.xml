@@ -108,7 +108,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenLive"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="46dp"
             android:layout_marginTop="20dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
@@ -123,7 +123,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnToggle"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="46dp"
             android:layout_marginTop="12dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
@@ -138,7 +138,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnBackgroundSettings"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="46dp"
             android:layout_marginTop="16dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
@@ -152,7 +152,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnViewLog"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="46dp"
             android:layout_marginTop="12dp"
             android:layout_marginEnd="6dp"
             android:insetTop="0dp"
@@ -167,7 +167,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenGithub"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="46dp"
             android:layout_marginTop="12dp"
             android:layout_marginStart="6dp"
             android:insetTop="0dp"
