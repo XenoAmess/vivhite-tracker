@@ -229,7 +229,11 @@ class LiveCheckService : Service() {
     }
 
     private fun updateNotification(isLive: Boolean) {
-        val notification = createServiceNotification(isLive)
+        val notification = createServiceNotification(
+            isLive = isLive,
+            lastCheckTime = preferenceManager.getLastCheckTime(),
+            lastCheckSuccess = preferenceManager.isLastCheckSuccess()
+        )
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_SERVICE, notification)
 
@@ -371,7 +375,11 @@ class LiveCheckService : Service() {
         notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_ALERT, notification)
     }
 
-    private fun createServiceNotification(isLive: Boolean): Notification {
+    private fun createServiceNotification(
+        isLive: Boolean,
+        lastCheckTime: Long = preferenceManager.getLastCheckTime(),
+        lastCheckSuccess: Boolean = preferenceManager.isLastCheckSuccess()
+    ): Notification {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -383,10 +391,20 @@ class LiveCheckService : Service() {
         val iconRes = if (isLive) R.drawable.img_on else R.drawable.img_off
         val smallIconRes = if (isLive) R.drawable.img_on else R.drawable.img_off
         val statusText = if (isLive) "🔴 直播中" else "⚫ 未开播"
-        val contentText = if (isLive)
-            "白绮正在直播，快去观看吧！"
-        else
-            "正在监控直播间状态..."
+        val timeText = if (lastCheckTime > 0) {
+            java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(lastCheckTime))
+        } else null
+        val contentText = when {
+            !lastCheckSuccess && lastCheckTime > 0 ->
+                if (timeText != null) "监控异常 · $timeText" else "监控异常"
+            isLive ->
+                if (timeText != null) "白绮正在直播，快去观看吧！ · $timeText"
+                else "白绮正在直播，快去观看吧！"
+            else ->
+                if (timeText != null) "上次检测 $timeText · 未开播"
+                else "正在监控直播间状态..."
+        }
 
         return NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_SERVICE_ID)
             .setSmallIcon(smallIconRes)
@@ -397,6 +415,8 @@ class LiveCheckService : Service() {
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setWhen(lastCheckTime.takeIf { it > 0 } ?: System.currentTimeMillis())
+            .setShowWhen(true)
             .build()
     }
 
