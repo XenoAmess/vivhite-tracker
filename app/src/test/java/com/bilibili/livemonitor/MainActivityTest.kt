@@ -11,6 +11,7 @@ import com.bilibili.livemonitor.util.QqShare
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -899,6 +900,53 @@ class MainActivityTest {
         // alert_gentle 是第 3 个（CLASSIC_1, CLASSIC_2, GENTLE, URGENT）
         val gentleRb = container.getChildAt(2).findViewById<android.widget.RadioButton>(R.id.rbSound)!!
         assertTrue("应勾选柔和提示", gentleRb.isChecked)
+    }
+
+    // ---------- 活动监控设置 ----------
+
+    @Test
+    fun `点活动监控按钮 弹出设置对话框`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnActivityMonitor
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertTrue("应弹出 AlertDialog", dialog is androidx.appcompat.app.AlertDialog)
+    }
+
+    @Test
+    fun `活动监控对话框有 4 个开关`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnActivityMonitor
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        assertNotNull(dialog.findViewById(R.id.switchMonitorVideos))
+        assertNotNull(dialog.findViewById(R.id.switchMonitorPinned))
+        assertNotNull(dialog.findViewById(R.id.switchMonitorDynamics))
+        assertNotNull(dialog.findViewById(R.id.switchAlertRingOnActivity))
+    }
+
+    @Test
+    fun `活动监控开关切换落 prefs`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnActivityMonitor
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        val switchVideos = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorVideos)!!
+        val switchDynamics = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorDynamics)!!
+
+        assertEquals("默认应关", false, switchVideos.isChecked)
+        switchVideos.isChecked = true
+        switchDynamics.isChecked = true
+
+        assertEquals(true, prefs.isMonitorVideos())
+        assertEquals(true, prefs.isMonitorDynamics())
     }
 
     private fun makeBilibiliInstalled(vararg variants: Pair<String, String>) {

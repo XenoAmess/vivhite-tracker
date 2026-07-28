@@ -42,6 +42,20 @@ class LiveMonitorApp : Application() {
                     description = "直播间开播时发送提醒"
                     enableVibration(true)
                     enableLights(true)
+                },
+                NotificationChannel(
+                    CHANNEL_VIDEO_ALERT_ID,
+                    "新视频提醒",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "监控的 UP 主发布新视频/置顶变化时提醒"
+                },
+                NotificationChannel(
+                    CHANNEL_DYNAMIC_ALERT_ID,
+                    "新动态提醒",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "监控的 UP 主发布新动态时提醒（实验功能）"
                 }
             )
 
@@ -53,7 +67,11 @@ class LiveMonitorApp : Application() {
     companion object {
         const val CHANNEL_SERVICE_ID = "live_monitor_service"
         const val CHANNEL_ALERT_ID = "live_alert"
+        const val CHANNEL_VIDEO_ALERT_ID = "video_alert"
+        const val CHANNEL_DYNAMIC_ALERT_ID = "dynamic_alert"
         const val NOTIFICATION_ID_SERVICE = 1001
         const val NOTIFICATION_ID_ALERT = 1002
+        const val NOTIFICATION_ID_VIDEO = 1003
+        const val NOTIFICATION_ID_DYNAMIC = 1004
     }
 }

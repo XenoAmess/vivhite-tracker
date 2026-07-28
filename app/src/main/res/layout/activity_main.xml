@@ -166,6 +166,20 @@
             app:layout_constraintTop_toBottomOf="@id/btnToggle" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnActivityMonitor"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginTop="8dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="活动监控"
+            android:textSize="14sp"
+            app:icon="@android:drawable/ic_menu_my_calendar"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnViewLog"
             android:layout_width="0dp"
             android:layout_height="46dp"
@@ -178,7 +192,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toStartOf="@id/btnOpenGithub"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
+            app:layout_constraintTop_toBottomOf="@id/btnActivityMonitor" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenGithub"
@@ -193,7 +207,7 @@
             app:icon="@android:drawable/ic_menu_share"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/btnViewLog"
-            app:layout_constraintTop_toBottomOf="@id/btnBackgroundSettings" />
+            app:layout_constraintTop_toBottomOf="@id/btnActivityMonitor" />
 
         <LinearLayout
             android:id="@+id/qqGroupRow"

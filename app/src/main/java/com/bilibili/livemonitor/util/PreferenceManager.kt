@@ -126,6 +126,101 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_ALERT_SOUND_TITLE, "") ?: ""
     }
 
+    // ========== B 站全活动监控 ==========
+
+    // 监控新视频投稿，默认关
+    fun setMonitorVideos(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MONITOR_VIDEOS, enabled).apply()
+    }
+
+    fun isMonitorVideos(): Boolean {
+        return prefs.getBoolean(KEY_MONITOR_VIDEOS, false)
+    }
+
+    // 监控置顶视频变化，默认关
+    fun setMonitorPinned(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MONITOR_PINNED, enabled).apply()
+    }
+
+    fun isMonitorPinned(): Boolean {
+        return prefs.getBoolean(KEY_MONITOR_PINNED, false)
+    }
+
+    // 监控动态（实验，不稳定），默认关
+    fun setMonitorDynamics(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MONITOR_DYNAMICS, enabled).apply()
+    }
+
+    fun isMonitorDynamics(): Boolean {
+        return prefs.getBoolean(KEY_MONITOR_DYNAMICS, false)
+    }
+
+    // 新视频/动态时是否响铃（开播不受此控制，始终响铃）
+    fun setAlertRingOnActivity(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ALERT_RING_ON_ACTIVITY, enabled).apply()
+    }
+
+    fun isAlertRingOnActivity(): Boolean {
+        return prefs.getBoolean(KEY_ALERT_RING_ON_ACTIVITY, false)
+    }
+
+    // 上次见到的最新视频 avid；-1 = 未初始化（首次不提醒）
+    fun setLastVideoAid(aid: Long) {
+        prefs.edit().putLong(KEY_LAST_VIDEO_AID, aid).apply()
+    }
+
+    fun getLastVideoAid(): Long {
+        return prefs.getLong(KEY_LAST_VIDEO_AID, -1L)
+    }
+
+    // 上次见到的置顶视频 avid；-1 = 未初始化
+    fun setLastPinnedAid(aid: Long) {
+        prefs.edit().putLong(KEY_LAST_PINNED_AID, aid).apply()
+    }
+
+    fun getLastPinnedAid(): Long {
+        return prefs.getLong(KEY_LAST_PINNED_AID, -1L)
+    }
+
+    // 上次见到的最新动态 id；空串 = 未初始化
+    fun setLastDynamicId(id: String) {
+        prefs.edit().putString(KEY_LAST_DYNAMIC_ID, id).apply()
+    }
+
+    fun getLastDynamicId(): String {
+        return prefs.getString(KEY_LAST_DYNAMIC_ID, "") ?: ""
+    }
+
+    // wbi 签名 key 缓存（每日更替，12h 刷新）
+    fun setWbiKeys(imgKey: String, subKey: String) {
+        prefs.edit()
+            .putString(KEY_WBI_IMG_KEY, imgKey)
+            .putString(KEY_WBI_SUB_KEY, subKey)
+            .putLong(KEY_WBI_KEY_UPDATED_AT, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun getWbiImgKey(): String {
+        return prefs.getString(KEY_WBI_IMG_KEY, "") ?: ""
+    }
+
+    fun getWbiSubKey(): String {
+        return prefs.getString(KEY_WBI_SUB_KEY, "") ?: ""
+    }
+
+    fun getWbiKeyUpdatedAt(): Long {
+        return prefs.getLong(KEY_WBI_KEY_UPDATED_AT, 0L)
+    }
+
+    // 动态流接口需要的 buvid3 cookie
+    fun setBuvid3(buvid3: String) {
+        prefs.edit().putString(KEY_BUVID3, buvid3).apply()
+    }
+
+    fun getBuvid3(): String {
+        return prefs.getString(KEY_BUVID3, "") ?: ""
+    }
+
     // 进程重启时恢复上次状态，避免重复提醒；超过10分钟视为过期（期间可能刚开播，应当提醒）
     fun getRecentLastStatus(maxAgeMillis: Long = 600_000L): Boolean? {
         return LiveStateDecider.restoreLastStatus(
@@ -153,6 +248,17 @@ class PreferenceManager(context: Context) {
         private const val KEY_DISMISSED_VERSION_CODE = "dismissed_version_code"
         private const val KEY_ALERT_SOUND_URI = "alert_sound_uri"
         private const val KEY_ALERT_SOUND_TITLE = "alert_sound_title"
+        private const val KEY_MONITOR_VIDEOS = "monitor_videos"
+        private const val KEY_MONITOR_PINNED = "monitor_pinned"
+        private const val KEY_MONITOR_DYNAMICS = "monitor_dynamics"
+        private const val KEY_ALERT_RING_ON_ACTIVITY = "alert_ring_on_activity"
+        private const val KEY_LAST_VIDEO_AID = "last_video_aid"
+        private const val KEY_LAST_PINNED_AID = "last_pinned_aid"
+        private const val KEY_LAST_DYNAMIC_ID = "last_dynamic_id"
+        private const val KEY_WBI_IMG_KEY = "wbi_img_key"
+        private const val KEY_WBI_SUB_KEY = "wbi_sub_key"
+        private const val KEY_WBI_KEY_UPDATED_AT = "wbi_key_updated_at"
+        private const val KEY_BUVID3 = "buvid3"
         private const val DEFAULT_ROOM_ID = 11258892L
     }
 }

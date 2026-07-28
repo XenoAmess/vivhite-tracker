@@ -10,6 +10,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -118,6 +119,24 @@ class LiveCheckService : Service() {
             return START_STICKY
         }
 
+        // 动态流检测（独立 5min Alarm 触发）：只查动态，不走直播/视频检测
+        if (intent?.action == ACTION_CHECK_DYNAMICS) {
+            if (!preferenceManager.isServiceRunning()) {
+                AppLogger.w(TAG, "ACTION_CHECK_DYNAMICS but monitoring disabled, aborting")
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            serviceScope.launch {
+                try {
+                    checkNewDynamics()
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "checkNewDynamics error", e)
+                }
+                scheduleNextDynamicAlarm()
+            }
+            return START_STICKY
+        }
+
         // 停止权威位二次检查：onCreate 自毁后仍可能有已入队的 intent 被投递，
         // 这里必须再次确认，不能把 prefs 刷回 true（否则用户停止会被复活）
         if (!preferenceManager.isServiceRunning()) {
@@ -143,6 +162,8 @@ class LiveCheckService : Service() {
             if (isChecking.compareAndSet(false, true)) {
                 try {
                     checkLiveStatusWithRetry()
+                    // 活动监控：视频 + 置顶（与直播同 60s 周期）
+                    checkActivities()
                 } catch (e: Exception) {
                     AppLogger.e(TAG, "checkLiveStatus error", e)
                 } finally {
@@ -153,6 +174,8 @@ class LiveCheckService : Service() {
             }
             // 检查完成后设置下一次Alarm（作为保底，AlarmReceiver也会设置）
             scheduleNextCheckAlarm()
+            // 动态流独立 5min Alarm（风控脆弱，降频 + ±10s 抖动）
+            scheduleNextDynamicAlarm()
         }
 
         return START_STICKY
@@ -226,6 +249,177 @@ class LiveCheckService : Service() {
         }
 
         lastStatus = isLive
+    }
+
+    // ========== B 站全活动监控 ==========
+
+    // 活动监控 API（internal 便于测试注入 fake）
+    internal var activityApi: com.bilibili.livemonitor.api.BilibiliActivityApi =
+        com.bilibili.livemonitor.api.BilibiliActivityApi()
+
+    private suspend fun checkActivities() {
+        if (preferenceManager.isMonitorVideos()) {
+            checkNewVideos()
+        }
+        if (preferenceManager.isMonitorPinned()) {
+            checkPinnedVideo()
+        }
+    }
+
+    private suspend fun checkNewVideos() {
+        val result = activityApi.fetchLatestVideo(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID,
+            preferenceManager
+        )
+        when (result) {
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
+                val video = result.data
+                val lastAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
+                    preferenceManager.getLastVideoAid()
+                )
+                preferenceManager.setLastVideoAid(video.aid)
+                if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertVideo(video.aid, lastAid)) {
+                    AppLogger.d(TAG, "new video detected: aid=${video.aid} title=${video.title.take(40)}")
+                    triggerActivityAlert(
+                        com.bilibili.livemonitor.domain.ActivityType.Video(video.aid, video.title)
+                    )
+                }
+            }
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData -> {
+                AppLogger.d(TAG, "video list empty, skip")
+            }
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Err -> {
+                AppLogger.w(TAG, "fetchLatestVideo failed: ${result.reason}")
+            }
+        }
+    }
+
+    private suspend fun checkPinnedVideo() {
+        val result = activityApi.fetchPinnedVideo(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID
+        )
+        when (result) {
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
+                val video = result.data
+                val lastAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
+                    preferenceManager.getLastPinnedAid()
+                )
+                preferenceManager.setLastPinnedAid(video.aid)
+                if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertPinned(video.aid, lastAid)) {
+                    AppLogger.d(TAG, "pinned video changed: aid=${video.aid}")
+                    triggerActivityAlert(
+                        com.bilibili.livemonitor.domain.ActivityType.Pinned(video.aid, video.title)
+                    )
+                }
+            }
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData -> {
+                // UP 取消了置顶也算变化
+                val lastAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
+                    preferenceManager.getLastPinnedAid()
+                )
+                if (lastAid != null) {
+                    preferenceManager.setLastPinnedAid(-1)
+                    AppLogger.d(TAG, "pinned video removed")
+                }
+            }
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Err -> {
+                AppLogger.w(TAG, "fetchPinnedVideo failed: ${result.reason}")
+            }
+        }
+    }
+
+    // 动态流检测（由独立的 5min Alarm 触发，见 ACTION_CHECK_DYNAMICS）
+    suspend fun checkNewDynamics() {
+        if (!preferenceManager.isMonitorDynamics()) return
+        if (!preferenceManager.isServiceRunning()) return
+
+        val result = activityApi.fetchLatestDynamic(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID,
+            preferenceManager
+        )
+        when (result) {
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
+                val dynamic = result.data
+                val lastId = com.bilibili.livemonitor.domain.ActivityDecider.stringToNullable(
+                    preferenceManager.getLastDynamicId()
+                )
+                preferenceManager.setLastDynamicId(dynamic.id)
+                if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertDynamic(dynamic.id, lastId)) {
+                    AppLogger.d(TAG, "new dynamic detected: id=${dynamic.id}")
+                    triggerActivityAlert(
+                        com.bilibili.livemonitor.domain.ActivityType.Dynamic(dynamic.id, dynamic.displayText)
+                    )
+                }
+            }
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData -> {
+                AppLogger.d(TAG, "dynamic feed empty, skip")
+            }
+            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Err -> {
+                // 风控脆弱，失败静默不扰
+                AppLogger.w(TAG, "fetchLatestDynamic failed: ${result.reason}")
+            }
+        }
+    }
+
+    private fun triggerActivityAlert(type: com.bilibili.livemonitor.domain.ActivityType) {
+        when (type) {
+            is com.bilibili.livemonitor.domain.ActivityType.Video -> {
+                sendVideoNotification(type.aid, type.title, "新视频投稿")
+                if (preferenceManager.isAlertRingOnActivity()) playAlertSound()
+            }
+            is com.bilibili.livemonitor.domain.ActivityType.Pinned -> {
+                sendVideoNotification(type.aid, type.title, "置顶视频变更")
+                if (preferenceManager.isAlertRingOnActivity()) playAlertSound()
+            }
+            is com.bilibili.livemonitor.domain.ActivityType.Dynamic -> {
+                sendDynamicNotification(type.id, type.displayText)
+                if (preferenceManager.isAlertRingOnActivity()) playAlertSound()
+            }
+            is com.bilibili.livemonitor.domain.ActivityType.Live -> {
+                // 不应走到这里，开播提醒走 triggerAlert()
+            }
+        }
+    }
+
+    private fun sendVideoNotification(aid: Long, title: String, prefix: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://video/$aid")).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, aid.toInt(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle("白绮 $prefix")
+            .setContentText(title.take(50))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_VIDEO, notification)
+    }
+
+    private fun sendDynamicNotification(dynamicId: String, displayText: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://dynamic/$dynamicId")).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, dynamicId.hashCode(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val text = displayText.takeIf { it.isNotBlank() } ?: "白绮发布了新动态"
+        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_DYNAMIC_ALERT_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle("白绮新动态")
+            .setContentText(text.take(50))
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC, notification)
     }
 
     private fun updateNotification(isLive: Boolean) {
@@ -447,6 +641,7 @@ class LiveCheckService : Service() {
             preferenceManager.setServiceRunning(false)
         }
         cancelAlarm()
+        cancelDynamicAlarm()
 
         // 释放所有WakeLock
         if (::wakeLock.isInitialized && wakeLock.isHeld) {
@@ -529,6 +724,54 @@ class LiveCheckService : Service() {
         }
     }
 
+    // 动态流独立 5min Alarm（风控脆弱，降频 + ±10s 抖动避免固定间隔被识别）
+    private fun scheduleNextDynamicAlarm() {
+        if (!preferenceManager.isMonitorDynamics()) return
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, LiveCheckService::class.java).apply {
+                action = ACTION_CHECK_DYNAMICS
+            }
+            val pendingIntent = PendingIntent.getService(
+                this, DYNAMIC_ALARM_REQUEST_CODE, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            // 5min ± 10s 抖动
+            val jitter = (Math.random() * 20_000 - 10_000).toLong()
+            val triggerAt = System.currentTimeMillis() + DYNAMIC_CHECK_INTERVAL + jitter
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() -> {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                }
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                }
+                else -> {
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                }
+            }
+            AppLogger.d(TAG, "scheduleNextDynamicAlarm at $triggerAt")
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "scheduleNextDynamicAlarm failed", e)
+        }
+    }
+
+    private fun cancelDynamicAlarm() {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, LiveCheckService::class.java).apply {
+                action = ACTION_CHECK_DYNAMICS
+            }
+            val pendingIntent = PendingIntent.getService(
+                this, DYNAMIC_ALARM_REQUEST_CODE, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarmManager.cancel(pendingIntent)
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "cancelDynamicAlarm failed", e)
+        }
+    }
+
     companion object {
         const val EXTRA_ROOM_ID = "room_id"
         const val ACTION_STATUS_CHANGED = "com.bilibili.livemonitor.STATUS_CHANGED"
@@ -536,12 +779,15 @@ class LiveCheckService : Service() {
         const val ACTION_STOP_SERVICE = "com.bilibili.livemonitor.STOP_SERVICE"
         const val ACTION_WATCH_LIVE = "com.bilibili.livemonitor.WATCH_LIVE"
         const val ACTION_RESTART_SERVICE = "com.bilibili.livemonitor.RESTART_SERVICE"
+        const val ACTION_CHECK_DYNAMICS = "com.bilibili.livemonitor.CHECK_DYNAMICS"
         private const val DEFAULT_ROOM_ID = 11258892L
         private const val CHECK_INTERVAL = 60_000L // 60秒
+        private const val DYNAMIC_CHECK_INTERVAL = 5 * 60_000L // 5分钟
         private const val CHECK_TIMEOUT = 25_000L // 单次检测超时25秒
         private const val ERROR_RETRY_DELAY = 15_000L // 错误后15秒重试
         private const val STATUS_RESTORE_MAX_AGE = 600_000L // 进程重启时恢复状态的新鲜度窗口（10分钟）
         private const val ALARM_REQUEST_CODE = 2001
+        private const val DYNAMIC_ALARM_REQUEST_CODE = 2002
         private const val TAG = "LiveCheckService"
 
         @Volatile
