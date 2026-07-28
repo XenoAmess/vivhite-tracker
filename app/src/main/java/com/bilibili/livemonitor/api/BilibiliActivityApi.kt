@@ -52,7 +52,11 @@ open class BilibiliActivityApi {
         val query = signed.entries.joinToString("&") { (k, v) -> "$k=$v" }
         val url = "https://api.bilibili.com/x/space/wbi/arc/search?$query"
 
-        val json = HttpClient.get(url) ?: return@withContext ActivityResult.Err("network error")
+        // space API 需要 Referer 为 space.bilibili.com/{mid}，否则触发风控
+        val json = HttpClient.get(
+            url,
+            mapOf("Referer" to "https://space.bilibili.com/$mid")
+        ) ?: return@withContext ActivityResult.Err("network error")
         parseVideoList(json)
     }
 
@@ -96,8 +100,13 @@ open class BilibiliActivityApi {
         val query = signed.entries.joinToString("&") { (k, v) -> "$k=$v" }
         val url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?$query"
 
-        val json = HttpClient.get(url, mapOf("Cookie" to "buvid3=$buvid3"))
-            ?: return@withContext ActivityResult.Err("network error")
+        val json = HttpClient.get(
+            url,
+            mapOf(
+                "Cookie" to "buvid3=$buvid3",
+                "Referer" to "https://space.bilibili.com/$mid"
+            )
+        ) ?: return@withContext ActivityResult.Err("network error")
         parseDynamicFeed(json)
     }
 
