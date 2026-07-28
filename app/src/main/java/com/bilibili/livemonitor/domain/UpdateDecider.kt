@@ -71,14 +71,6 @@ object UpdateDecider {
         }
     }
 
-    // vivhite-tracker-1.1.92.apk → (92, "1.1.92")；versionName 尾段即 versionCode
-    fun parseApkFileName(fileName: String): Pair<Int, String>? {
-        val match = APK_NAME_REGEX.matchEntire(fileName) ?: return null
-        val versionName = match.groupValues[1]
-        val code = versionName.substringAfterLast('.').toIntOrNull() ?: return null
-        return code to versionName
-    }
-
     // 决策：远端 versionCode 更高 → 有更新；无法确定远端版本 → Error；否则已最新
     fun decide(
         localVersionCode: Int,
@@ -97,5 +89,5 @@ object UpdateDecider {
     }
 
     const val VERSION_JSON_NAME = "version.json"
-    private val APK_NAME_REGEX = Regex("vivhite-tracker-(\\d+\\.\\d+\\.\\d+)\\.apk")
+    private val APK_NAME_REGEX = Regex("vivhite-tracker-.+\\.apk")
 }

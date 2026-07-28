@@ -28,8 +28,8 @@ Android 单模块 Kotlin 应用：监控 B 站直播间 11258892（白绮）开�
   CI 用 temurin 17，无此问题。
 - **签名**：`app/debug.keystore` 存在时 Gradle 用它签名（默认 android 密码），保证 CI 与本地 APK 签名一致可覆盖安装。CI 从 secret `DEBUG_KEYSTORE_BASE64` 解码生成该文件。不要删除本地这个文件。**release 与 debug 复用同一份 keystore**（`SIGNING_KEY`=同内容 base64 + `KEY_STORE_PASSWORD`/`ALIAS`/`KEY_PASSWORD`=android 默认值），release/debug APK 可互相覆盖安装。
 - **仓库默认 workflow 权限是 read**：新建 workflow 需要写操作（建 release、读写 PR、部署 Pages）时必须显式声明 `permissions:`，否则报 `Resource not accessible by integration`。
-- release workflow 的 checkout 必须 `fetch-depth: 0`（versionCode 依赖完整 git 历史）。
-- `versionCode` = `git rev-list --count HEAD`（`app/build.gradle.kts`），构建必须能在项目目录执行 git。
+- **所有** workflow 的 checkout 都必须 `fetch-depth: 0`（versionCode = `git rev-list --count HEAD`、versionName = `git describe --tags` 都依赖完整 git 历史，浅克隆会让前者塌成 1、后者直接报错）。
+- `versionCode` = `git rev-list --count HEAD`（`app/build.gradle.kts`），单调递增保证覆盖安装；`versionName` 从最近 tag 推导（`v1.1.2` → `1.1.2`，tag 后有 N commit → `1.1.2+N`，无 tag → `0.0.0+commit数`），让 tag 与显示对齐。构建必须能在项目目录执行 git。
 
 ## 架构：检测循环（读代码前先看这里）
 

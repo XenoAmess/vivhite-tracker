@@ -9,7 +9,7 @@ import javax.net.ssl.HttpsURLConnection
 
 open class UpdateChecker {
 
-    // 检查 GitHub 最新 Release：优先 version.json 精确版本号，回退 APK 文件名解析
+    // 检查 GitHub 最新 Release：version.json 提供精确 versionCode，缺失则返回 Error
     suspend fun checkLatestRelease(localVersionCode: Int): UpdateDecider.UpdateState =
         withContext(Dispatchers.IO) {
             val releaseJson = httpGet(LATEST_RELEASE_API)
@@ -19,7 +19,6 @@ open class UpdateChecker {
             val remoteVersion = raw.versionJsonUrl
                 ?.let { httpGet(it) }
                 ?.let { UpdateDecider.parseVersionJson(it) }
-                ?: raw.apkFileName?.let { UpdateDecider.parseApkFileName(it) }
             UpdateDecider.decide(localVersionCode, remoteVersion, raw)
         }
 

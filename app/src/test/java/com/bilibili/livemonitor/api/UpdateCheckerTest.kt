@@ -47,7 +47,8 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `无 versionJson 时回退 APK 文件名解析`() = runBlocking {
+    fun `无 versionJson 时返回 Error`() = runBlocking {
+        // 删掉文件名兜底后，缺 version.json 无法确定远端 versionCode，直接 Error
         val checker = FakeUpdateChecker(
             mapOf(
                 apiUrl to releaseJson(
@@ -56,8 +57,7 @@ class UpdateCheckerTest {
             )
         )
         val state = checker.checkLatestRelease(localVersionCode = 91)
-        assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
-        assertEquals(92, (state as UpdateDecider.UpdateState.UpdateAvailable).info.versionCode)
+        assertTrue(state is UpdateDecider.UpdateState.Error)
     }
 
     @Test
@@ -103,7 +103,8 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `versionJson 请求失败时回退文件名解析`() = runBlocking {
+    fun `versionJson 请求失败时返回 Error`() = runBlocking {
+        // version.json URL 存在但下载失败（httpGet 返回 null），不再回退文件名解析
         val checker = FakeUpdateChecker(
             mapOf(
                 apiUrl to releaseJson(fullAssets),
@@ -111,7 +112,6 @@ class UpdateCheckerTest {
             )
         )
         val state = checker.checkLatestRelease(localVersionCode = 91)
-        assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
-        assertEquals(92, (state as UpdateDecider.UpdateState.UpdateAvailable).info.versionCode)
+        assertTrue(state is UpdateDecider.UpdateState.Error)
     }
 }

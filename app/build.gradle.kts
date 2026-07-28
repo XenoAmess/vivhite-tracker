@@ -16,9 +16,24 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // 使用 Git commit 数作为 versionCode，确保 CI 构建可以覆盖安装
+        // versionCode：Git commit 数，单调递增，保证 CI 构建可覆盖安装
         versionCode = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
-        versionName = "1.1.${versionCode}"
+        // versionName：从最近 tag 推导，让 tag 与显示对齐。
+        // HEAD 在 tag 上 → "1.1.2"；tag 后有 N commit → "1.1.2+N"；
+        // 无 tag → "0.0.0+${commit数}"（首次构建前边界）
+        versionName = run {
+            val describe = providers.exec {
+                commandLine("git", "describe", "--tags", "--long")
+            }.standardOutput.asText.get().trim()
+            val match = Regex("v(.+)-(\\d+)-g[0-9a-f]+").matchEntire(describe)
+            if (match != null) {
+                val base = match.groupValues[1]
+                val ahead = match.groupValues[2].toInt()
+                if (ahead == 0) base else "$base+$ahead"
+            } else {
+                "0.0.0+$versionCode"
+            }
+        }
         // 8 位 git 哈希，用于首页版本信息展示
         buildConfigField(
             "String",

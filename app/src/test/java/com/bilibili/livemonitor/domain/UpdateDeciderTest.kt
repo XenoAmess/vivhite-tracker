@@ -55,15 +55,6 @@ class UpdateDeciderTest {
         assertNull(UpdateDecider.parseVersionJson("not json"))
     }
 
-    @Test
-    fun `parseApkFileName 从版本化文件名提取`() {
-        assertEquals(92 to "1.1.92", UpdateDecider.parseApkFileName("vivhite-tracker-1.1.92.apk"))
-        assertEquals(100 to "1.1.100", UpdateDecider.parseApkFileName("vivhite-tracker-1.1.100.apk"))
-        assertNull(UpdateDecider.parseApkFileName("app-release.apk"))
-        assertNull(UpdateDecider.parseApkFileName("vivhite-tracker-1.1.apk"))
-        assertNull(UpdateDecider.parseApkFileName("other-1.1.92.apk"))
-    }
-
     private fun raw(
         apkUrl: String? = "https://example.com/vivhite-tracker-1.1.92.apk"
     ) = UpdateDecider.RawRelease(

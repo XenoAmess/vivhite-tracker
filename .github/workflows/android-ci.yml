@@ -13,6 +13,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
+      with:
+        # versionCode 依赖完整 git 历史（git rev-list --count HEAD），浅克隆会塌成 1
+        fetch-depth: 0
 
     - name: Set up JDK 17
       uses: actions/setup-java@v5
@@ -81,6 +84,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
+      with:
+        # 与 build job 一致，保证 instrumented test 里 BuildConfig.VERSION_CODE 准确
+        fetch-depth: 0
 
     - name: Set up JDK 17
       uses: actions/setup-java@v5
