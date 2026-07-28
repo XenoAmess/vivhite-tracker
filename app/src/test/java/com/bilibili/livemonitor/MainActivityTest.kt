@@ -696,7 +696,10 @@ class MainActivityTest {
         override suspend fun httpGet(url: String): String? = responses[url]
     }
 
-    private fun fakeUpdateCheckerWithUpdate(versionCode: Int = 95): FakeUpdateChecker {
+    // 远端版本号必须动态高于本地（versionCode=提交数，随提交增长，硬编码会失效）
+    private fun fakeUpdateCheckerWithUpdate(
+        versionCode: Int = BuildConfig.VERSION_CODE + 1
+    ): FakeUpdateChecker {
         val releaseJson = """{
             "tag_name": "v1.1.2",
             "body": "更新日志内容",
@@ -757,10 +760,11 @@ class MainActivityTest {
 
         val dialog = waitForNewDialog(baseline)
         assertTrue("应弹出更新对话框", dialog != null)
+        val expectedVersion = BuildConfig.VERSION_CODE + 1
         val title = dialog!!.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)
         assertTrue(
             "标题应含新版本号: ${title?.text}",
-            title?.text?.contains("发现新版本 v1.1.95") == true
+            title?.text?.contains("发现新版本 v1.1.$expectedVersion") == true
         )
         val message = dialog.findViewById<android.widget.TextView>(android.R.id.message)
         assertTrue("应含更新日志: ${message?.text}", message?.text?.contains("更新日志内容") == true)
@@ -817,7 +821,8 @@ class MainActivityTest {
     @Test
     fun `自动检测到新版本 弹对话框且可忽略此版本`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.updateChecker = fakeUpdateCheckerWithUpdate(versionCode = 95)
+        val fakeVersion = BuildConfig.VERSION_CODE + 1
+        activity.updateChecker = fakeUpdateCheckerWithUpdate(versionCode = fakeVersion)
         prefs.setLastUpdateCheckTime(0L)
 
         activity.autoCheckUpdateIfDue()
@@ -829,7 +834,7 @@ class MainActivityTest {
         // 点「忽略此版本」后持久化 versionCode，且对话框消失
         dialog!!.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).performClick()
         shadowOf(android.os.Looper.getMainLooper()).idle()
-        assertEquals(95, prefs.getDismissedVersionCode())
+        assertEquals(fakeVersion, prefs.getDismissedVersionCode())
         assertFalse(dialog.isShowing)
 
         // 再次自动检测：被忽略的版本不再弹

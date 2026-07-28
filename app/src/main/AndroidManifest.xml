@@ -132,6 +132,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- 覆盖安装后拉起监控服务：系统杀进程后 60s 闹钟可能被 ROM 清掉，
+             此接收器把恢复空窗从 15min（Worker 兜底）压缩到秒级。
+             受保护广播只有系统能投递，exported=true 无安全风险 -->
+        <receiver
+            android:name=".receiver.PackageReplacedReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".receiver.AlarmReceiver"
             android:enabled="true"
