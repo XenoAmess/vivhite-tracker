@@ -82,71 +82,102 @@ object QqShare {
 }
 
 /**
+ * QQ 互联 SDK 分享调用的包装接口，便于测试注入 fake。
+ *
+ * 流程设计（2026-07 用户反馈审核通过后 -6 用户未授权）：
+ * 1. UI 先调 [isAuthorized] 检查；未授权弹引导对话框，由用户决定"去授权"或"普通分享"
+ * 2. 用户选"去授权"后，UI 调 [login] 弹 QQ 授权页；登录完成回调里自动调 [shareToQQ]
+ * 3. 用户选"普通分享"或 shareToQQ 失败，UI 自行 fallback 到系统分享面板
+ *
  * 错误码 -6 = 用户未授权（QQ 互联 SDK 标准定义）
  * 其他负数 = 网络/参数错误；正数 = 业务级错误
  */
-internal const val QQ_ERR_USER_NOT_AUTHORIZED = -6
-
-/**
- * QQ 互联 SDK 分享调用的包装接口，便于测试注入 fake。
- * 流程：
- * 1. 检查 sessionValid（未授权 → 先 login）
- * 2. login 成功后回调里调 shareToQQ
- * 3. shareToQQ 失败（-6 或其他）→ fallback + Toast
- */
 interface QqSdkSharer {
     /**
-     * 分享入口。已登录直接 share；未登录先弹 QQ 授权页，授权成功后自动 share。
-     * @param onFallback 当 SDK 不可用或同步异常时调用，触发系统分享面板
+     * 当前是否已授权 QQ 互联（持有有效 session）。
+     * 引导对话框先调此决定 UI 走向。
      */
-    fun loginAndShare(
+    fun isAuthorized(): Boolean
+
+    /**
+     * 弹 QQ 授权页；登录完成回调里 onAuthorized() 被调用。
+     * @param onAuthorized 用户在 QQ 端完成授权后回调（UI 可继续走 shareToQQ）
+     * @param onCancelled 用户在 QQ 授权页取消时回调
+     * @param onError 授权过程出错时回调
+     */
+    fun login(
+        onAuthorized: () -> Unit,
+        onCancelled: () -> Unit,
+        onError: (errorCode: Int, message: String?) -> Unit
+    )
+
+    /**
+     * 分享入口（已授权情况下直接调）。失败由调用方处理。
+     * @param onComplete 分享成功回调
+     * @param onCancel 分享取消
+     * @param onError (errorCode, message) → -6 是 session 过期，UI 应重新弹授权引导
+     */
+    fun shareToQQ(
         activity: android.app.Activity,
         params: Bundle,
-        onFallback: () -> Unit
+        onComplete: () -> Unit,
+        onCancel: () -> Unit,
+        onError: (errorCode: Int, message: String?) -> Unit
     )
 }
 
 class DefaultQqSdkSharer : QqSdkSharer {
-    override fun loginAndShare(
-        activity: android.app.Activity,
-        params: Bundle,
-        onFallback: () -> Unit
-    ) {
-        val tencent = QqShare.obtainTencent(activity)
-        if (tencent.isSessionValid) {
-            doShare(activity, params, onFallback)
-        } else {
-            // 未授权：弹 QQ 登录授权页，授权回调里再 share
-            AppLogger.d(TAG, "qq session invalid, requesting login")
-            tencent.login(activity, "all", object : com.tencent.tauth.IUiListener {
-                override fun onComplete(response: Any?) {
-                    AppLogger.d(TAG, "qq login complete: $response")
-                    // 登录成功后再 share
-                    doShare(activity, params, onFallback)
-                }
+    private val contextRef = java.util.concurrent.atomic.AtomicReference<android.content.Context>()
 
-                override fun onError(e: com.tencent.tauth.UiError?) {
-                    AppLogger.e(TAG, "qq login error: ${e?.errorCode} ${e?.errorMessage}")
-                    Toast.makeText(activity, "QQ 授权失败", Toast.LENGTH_SHORT).show()
-                    onFallback()
-                }
-
-                override fun onCancel() {
-                    AppLogger.d(TAG, "qq login cancelled")
-                    onFallback()
-                }
-
-                override fun onWarning(code: Int) {
-                    AppLogger.w(TAG, "qq login warning: $code")
-                }
-            })
+    override fun isAuthorized(): Boolean {
+        val ctx = contextRef.get() ?: return false
+        return try {
+            QqShare.obtainTencent(ctx).isSessionValid
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "isAuthorized check failed", e)
+            false
         }
     }
 
-    private fun doShare(
+    override fun login(
+        onAuthorized: () -> Unit,
+        onCancelled: () -> Unit,
+        onError: (errorCode: Int, message: String?) -> Unit
+    ) {
+        val ctx = contextRef.get() ?: run {
+            onError(-1, "context null")
+            return
+        }
+        val tencent = QqShare.obtainTencent(ctx)
+        AppLogger.d(TAG, "qq requesting login")
+        tencent.login(ctx as android.app.Activity, "all", object : com.tencent.tauth.IUiListener {
+            override fun onComplete(response: Any?) {
+                AppLogger.d(TAG, "qq login complete: $response")
+                onAuthorized()
+            }
+
+            override fun onError(e: com.tencent.tauth.UiError?) {
+                AppLogger.e(TAG, "qq login error: ${e?.errorCode} ${e?.errorMessage}")
+                onError(e?.errorCode ?: -1, e?.errorMessage)
+            }
+
+            override fun onCancel() {
+                AppLogger.d(TAG, "qq login cancelled")
+                onCancelled()
+            }
+
+            override fun onWarning(code: Int) {
+                AppLogger.w(TAG, "qq login warning: $code")
+            }
+        })
+    }
+
+    override fun shareToQQ(
         activity: android.app.Activity,
         params: Bundle,
-        onFallback: () -> Unit
+        onComplete: () -> Unit,
+        onCancel: () -> Unit,
+        onError: (errorCode: Int, message: String?) -> Unit
     ) {
         try {
             val tencent = QqShare.obtainTencent(activity)
@@ -154,7 +185,7 @@ class DefaultQqSdkSharer : QqSdkSharer {
             qqShare.shareToQQ(activity, params, object : com.tencent.tauth.IUiListener {
                 override fun onComplete(response: Any?) {
                     AppLogger.d(TAG, "qq share complete: $response")
-                    Toast.makeText(activity, "已分享", Toast.LENGTH_SHORT).show()
+                    onComplete()
                 }
 
                 override fun onError(e: com.tencent.tauth.UiError?) {
@@ -162,18 +193,12 @@ class DefaultQqSdkSharer : QqSdkSharer {
                         TAG,
                         "qq share error: code=${e?.errorCode} msg=${e?.errorMessage} detail=${e?.errorDetail}"
                     )
-                    // errorCode=-6 用户未授权（异常路径，理论上 loginAndShare 已处理）
-                    // 其他错误码：网络/参数问题，fallback 到系统分享
-                    if (e?.errorCode == QQ_ERR_USER_NOT_AUTHORIZED) {
-                        Toast.makeText(activity, "请先授权 QQ 登录", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(activity, "分享失败，使用系统分享", Toast.LENGTH_SHORT).show()
-                    }
-                    onFallback()
+                    onError(e?.errorCode ?: -1, e?.errorMessage)
                 }
 
                 override fun onCancel() {
                     AppLogger.d(TAG, "qq share cancelled")
+                    onCancel()
                 }
 
                 override fun onWarning(code: Int) {
@@ -182,11 +207,24 @@ class DefaultQqSdkSharer : QqSdkSharer {
             })
         } catch (e: Exception) {
             AppLogger.e(TAG, "qq share sync error", e)
-            onFallback()
+            onError(-1, e.message)
         }
+    }
+
+    init {
+        // MainActivity 在 onCreate 时把 applicationContext 注入这里，
+        // 用于 isAuthorized / login 调 Tencent.createInstance
+        // 此处不主动 inject，由外部 (QqShare.bind) 触发
+    }
+
+    fun bind(context: android.content.Context) {
+        contextRef.set(context.applicationContext)
     }
 
     companion object {
         private const val TAG = "QqSdkSharer"
     }
 }
+
+/** 错误码 -6 = 用户未授权（QQ 互联 SDK 标准定义） */
+internal const val QQ_ERR_USER_NOT_AUTHORIZED = -6

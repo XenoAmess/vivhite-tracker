@@ -412,10 +412,18 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         var capturedParams: android.os.Bundle? = null
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
-            override fun loginAndShare(
+            override fun isAuthorized(): Boolean = true
+            override fun login(
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { /* not called in this test */ }
+            override fun shareToQQ(
                 activity: android.app.Activity,
                 params: android.os.Bundle,
-                onFallback: () -> Unit
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
             ) {
                 capturedParams = params
             }
@@ -442,60 +450,128 @@ class MainActivityTest {
     }
 
     @Test
-    fun `SDK分享异常时 兜底系统分享面板`() {
+    fun `未授权时点分享 弹授权引导对话框`() {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
-            override fun loginAndShare(
+            override fun isAuthorized(): Boolean = false
+            override fun login(
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { /* not called in this test */ }
+            override fun shareToQQ(
                 activity: android.app.Activity,
                 params: android.os.Bundle,
-                onFallback: () -> Unit
-            ) {
-                // 模拟 SDK 同步异常：直接调 onFallback
-                onFallback()
-            }
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { /* 不应直接调 shareToQQ */ }
         }
 
         activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
-
+        // shareLiveRoom 走 shareScope(Dispatchers.Main) 协程，跑 cover 取 3s 超时
+        // 等到引导 dialog 出现或超时
         val deadline = System.currentTimeMillis() + 10_000
-        var started: android.content.Intent? = null
-        while (started == null && System.currentTimeMillis() < deadline) {
+        var guideDialog: androidx.appcompat.app.AlertDialog? = null
+        while (guideDialog == null && System.currentTimeMillis() < deadline) {
             shadowOf(android.os.Looper.getMainLooper()).idle()
-            started = shadowOf(context).nextStartedActivity
-            if (started == null) Thread.sleep(100)
+            guideDialog = org.robolectric.shadows.ShadowDialog.getShownDialogs()
+                .map { it as androidx.appcompat.app.AlertDialog }
+                .firstOrNull { it.isShowing && it.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)?.text?.toString() == "QQ 分享需要先授权" }
+            if (guideDialog == null) Thread.sleep(100)
         }
-        assertTrue("异常时应兜底系统分享", started != null)
+        assertNotNull("未授权应弹引导对话框", guideDialog)
+        val titleView = guideDialog!!.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)
+        assertEquals("QQ 分享需要先授权", titleView?.text?.toString())
+    }
+
+    @Test
+    fun `引导对话框选普通分享 走系统分享面板`() {
+        makeQqInstalled(true)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun isAuthorized(): Boolean = false
+            override fun login(
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { /* not called */ }
+            override fun shareToQQ(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { /* not called */ }
+        }
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        // 等引导 dialog 出现
+        val deadline = System.currentTimeMillis() + 10_000
+        var guideDialog: androidx.appcompat.app.AlertDialog? = null
+        while (guideDialog == null && System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            guideDialog = org.robolectric.shadows.ShadowDialog.getShownDialogs()
+                .map { it as androidx.appcompat.app.AlertDialog }
+                .firstOrNull { it.isShowing && it.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)?.text?.toString() == "QQ 分享需要先授权" }
+            if (guideDialog == null) Thread.sleep(100)
+        }
+        // 点 "普通分享"（negative button）
+        assertNotNull("应找到引导对话框", guideDialog)
+        guideDialog!!.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        val started = shadowOf(context).nextStartedActivity
+        assertTrue("普通分享应触发系统分享面板", started != null)
         val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT)
         val sendAction = inner?.action ?: started?.action
         assertEquals(Intent.ACTION_SEND, sendAction)
     }
 
     @Test
-    fun `未装QQ时点分享 走SDK路径由SDK自身处理未装场景`() {
-        // 设计上分享不再做 installedQqPackage 判断：SDK 未装 QQ 时由其自身
-        // AssistActivity 引导安装；SDK 异常则兜底系统分享。这里验证不崩即可。
-        makeQqInstalled(false)
+    fun `授权过期 onError code=-6 重新弹引导对话框`() {
+        // 模拟：用户已授权过（点过对话框的"去 QQ 授权"），session 后续过期
+        // shareToQQ 回调收到 code=-6 → UI 重新弹引导对话框
+        makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        var invoked = false
+        var shareCalled = false
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
-            override fun loginAndShare(
+            override fun isAuthorized(): Boolean = true  // session 看起来还有效
+            override fun login(
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { /* not called */ }
+            override fun shareToQQ(
                 activity: android.app.Activity,
                 params: android.os.Bundle,
-                onFallback: () -> Unit
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
             ) {
-                invoked = true
+                shareCalled = true
+                // 模拟 session 过期：shareToQQ 立即回调 -6
+                onError(-6, "用户未授权")
             }
         }
 
         activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
-
         val deadline = System.currentTimeMillis() + 10_000
-        while (!invoked && System.currentTimeMillis() < deadline) {
+        while (!shareCalled && System.currentTimeMillis() < deadline) {
             shadowOf(android.os.Looper.getMainLooper()).idle()
             Thread.sleep(100)
         }
-        assertTrue(invoked)
+        assertTrue("shareToQQ 应被调用", shareCalled)
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        // 验证：再次弹授权引导对话框
+        val dialog = org.robolectric.shadows.ShadowDialog.getShownDialogs()
+            .map { it as androidx.appcompat.app.AlertDialog }
+            .firstOrNull { it.isShowing && it.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)?.text?.toString() == "QQ 分享需要先授权" }
+        assertNotNull("session 过期 -6 应重新弹引导", dialog)
+        val titleView = dialog!!.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)
+        assertEquals("QQ 分享需要先授权", titleView?.text?.toString())
     }
 
     @Test

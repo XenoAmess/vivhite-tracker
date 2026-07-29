@@ -772,19 +772,93 @@ class MainActivity : AppCompatActivity() {
 
     internal fun shareLiveRoom() {
         Toast.makeText(this, "正在生成分享卡片…", Toast.LENGTH_SHORT).show()
+        // 注入 applicationContext 给 DefaultQqSdkSharer（isAuthorized/login 需要）
+        (qqSdkSharer as? com.bilibili.livemonitor.util.DefaultQqSdkSharer)?.bind(applicationContext)
         shareScope.launch {
             val cover = withTimeoutOrNull(3000) {
                 BilibiliApi().fetchRoomCover(QqShare.ROOM_ID)
             } ?: QqShare.FALLBACK_COVER_URL
             AppLogger.d("MainActivity", "share cover=$cover")
             val params = QqShare.buildSdkShareParams(cover)
-            // loginAndShare 内部已处理：未授权先 login、异步 onError 触发 fallback。
-            // 这里的 fallback 兜底同步异常（如 Tencent 初始化失败）。
-            qqSdkSharer.loginAndShare(this@MainActivity, params) {
-                AppLogger.d("MainActivity", "fallback to system share")
-                startActivity(Intent.createChooser(QqShare.buildSystemShareIntent(), "分享直播间"))
-            }
+            doQqShare(params)
         }
+    }
+
+    private fun doQqShare(params: android.os.Bundle) {
+        if (qqSdkSharer.isAuthorized()) {
+            // 已授权：直接走真卡片
+            doQqShareAfterAuthorized(params)
+        } else {
+            // 未授权：弹引导对话框让用户选「去授权」或「普通分享」
+            showQqAuthGuideDialog(params)
+        }
+    }
+
+    private fun showQqAuthGuideDialog(params: android.os.Bundle) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("QQ 分享需要先授权")
+            .setMessage(
+                "首次分享到 QQ 需要先在 QQ 端授权「牢白播了吗」使用 QQ 互联能力。\n\n" +
+                "点「去 QQ 授权」完成授权后，下次即可使用真卡片分享。\n" +
+                "点「普通分享」可用纯文本分享（无封面）。"
+            )
+            .setPositiveButton("去 QQ 授权") { dialog, _ ->
+                dialog.dismiss()
+                qqSdkSharer.login(
+                    onAuthorized = {
+                        AppLogger.d("MainActivity", "qq auth completed, proceed to share")
+                        Toast.makeText(this, "QQ 授权成功", Toast.LENGTH_SHORT).show()
+                        doQqShareAfterAuthorized(params)
+                    },
+                    onCancelled = {
+                        Toast.makeText(this, "已取消授权", Toast.LENGTH_SHORT).show()
+                    },
+                    onError = { code, msg ->
+                        AppLogger.e("MainActivity", "qq auth failed: code=$code msg=$msg")
+                        Toast.makeText(this, "QQ 授权失败：$msg", Toast.LENGTH_LONG).show()
+                        // 授权失败也兜底走系统分享，用户至少能分享出去
+                        fallbackToSystemShare()
+                    }
+                )
+            }
+            .setNegativeButton("普通分享") { dialog, _ ->
+                dialog.dismiss()
+                fallbackToSystemShare()
+            }
+            .setCancelable(true)
+            .show()
+    }
+
+    private fun doQqShareAfterAuthorized(params: android.os.Bundle) {
+        qqSdkSharer.shareToQQ(
+            activity = this,
+            params = params,
+            onComplete = {
+                Toast.makeText(this, "已分享到 QQ", Toast.LENGTH_SHORT).show()
+            },
+            onCancel = {
+                AppLogger.d("MainActivity", "qq share cancelled by user")
+            },
+            onError = { code, msg ->
+                AppLogger.e("MainActivity", "qq share onError: code=$code msg=$msg")
+                when (code) {
+                    com.bilibili.livemonitor.util.QQ_ERR_USER_NOT_AUTHORIZED -> {
+                        // session 过期/失效（罕见，但可能发生）：重新弹引导
+                        AppLogger.w("MainActivity", "qq session expired unexpectedly, re-prompt")
+                        showQqAuthGuideDialog(params)
+                    }
+                    else -> {
+                        Toast.makeText(this, "分享失败：$msg", Toast.LENGTH_LONG).show()
+                        fallbackToSystemShare()
+                    }
+                }
+            }
+        )
+    }
+
+    private fun fallbackToSystemShare() {
+        AppLogger.d("MainActivity", "fallback to system share")
+        startActivity(Intent.createChooser(QqShare.buildSystemShareIntent(), "分享直播间"))
     }
 
     // 最终兜底：把带 bbid 归因的分享链接复制到剪贴板
