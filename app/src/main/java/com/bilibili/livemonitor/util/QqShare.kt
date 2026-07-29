@@ -149,6 +149,16 @@ class DefaultQqSdkSharer : QqSdkSharer {
         // login() 必须用 Activity 上下文（QQ 授权页是一个透明 Activity），
         // 之前用 applicationContext 强转 Activity 导致 ClassCastException 崩溃
         val tencent = QqShare.obtainTencent(activity)
+        // 绕 SDK 内部 "permission not granted" 提前 -6 限制：
+        // SDK 3.5.19 的 Tencent.isPermissionNotGranted() 首次跑（shared_prefs 无 build_model）
+        // 会立即返回 true → tencent.login() 第一步就回调 -6，根本不弹 QQ 授权页。
+        // setIsPermissionGranted(true) 同时设 static d=false 并把 build_model 写进 shared_prefs，
+        // 之后 isPermissionNotGranted() 直接走 d==false 分支返回 false，正常走 login 流程。
+        // 公开 API（com.tencent.tauth.Tencent），不涉及任何 hack。
+        com.tencent.tauth.Tencent.setIsPermissionGranted(
+            true,
+            android.os.Build.MODEL
+        )
         AppLogger.d(TAG, "qq requesting login")
         tencent.login(activity, "all", object : com.tencent.tauth.IUiListener {
             override fun onComplete(response: Any?) {
