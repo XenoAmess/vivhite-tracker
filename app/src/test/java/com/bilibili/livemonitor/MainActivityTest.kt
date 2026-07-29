@@ -406,6 +406,145 @@ class MainActivityTest {
         }
     }
 
+    // ============================================================
+    // 补测 (2026-07-30): QqShare 修复后覆盖
+    // ============================================================
+
+    @Test
+    fun `onActivityResult 转发到 Tencent onActivityResultData 触发 listener`() {
+        // 模拟 SDK OAuth 完成后系统回调 MainActivity.onActivityResult，
+        // 我们的 QqSharer 应转发到 Tencent.onActivityResultData 并把 listener 传过去
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        var capturedRequestCode = -1
+        var capturedResultCode = -1
+        var capturedListener: com.tencent.tauth.IUiListener? = null
+        val myListener = object : com.tencent.tauth.IUiListener {
+            override fun onComplete(response: Any?) {}
+            override fun onError(e: com.tencent.tauth.UiError?) {}
+            override fun onCancel() {}
+            override fun onWarning(code: Int) {}
+        }
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun isAuthorized(): Boolean = true
+            override fun login(
+                activity: android.app.Activity,
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) {}
+            override fun shareToQQ(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) {}
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+                capturedRequestCode = requestCode
+                capturedResultCode = resultCode
+                capturedListener = myListener
+            }
+        }
+        // 直接 super.onActivityResult 调用 (用 ActivityResult 包装, API 31+ 推荐)
+        val data = android.content.Intent()
+        val onActivityResult = activity.javaClass.declaredMethods.firstOrNull {
+            it.name == "onActivityResult" &&
+                it.parameterTypes.size == 3 &&
+                it.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                it.parameterTypes[1] == Int::class.javaPrimitiveType
+        }
+        assertNotNull("找不到 onActivityResult 方法", onActivityResult)
+        onActivityResult!!.invoke(activity, 11101, -1, data)
+
+        // 验证 qqSdkSharer.onActivityResult 被传入 reqCode=11101（QQ SDK 标准）+ resultCode=-1
+        assertEquals(11101, capturedRequestCode)
+        assertEquals(-1, capturedResultCode)
+        assertEquals(myListener, capturedListener)
+    }
+
+    @Test
+    fun `isAuthorized=true 时点分享 跳过引导直接调 shareToQQ`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        var shareToQQCalled = false
+        var loginCalled = false
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun isAuthorized(): Boolean = true
+            override fun login(
+                activity: android.app.Activity,
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { loginCalled = true }
+            override fun shareToQQ(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { shareToQQCalled = true }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {}
+        }
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        // shareLiveRoom 走 shareScope 协程：withTimeoutOrNull(3000) 等 3s
+        // 只 idle() 不够，需用 deadline wait 等协程完成
+        val deadline = System.currentTimeMillis() + 10_000
+        while (!shareToQQCalled && System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            Thread.sleep(100)
+        }
+
+        assertTrue("已授权应直接调 shareToQQ", shareToQQCalled)
+        assertFalse("已授权不应弹引导调 login", loginCalled)
+        // 验证没有引导对话框弹出
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        if (dialog is androidx.appcompat.app.AlertDialog) {
+            val titleText = dialog.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)?.text?.toString()
+            assertTrue("已授权不应弹引导对话框: 实际 $titleText", titleText != "QQ 分享需要先授权")
+        }
+    }
+
+    @Test
+    fun `isAuthorized=false 时点分享 不直接调 shareToQQ`() {
+        // 验证"未授权"路径：调 login() (弹引导) 而不是直接 shareToQQ()
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        var shareToQQCalled = false
+        var loginCalled = false
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun isAuthorized(): Boolean = false
+            override fun login(
+                activity: android.app.Activity,
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { loginCalled = true }
+            override fun shareToQQ(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { shareToQQCalled = true }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {}
+        }
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        // shareLiveRoom 走 shareScope 协程：withTimeoutOrNull(3000) 等 3s
+        val deadline = System.currentTimeMillis() + 10_000
+        // 未授权时只弹引导对话框，不直接调 login()——login 在用户点"去 QQ 授权"后才调
+        var dialogShown = false
+        while (!dialogShown && System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            val d = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            if (d is androidx.appcompat.app.AlertDialog && d.isShowing) {
+                val t = d.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)?.text?.toString()
+                if (t == "QQ 分享需要先授权") dialogShown = true
+            }
+            Thread.sleep(100)
+        }
+        assertTrue("未授权应弹引导对话框", dialogShown)
+        assertFalse("未授权不应直接调 shareToQQ", shareToQQCalled)
+        assertFalse("未授权弹引导时应不调 login", loginCalled)
+    }
+
     @Test
     fun `装QQ时点分享 走SDK真卡片路径且参数正确`() {
         makeQqInstalled(true)
@@ -428,6 +567,7 @@ class MainActivityTest {
             ) {
                 capturedParams = params
             }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
         }
 
         activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
@@ -469,6 +609,7 @@ class MainActivityTest {
                 onCancel: () -> Unit,
                 onError: (errorCode: Int, message: String?) -> Unit
             ) { /* 不应直接调 shareToQQ */ }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
         }
 
         activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
@@ -507,6 +648,7 @@ class MainActivityTest {
                 onCancel: () -> Unit,
                 onError: (errorCode: Int, message: String?) -> Unit
             ) { /* not called */ }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
         }
 
         activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
@@ -558,6 +700,7 @@ class MainActivityTest {
                 // 模拟 session 过期：shareToQQ 立即回调 -6
                 onError(-6, "用户未授权")
             }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
         }
 
         activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()

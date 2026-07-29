@@ -125,6 +125,16 @@ interface QqSdkSharer {
         onCancel: () -> Unit,
         onError: (errorCode: Int, message: String?) -> Unit
     )
+
+    /**
+     * 把 MainActivity.onActivityResult 收到的系统回调转发给 QQ SDK。
+     * SDK 内部用 UIListenerManager 把数据 dispatch 给当前 login 的 IUiListener。
+     * MainActivity 必须 override onActivityResult 并调本方法。
+     * @param requestCode 系统回调 requestCode
+     * @param resultCode 系统回调 resultCode
+     * @param data 系统回调 data Intent（可能为 null）
+     */
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?)
 }
 
 class DefaultQqSdkSharer : QqSdkSharer {
@@ -197,7 +207,7 @@ class DefaultQqSdkSharer : QqSdkSharer {
      * 公开 API（com.tencent.tauth.Tencent.onActivityResultData），
      * SDK 内部会通过 UIListenerManager 把数据 dispatch 给 currentLoginListener。
      */
-    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         val listener = currentLoginListener
         if (listener != null) {
             com.tencent.tauth.Tencent.onActivityResultData(
