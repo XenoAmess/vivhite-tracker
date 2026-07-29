@@ -128,40 +128,40 @@ class PreferenceManager(context: Context) {
 
     // ========== B 站全活动监控 ==========
 
-    // 监控新视频投稿，默认关
+    // 监控新视频投稿，默认开
     fun setMonitorVideos(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_MONITOR_VIDEOS, enabled).apply()
     }
 
     fun isMonitorVideos(): Boolean {
-        return prefs.getBoolean(KEY_MONITOR_VIDEOS, false)
+        return prefs.getBoolean(KEY_MONITOR_VIDEOS, true)
     }
 
-    // 监控置顶视频变化，默认关
+    // 监控置顶视频变化，默认开
     fun setMonitorPinned(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_MONITOR_PINNED, enabled).apply()
     }
 
     fun isMonitorPinned(): Boolean {
-        return prefs.getBoolean(KEY_MONITOR_PINNED, false)
+        return prefs.getBoolean(KEY_MONITOR_PINNED, true)
     }
 
-    // 监控动态（实验，不稳定），默认关
+    // 监控动态，默认开
     fun setMonitorDynamics(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_MONITOR_DYNAMICS, enabled).apply()
     }
 
     fun isMonitorDynamics(): Boolean {
-        return prefs.getBoolean(KEY_MONITOR_DYNAMICS, false)
+        return prefs.getBoolean(KEY_MONITOR_DYNAMICS, true)
     }
 
-    // 新视频/动态时是否响铃（开播不受此控制，始终响铃）
+    // 新视频/动态时是否响铃（开播不受此控制，始终响铃），默认开
     fun setAlertRingOnActivity(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_ALERT_RING_ON_ACTIVITY, enabled).apply()
     }
 
     fun isAlertRingOnActivity(): Boolean {
-        return prefs.getBoolean(KEY_ALERT_RING_ON_ACTIVITY, false)
+        return prefs.getBoolean(KEY_ALERT_RING_ON_ACTIVITY, true)
     }
 
     // 上次见到的最新视频 avid；-1 = 未初始化（首次不提醒）

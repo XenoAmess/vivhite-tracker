@@ -77,10 +77,10 @@ LiveCheckService 60s 周期（直播 + 视频 + 置顶）
 
 | 键 | 类型 | 默认 | 用途 |
 |---|---|---|---|
-| `monitor_videos` | Boolean | false | 监控新视频开关 |
-| `monitor_pinned` | Boolean | false | 监控置顶变化开关 |
-| `monitor_dynamics` | Boolean | false | 监控动态开关（实验） |
-| `alert_ring_on_activity` | Boolean | false | 新视频/动态时是否响铃（开播不受此控制） |
+| `monitor_videos` | Boolean | **true** | 监控新视频开关 |
+| `monitor_pinned` | Boolean | **true** | 监控置顶变化开关 |
+| `monitor_dynamics` | Boolean | **true** | 监控动态开关 |
+| `alert_ring_on_activity` | Boolean | **true** | 新视频/动态时是否响铃（开播不受此控制） |
 | `last_video_aid` | Long | -1 | 上次见到的最新视频 avid |
 | `last_pinned_aid` | Long | -1 | 上次见到的置顶视频 avid |
 | `last_dynamic_id` | String | "" | 上次见到的最新动态 id |

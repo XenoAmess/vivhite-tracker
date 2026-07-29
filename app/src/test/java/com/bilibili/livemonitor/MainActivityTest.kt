@@ -941,7 +941,7 @@ class MainActivityTest {
         val switchVideos = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorVideos)!!
         val switchDynamics = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorDynamics)!!
 
-        assertEquals("默认应关", false, switchVideos.isChecked)
+        assertEquals("默认应开", true, switchVideos.isChecked)
         switchVideos.isChecked = true
         switchDynamics.isChecked = true
 

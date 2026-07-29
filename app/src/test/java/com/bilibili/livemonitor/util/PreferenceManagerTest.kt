@@ -128,11 +128,13 @@ class PreferenceManagerTest {
     // ========== 活动监控 11 键 ==========
 
     @Test
-    fun `活动监控开关默认全关`() {
-        assertEquals(false, prefs.isMonitorVideos())
-        assertEquals(false, prefs.isMonitorPinned())
-        assertEquals(false, prefs.isMonitorDynamics())
-        assertEquals(false, prefs.isAlertRingOnActivity())
+    fun `活动监控开关默认全开`() {
+        // 新装应用默认开启所有活动监控：视频/置顶/动态 + 响铃
+        // 配合 ActivityDecider 的「首次不提醒」机制，冷启动不会狂响
+        assertEquals(true, prefs.isMonitorVideos())
+        assertEquals(true, prefs.isMonitorPinned())
+        assertEquals(true, prefs.isMonitorDynamics())
+        assertEquals(true, prefs.isAlertRingOnActivity())
     }
 
     @Test
