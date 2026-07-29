@@ -67,7 +67,7 @@ class UpdateDeciderTest {
 
     @Test
     fun `decide 远端更新时返回 UpdateAvailable`() {
-        val state = UpdateDecider.decide(91, 92 to "1.1.92", raw())
+        val state = UpdateDecider.decide(91, "1.1.91", 92 to "1.1.92", raw())
         assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
         val info = (state as UpdateDecider.UpdateState.UpdateAvailable).info
         assertEquals(92, info.versionCode)
@@ -79,19 +79,73 @@ class UpdateDeciderTest {
 
     @Test
     fun `decide 远端相同或更旧时 UpToDate`() {
-        assertEquals(UpdateDecider.UpdateState.UpToDate, UpdateDecider.decide(92, 92 to "1.1.92", raw()))
-        assertEquals(UpdateDecider.UpdateState.UpToDate, UpdateDecider.decide(93, 92 to "1.1.92", raw()))
+        assertEquals(UpdateDecider.UpdateState.UpToDate, UpdateDecider.decide(92, "1.1.92", 92 to "1.1.92", raw()))
+        assertEquals(UpdateDecider.UpdateState.UpToDate, UpdateDecider.decide(93, "1.1.93", 92 to "1.1.92", raw()))
     }
 
     @Test
     fun `decide 远端版本未知时 Error`() {
-        val state = UpdateDecider.decide(91, null, raw())
+        val state = UpdateDecider.decide(91, "1.1.91", null, raw())
         assertTrue(state is UpdateDecider.UpdateState.Error)
     }
 
     @Test
     fun `decide 有更新但缺 APK 地址时 Error`() {
-        val state = UpdateDecider.decide(91, 92 to "1.1.92", raw(apkUrl = null))
+        val state = UpdateDecider.decide(91, "1.1.91", 92 to "1.1.92", raw(apkUrl = null))
         assertTrue(state is UpdateDecider.UpdateState.Error)
+    }
+
+    // ---------- versionCode 撞车场景：fallback 到 versionName 语义比较 ----------
+
+    @Test
+    fun `versionCode 相等 本地 1_2_0+6 远端 1_3_0 远端更新`() {
+        // 用户场景：本地开发包 versionCode=110 versionName="1.2.0+6"，
+        // 远端 v1.3.0 release versionCode=110 versionName="1.3.0"。
+        // 单比 versionCode 误判 UpToDate。fallback 到语义版本比较。
+        val state = UpdateDecider.decide(
+            localVersionCode = 110, localVersionName = "1.2.0+6",
+            remoteVersion = 110 to "1.3.0", raw = raw()
+        )
+        assertTrue("应报远端更新", state is UpdateDecider.UpdateState.UpdateAvailable)
+    }
+
+    @Test
+    fun `versionCode 相等 本地 1_3_0+6 远端 1_3_0 UpToDate`() {
+        // versionCode 撞车 + 三段相等：本地 build 时最近的 tag 是 v1.2.0（v1.3.0 还没打），
+        // 远端 release 是 v1.3.0 tag 在 HEAD 上。两者可能指向同一 commit 数，
+        // 装的就是同一个东西，无需更新（语义上 +N 是 git describe 的相对值不可直接比较）。
+        val state = UpdateDecider.decide(
+            localVersionCode = 110, localVersionName = "1.3.0+6",
+            remoteVersion = 110 to "1.3.0", raw = raw()
+        )
+        assertEquals(UpdateDecider.UpdateState.UpToDate, state)
+    }
+
+    @Test
+    fun `versionCode 相等 本地 1_3_0 远端 1_3_0 完全相同 UpToDate`() {
+        val state = UpdateDecider.decide(
+            localVersionCode = 110, localVersionName = "1.3.0",
+            remoteVersion = 110 to "1.3.0", raw = raw()
+        )
+        assertEquals(UpdateDecider.UpdateState.UpToDate, state)
+    }
+
+    @Test
+    fun `versionCode 相等 本地 1_2_0+6 远端 1_2_0+6 完全相同 UpToDate`() {
+        val state = UpdateDecider.decide(
+            localVersionCode = 105, localVersionName = "1.2.0+6",
+            remoteVersion = 105 to "1.2.0+6", raw = raw()
+        )
+        assertEquals(UpdateDecider.UpdateState.UpToDate, state)
+    }
+
+    @Test
+    fun `versionCode 相等 versionName 解析失败 fallback UpToDate`() {
+        // 未来 versionName 格式变了（解析失败）→ 不误报，宁可漏报
+        val state = UpdateDecider.decide(
+            localVersionCode = 110, localVersionName = "weird-format",
+            remoteVersion = 110 to "1.3.0", raw = raw()
+        )
+        assertEquals(UpdateDecider.UpdateState.UpToDate, state)
     }
 }

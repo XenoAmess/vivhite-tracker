@@ -10,7 +10,10 @@ import javax.net.ssl.HttpsURLConnection
 open class UpdateChecker {
 
     // 检查 GitHub 最新 Release：version.json 提供精确 versionCode，缺失则返回 Error
-    suspend fun checkLatestRelease(localVersionCode: Int): UpdateDecider.UpdateState =
+    suspend fun checkLatestRelease(
+        localVersionCode: Int,
+        localVersionName: String
+    ): UpdateDecider.UpdateState =
         withContext(Dispatchers.IO) {
             val releaseJson = httpGet(LATEST_RELEASE_API)
                 ?: return@withContext UpdateDecider.UpdateState.Error("network error")
@@ -19,7 +22,7 @@ open class UpdateChecker {
             val remoteVersion = raw.versionJsonUrl
                 ?.let { httpGet(it) }
                 ?.let { UpdateDecider.parseVersionJson(it) }
-            UpdateDecider.decide(localVersionCode, remoteVersion, raw)
+            UpdateDecider.decide(localVersionCode, localVersionName, remoteVersion, raw)
         }
 
     // internal open：测试可注入 fake 响应

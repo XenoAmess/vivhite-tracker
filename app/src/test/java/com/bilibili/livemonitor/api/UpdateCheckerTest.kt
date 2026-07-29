@@ -37,7 +37,7 @@ class UpdateCheckerTest {
                 versionJsonUrl to """{"versionCode":95,"versionName":"1.1.95"}"""
             )
         )
-        val state = checker.checkLatestRelease(localVersionCode = 91)
+        val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
         assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
         val info = (state as UpdateDecider.UpdateState.UpdateAvailable).info
         assertEquals(95, info.versionCode)
@@ -56,7 +56,7 @@ class UpdateCheckerTest {
                 )
             )
         )
-        val state = checker.checkLatestRelease(localVersionCode = 91)
+        val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
         assertTrue(state is UpdateDecider.UpdateState.Error)
     }
 
@@ -70,21 +70,21 @@ class UpdateCheckerTest {
         )
         assertEquals(
             UpdateDecider.UpdateState.UpToDate,
-            checker.checkLatestRelease(localVersionCode = 92)
+            checker.checkLatestRelease(localVersionCode = 92, localVersionName = "1.1.92")
         )
     }
 
     @Test
     fun `网络失败时 Error`() = runBlocking {
         val checker = FakeUpdateChecker(emptyMap())
-        val state = checker.checkLatestRelease(localVersionCode = 91)
+        val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
         assertTrue(state is UpdateDecider.UpdateState.Error)
     }
 
     @Test
     fun `响应非法 JSON 时 Error`() = runBlocking {
         val checker = FakeUpdateChecker(mapOf(apiUrl to "not json"))
-        val state = checker.checkLatestRelease(localVersionCode = 91)
+        val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
         assertTrue(state is UpdateDecider.UpdateState.Error)
     }
 
@@ -98,7 +98,7 @@ class UpdateCheckerTest {
                 )
             )
         )
-        val state = checker.checkLatestRelease(localVersionCode = 91)
+        val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
         assertTrue(state is UpdateDecider.UpdateState.Error)
     }
 
@@ -111,7 +111,7 @@ class UpdateCheckerTest {
                 versionJsonUrl to null
             )
         )
-        val state = checker.checkLatestRelease(localVersionCode = 91)
+        val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
         assertTrue(state is UpdateDecider.UpdateState.Error)
     }
 }

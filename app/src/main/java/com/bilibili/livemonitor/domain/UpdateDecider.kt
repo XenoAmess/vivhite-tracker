@@ -71,21 +71,45 @@ object UpdateDecider {
         }
     }
 
-    // 决策：远端 versionCode 更高 → 有更新；无法确定远端版本 → Error；否则已最新
+    // 决策：远端 versionCode 更高 → 有更新；versionCode 相等时比 versionName 语义版本；
+    // 都判定为最新 → UpToDate；远端版本信息缺失 → Error。
+    //
+    // versionCode 撞车场景：本地 "1.2.0+6" 与远端 v1.3.0 都在 commit 110 时
+    // 单比 versionCode 会误判 UpToDate。fallback 到 MAJOR.MINOR.PATCH+SUFFIX 比较。
     fun decide(
         localVersionCode: Int,
+        localVersionName: String,
         remoteVersion: Pair<Int, String>?,
         raw: RawRelease
-    ): UpdateState {
+): UpdateState {
         if (remoteVersion == null) {
             return UpdateState.Error("远端版本信息不完整")
         }
         val (remoteCode, remoteName) = remoteVersion
-        if (remoteCode <= localVersionCode) return UpdateState.UpToDate
-        val apkUrl = raw.apkUrl ?: return UpdateState.Error("未找到 APK 下载地址")
-        return UpdateState.UpdateAvailable(
-            ReleaseInfo(remoteCode, remoteName, apkUrl, raw.changelog, raw.tagName)
-        )
+
+        // 第一层：versionCode
+        if (remoteCode > localVersionCode) {
+            val apkUrl = raw.apkUrl ?: return UpdateState.Error("未找到 APK 下载地址")
+            return UpdateState.UpdateAvailable(
+                ReleaseInfo(remoteCode, remoteName, apkUrl, raw.changelog, raw.tagName)
+            )
+        }
+
+        // 第二层：versionCode 相等 → versionName 语义比较
+        if (remoteCode == localVersionCode) {
+            val localVer = VersionName.parse(localVersionName)
+            val remoteVer = VersionName.parse(remoteName)
+            if (localVer != null && remoteVer != null
+                && VersionName.isRemoteNewer(remoteVer, localVer)
+            ) {
+                val apkUrl = raw.apkUrl ?: return UpdateState.Error("未找到 APK 下载地址")
+                return UpdateState.UpdateAvailable(
+                    ReleaseInfo(remoteCode, remoteName, apkUrl, raw.changelog, raw.tagName)
+                )
+            }
+        }
+
+        return UpdateState.UpToDate
     }
 
     const val VERSION_JSON_NAME = "version.json"

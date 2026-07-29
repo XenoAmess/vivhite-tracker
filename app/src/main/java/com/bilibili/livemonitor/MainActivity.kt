@@ -424,7 +424,9 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "正在检查更新…", Toast.LENGTH_SHORT).show()
         }
         updateScope.launch {
-            when (val state = updateChecker.checkLatestRelease(BuildConfig.VERSION_CODE)) {
+            when (val state = updateChecker.checkLatestRelease(
+                BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME
+            )) {
                 is UpdateDecider.UpdateState.UpdateAvailable -> {
                     val info = state.info
                     val dismissed = !manual && info.versionCode == preferenceManager.getDismissedVersionCode()
