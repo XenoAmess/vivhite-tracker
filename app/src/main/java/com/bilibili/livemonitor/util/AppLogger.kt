@@ -104,4 +104,17 @@ object AppLogger {
             }
         }
     }
+
+    /**
+     * 同步清空日志（绕过 executor 队列）。
+     * 用于测试 @Before 确保清空立即生效，避免前一个测试
+     * 塞入的大量异步写任务把 clear 任务排在队列后面导致超时。
+     */
+    fun clearSync() {
+        try {
+            logFile?.writeText("")
+        } catch (e: Exception) {
+            Log.e(TAG, "clearSync log failed", e)
+        }
+    }
 }

@@ -32,7 +32,9 @@ class AppLoggerTest {
     fun clearLog() {
         // init 放在 @Before：@BeforeClass 阶段 Robolectric 尚未注册 instrumentation
         AppLogger.init(ApplicationProvider.getApplicationContext())
-        AppLogger.clear()
+        // 同步清空（不走 executor 队列），避免前一个测试的大批量
+        // 异步写任务把 clear 排在队列后面导致 @Before 超时
+        AppLogger.clearSync()
         waitFor("clear before test") { AppLogger.readAll().isEmpty() }
     }
 
@@ -55,7 +57,7 @@ class AppLoggerTest {
     fun `清空后无内容`() {
         AppLogger.d("TestTag", "to-be-cleared")
         waitFor("written") { AppLogger.readAll().isNotEmpty() }
-        AppLogger.clear()
+        AppLogger.clearSync()
         waitFor("cleared") { AppLogger.readAll().isEmpty() }
         assertEquals("", AppLogger.readAll())
     }
