@@ -785,6 +785,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun doQqShare(params: android.os.Bundle) {
+        AppLogger.d("MainActivity", "doQqShare isAuthorized=${qqSdkSharer.isAuthorized()}")
         if (qqSdkSharer.isAuthorized()) {
             // 已授权：直接走真卡片
             doQqShareAfterAuthorized(params)

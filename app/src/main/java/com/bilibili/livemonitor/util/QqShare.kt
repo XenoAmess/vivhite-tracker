@@ -139,14 +139,20 @@ interface QqSdkSharer {
 
 class DefaultQqSdkSharer : QqSdkSharer {
     private val contextRef = java.util.concurrent.atomic.AtomicReference<android.content.Context>()
-    // 持有当前 login 的 IUiListener 引用，供 MainActivity.onActivityResult 调
-    // Tencent.onActivityResultData(reqCode, resultCode, intent, listener) 转发
     private var currentLoginListener: com.tencent.tauth.IUiListener? = null
+    // 手动持久化授权状态标记：SDK 内部 AES 加密保存的 token
+    // 在 Tencent.createInstance() 新建实例时可能读不到，所以 OAuth 成功后
+    // 我们自己记一笔，避免每次分享都重复弹授权引导
+    private var manualAuthorized = false
 
     override fun isAuthorized(): Boolean {
+        if (manualAuthorized) return true
         val ctx = contextRef.get() ?: return false
         return try {
-            QqShare.obtainTencent(ctx).isSessionValid
+            val valid = QqShare.obtainTencent(ctx).isSessionValid
+            if (valid) manualAuthorized = true
+            AppLogger.d(TAG, "isAuthorized: sessionValid=$valid")
+            valid
         } catch (e: Exception) {
             AppLogger.w(TAG, "isAuthorized check failed", e)
             false
@@ -159,9 +165,8 @@ class DefaultQqSdkSharer : QqSdkSharer {
         onCancelled: () -> Unit,
         onError: (errorCode: Int, message: String?) -> Unit
     ) {
-        // login() 必须用 Activity 上下文（QQ 授权页是一个透明 Activity），
-        // 之前用 applicationContext 强转 Activity 导致 ClassCastException 崩溃
         val tencent = QqShare.obtainTencent(activity)
+        // 绕 SDK 内部 "permission not granted" 提前 -6 限制：
         // 绕 SDK 内部 "permission not granted" 提前 -6 限制：
         // SDK 3.5.19 的 Tencent.isPermissionNotGranted() 首次跑（shared_prefs 无 build_model）
         // 会立即返回 true → tencent.login() 第一步就回调 -6，根本不弹 QQ 授权页。
@@ -179,6 +184,7 @@ class DefaultQqSdkSharer : QqSdkSharer {
         currentLoginListener = object : com.tencent.tauth.IUiListener {
             override fun onComplete(response: Any?) {
                 AppLogger.d(TAG, "qq login complete: $response")
+                manualAuthorized = true
                 currentLoginListener = null
                 onAuthorized()
             }
