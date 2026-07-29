@@ -29,9 +29,9 @@ class AlertSoundDeciderTest {
 
     @Test
     fun `builtin 前缀解析为 BuiltIn`() {
-        val source = AlertSoundDecider.resolve("builtin:alert_default_1")
+        val source = AlertSoundDecider.resolve("builtin:alert_1")
         assertTrue(source is SoundSource.BuiltIn)
-        assertEquals("alert_default_1", (source as SoundSource.BuiltIn).key)
+        assertEquals("alert_1", (source as SoundSource.BuiltIn).key)
     }
 
     @Test
@@ -78,7 +78,7 @@ class AlertSoundDeciderTest {
 
     @Test
     fun `encodeBuiltIn round trip`() {
-        val key = "alert_gentle"
+        val key = "alert_3"
         val encoded = AlertSoundDecider.encodeBuiltIn(key)
         val resolved = AlertSoundDecider.resolve(encoded)
         assertTrue(resolved is SoundSource.BuiltIn)
@@ -105,7 +105,7 @@ class AlertSoundDeciderTest {
 
     @Test
     fun `三种编码前缀互不冲突`() {
-        val sameBody = "alert_default_1"
+        val sameBody = "alert_1"
         val builtin = AlertSoundDecider.encodeBuiltIn(sameBody)
         val system = AlertSoundDecider.encodeSystem(sameBody)
         val file = AlertSoundDecider.encodeFile(sameBody)

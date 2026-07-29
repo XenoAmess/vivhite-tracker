@@ -697,13 +697,9 @@ class MainActivity : AppCompatActivity() {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
-                isLooping = false
+                isLooping = true
                 prepare()
                 start()
-                setOnCompletionListener {
-                    it.release()
-                    previewPlayer = null
-                }
             }
             // 兜底：2 秒后强制停（防止某些 ogg 解码异常导致不触发 onCompletion）
             binding.root.postDelayed({ stopPreview() }, 2000)

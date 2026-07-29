@@ -15,13 +15,15 @@ import com.bilibili.livemonitor.domain.SoundSource
  * [DEFAULT] 是无用户选择时的默认值，也是加载失败的第一档兜底。
  */
 enum class BuiltInSound(val key: String, val resId: Int, val title: String) {
-    CLASSIC_1("alert_default_1", R.raw.alert_default_1, "经典提醒 1"),
-    CLASSIC_2("alert_default_2", R.raw.alert_default_2, "经典提醒 2"),
-    GENTLE("alert_gentle", R.raw.alert_gentle, "柔和提示"),
-    URGENT("alert_urgent", R.raw.alert_urgent, "急促提醒");
+    CL_1("alert_1", R.raw.alert_1, "海愿"),
+    CL_2("alert_2", R.raw.alert_2, "春弦"),
+    CL_3("alert_3", R.raw.alert_3, "Ad astra"),
+    CL_4("alert_4", R.raw.alert_4, "BATTLEPLAN ARCLIGHT"),
+    CL_5("alert_5", R.raw.alert_5, "星之所在"),
+    CL_6("alert_6", R.raw.alert_6, "遊園施設");
 
     companion object {
-        val DEFAULT: BuiltInSound = CLASSIC_1
+        val DEFAULT: BuiltInSound = CL_1
 
         fun fromKey(key: String?): BuiltInSound? = values().firstOrNull { it.key == key }
     }

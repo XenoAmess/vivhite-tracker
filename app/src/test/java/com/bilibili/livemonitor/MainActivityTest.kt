@@ -1120,19 +1120,19 @@ class MainActivityTest {
     }
 
     @Test
-    fun `铃声对话框显示 4 个内置铃声选项`() {
+    fun `铃声对话框显示 6 个内置铃声选项`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.showAlertDialogSoundDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
-        assertEquals(4, container.childCount)
+        assertEquals(6, container.childCount)
     }
 
     @Test
     fun `点恢复默认 清空 prefs 并关闭对话框`() {
-        prefs.setAlertSoundUri("builtin:alert_gentle")
-        prefs.setAlertSoundTitle("柔和提示")
+        prefs.setAlertSoundUri("builtin:alert_3")
+        prefs.setAlertSoundTitle("Ad astra")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.showAlertDialogSoundDialog()
 
@@ -1155,21 +1155,21 @@ class MainActivityTest {
         val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
         // 第 1 个是 CLASSIC_1（DEFAULT），应被勾选
         val firstRb = container.getChildAt(0).findViewById<android.widget.RadioButton>(R.id.rbSound)!!
-        assertTrue("默认应勾选经典提醒 1", firstRb.isChecked)
+        assertTrue("默认应勾选海愿", firstRb.isChecked)
     }
 
     @Test
     fun `已选内置铃声时 对应项被勾选`() {
-        prefs.setAlertSoundUri("builtin:alert_gentle")
-        prefs.setAlertSoundTitle("柔和提示")
+        prefs.setAlertSoundUri("builtin:alert_3")
+        prefs.setAlertSoundTitle("Ad astra")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.showAlertDialogSoundDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
-        // alert_gentle 是第 3 个（CLASSIC_1, CLASSIC_2, GENTLE, URGENT）
-        val gentleRb = container.getChildAt(2).findViewById<android.widget.RadioButton>(R.id.rbSound)!!
-        assertTrue("应勾选柔和提示", gentleRb.isChecked)
+        // alert_3 是第 3 个（CL_1, CL_2, CL_3, CL_4, CL_5, CL_6）
+        val astraRb = container.getChildAt(2).findViewById<android.widget.RadioButton>(R.id.rbSound)!!
+        assertTrue("应勾选 Ad astra", astraRb.isChecked)
     }
 
     // ---------- 活动监控设置 ----------

@@ -15,18 +15,20 @@ import org.junit.Test
 class AlertSoundProviderTest {
 
     @Test
-    fun `BuiltInSound DEFAULT 是 CLASSIC_1`() {
+    fun `BuiltInSound DEFAULT 是 CL_1`() {
         // 守护默认值不被意外修改
-        assertEquals(BuiltInSound.CLASSIC_1, BuiltInSound.DEFAULT)
-        assertEquals("alert_default_1", BuiltInSound.DEFAULT.key)
+        assertEquals(BuiltInSound.CL_1, BuiltInSound.DEFAULT)
+        assertEquals("alert_1", BuiltInSound.DEFAULT.key)
     }
 
     @Test
     fun `BuiltInSound fromKey 已知 key 返回对应项`() {
-        assertEquals(BuiltInSound.CLASSIC_1, BuiltInSound.fromKey("alert_default_1"))
-        assertEquals(BuiltInSound.CLASSIC_2, BuiltInSound.fromKey("alert_default_2"))
-        assertEquals(BuiltInSound.GENTLE, BuiltInSound.fromKey("alert_gentle"))
-        assertEquals(BuiltInSound.URGENT, BuiltInSound.fromKey("alert_urgent"))
+        assertEquals(BuiltInSound.CL_1, BuiltInSound.fromKey("alert_1"))
+        assertEquals(BuiltInSound.CL_2, BuiltInSound.fromKey("alert_2"))
+        assertEquals(BuiltInSound.CL_3, BuiltInSound.fromKey("alert_3"))
+        assertEquals(BuiltInSound.CL_4, BuiltInSound.fromKey("alert_4"))
+        assertEquals(BuiltInSound.CL_5, BuiltInSound.fromKey("alert_5"))
+        assertEquals(BuiltInSound.CL_6, BuiltInSound.fromKey("alert_6"))
     }
 
     @Test
@@ -36,9 +38,9 @@ class AlertSoundProviderTest {
     }
 
     @Test
-    fun `BuiltInSound 有 4 个条目`() {
+    fun `BuiltInSound 有 6 个条目`() {
         // 守护铃声池条目数，新增/删除时提醒更新 UI 和测试
-        assertEquals(4, BuiltInSound.values().size)
+        assertEquals(6, BuiltInSound.values().size)
     }
 
     @Test
