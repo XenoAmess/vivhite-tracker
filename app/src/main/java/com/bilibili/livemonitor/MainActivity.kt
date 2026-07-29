@@ -875,6 +875,15 @@ class MainActivity : AppCompatActivity() {
         kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob()
     )
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        AppLogger.d("MainActivity", "onActivityResult req=$requestCode result=$resultCode data=$data")
+        // 把系统回调转发给 QQ SDK（callback 到当前 login 持有的 IUiListener）
+        (qqSdkSharer as? com.bilibili.livemonitor.util.DefaultQqSdkSharer)?.onActivityResult(
+            requestCode, resultCode, data
+        )
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     private fun showQqNumberDialog(group: QqGroups.QqGroup) {
         AlertDialog.Builder(this)
             .setTitle(group.displayName)

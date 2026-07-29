@@ -129,6 +129,9 @@ interface QqSdkSharer {
 
 class DefaultQqSdkSharer : QqSdkSharer {
     private val contextRef = java.util.concurrent.atomic.AtomicReference<android.content.Context>()
+    // 持有当前 login 的 IUiListener 引用，供 MainActivity.onActivityResult 调
+    // Tencent.onActivityResultData(reqCode, resultCode, intent, listener) 转发
+    private var currentLoginListener: com.tencent.tauth.IUiListener? = null
 
     override fun isAuthorized(): Boolean {
         val ctx = contextRef.get() ?: return false
@@ -160,26 +163,49 @@ class DefaultQqSdkSharer : QqSdkSharer {
             android.os.Build.MODEL
         )
         AppLogger.d(TAG, "qq requesting login")
-        tencent.login(activity, "all", object : com.tencent.tauth.IUiListener {
+        // 必须持有 IUiListener 引用：AssistActivity.setResult 后通过
+        // Tencent.onActivityResultData(reqCode, resultCode, data, listener) 转发回调。
+        // listener 持有 → GC 不回收 → onComplete / onError 能被调到
+        currentLoginListener = object : com.tencent.tauth.IUiListener {
             override fun onComplete(response: Any?) {
                 AppLogger.d(TAG, "qq login complete: $response")
+                currentLoginListener = null
                 onAuthorized()
             }
 
             override fun onError(e: com.tencent.tauth.UiError?) {
                 AppLogger.e(TAG, "qq login error: ${e?.errorCode} ${e?.errorMessage}")
+                currentLoginListener = null
                 onError(e?.errorCode ?: -1, e?.errorMessage)
             }
 
             override fun onCancel() {
                 AppLogger.d(TAG, "qq login cancelled")
+                currentLoginListener = null
                 onCancelled()
             }
 
             override fun onWarning(code: Int) {
                 AppLogger.w(TAG, "qq login warning: $code")
             }
-        })
+        }
+        tencent.login(activity, "all", currentLoginListener!!)
+    }
+
+    /**
+     * 供 MainActivity.onActivityResult 调用，把系统回调转发给 QQ SDK。
+     * 公开 API（com.tencent.tauth.Tencent.onActivityResultData），
+     * SDK 内部会通过 UIListenerManager 把数据 dispatch 给 currentLoginListener。
+     */
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        val listener = currentLoginListener
+        if (listener != null) {
+            com.tencent.tauth.Tencent.onActivityResultData(
+                requestCode, resultCode, data, listener
+            )
+        } else {
+            AppLogger.w(TAG, "onActivityResult but no pending login listener")
+        }
     }
 
     override fun shareToQQ(
