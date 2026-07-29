@@ -121,6 +121,21 @@
             app:layout_constraintTop_toBottomOf="@id/tvLastCheck" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnOpenSpace"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginTop="8dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="打开空间主页"
+            android:textSize="14sp"
+            app:backgroundTint="@color/blue_500"
+            app:icon="@android:drawable/ic_menu_view"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/btnOpenLive" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnToggle"
             android:layout_width="0dp"
             android:layout_height="46dp"
@@ -133,51 +148,54 @@
             app:icon="@android:drawable/ic_media_play"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnOpenLive" />
+            app:layout_constraintTop_toBottomOf="@id/btnOpenSpace" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSettings"
-            android:layout_width="0dp"
-            android:layout_height="46dp"
-            android:layout_marginTop="10dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:text="设置"
-            android:textSize="14sp"
-            app:icon="@android:drawable/ic_menu_manage"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
-
+        <!-- 三个非监控入口并排：日志 | 设置 | 源码 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnViewLog"
             android:layout_width="0dp"
             android:layout_height="46dp"
             android:layout_marginTop="8dp"
-            android:layout_marginEnd="6dp"
+            android:layout_marginEnd="4dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
-            android:text="运行日志"
+            android:text="日志"
             android:textSize="14sp"
-            app:icon="@android:drawable/ic_menu_view"
-            app:layout_constraintEnd_toStartOf="@id/btnOpenGithub"
+            app:layout_constraintEnd_toStartOf="@id/btnSettings"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnSettings" />
+            app:layout_constraintTop_toBottomOf="@id/btnToggle"
+            app:layout_constraintHorizontal_chainStyle="spread" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSettings"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="4dp"
+            android:layout_marginStart="4dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="设置"
+            android:textSize="14sp"
+            app:icon="@android:drawable/ic_menu_manage"
+            app:layout_constraintEnd_toStartOf="@id/btnOpenGithub"
+            app:layout_constraintStart_toEndOf="@id/btnViewLog"
+            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenGithub"
             android:layout_width="0dp"
             android:layout_height="46dp"
             android:layout_marginTop="8dp"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="4dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
-            android:text="GitHub"
+            android:text="源码"
             android:textSize="14sp"
             app:icon="@android:drawable/ic_menu_share"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/btnViewLog"
-            app:layout_constraintTop_toBottomOf="@id/btnSettings" />
+            app:layout_constraintStart_toEndOf="@id/btnSettings"
+            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
 
         <LinearLayout
             android:id="@+id/qqGroupRow"
@@ -256,25 +274,6 @@
                 android:text="检查更新"
                 android:textSize="11sp"
                 android:textColor="@color/purple_500"
-                app:strokeColor="@color/purple_500" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnUpdateSettings"
-                style="@style/Widget.Material3.Button.IconButton.Outlined"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:layout_marginStart="6dp"
-                android:contentDescription="更新设置"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:insetLeft="0dp"
-                android:insetRight="0dp"
-                android:padding="0dp"
-                app:icon="@android:drawable/ic_menu_manage"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp"
-                app:iconSize="16dp"
-                app:iconTint="@color/purple_500"
                 app:strokeColor="@color/purple_500" />
 
         </LinearLayout>

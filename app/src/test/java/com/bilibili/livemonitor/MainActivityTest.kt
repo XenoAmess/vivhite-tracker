@@ -237,6 +237,31 @@ class MainActivityTest {
     }
 
     @Test
+    fun `点击打开空间主页 启动系统选择器且bilibili注入EXTRA_INITIAL_INTENTS`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnOpenSpace
+        ).performClick()
+
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals(Intent.ACTION_CHOOSER, started?.action)
+
+        // 主 intent 是 https（浏览器列表来源）
+        val mainIntent = started?.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        assertEquals(Intent.ACTION_VIEW, mainIntent?.action)
+        assertEquals("https://space.bilibili.com/251990176", mainIntent?.dataString)
+
+        // EXTRA_INITIAL_INTENTS 注入 bilibili://space intent，排在选择器最前
+        val initialIntents = started?.getParcelableArrayExtra(Intent.EXTRA_INITIAL_INTENTS)
+        assertTrue("应有 EXTRA_INITIAL_INTENTS", initialIntents != null)
+        assertEquals("应注入 1 个 initial intent", 1, initialIntents!!.size)
+        val bilibiliIntent = initialIntents[0] as Intent
+        assertEquals(Intent.ACTION_VIEW, bilibiliIntent.action)
+        assertEquals("bilibili://space/251990176", bilibiliIntent.dataString)
+        // 不带 setPackage，让系统选择器自己列所有能解析的 bilibili 客户端
+        assertEquals(null, bilibiliIntent.`package`)
+    }
     fun `监控中点打开直播间 置观播静音但不停止监控`() {        // 用户需求：点打开直播间后持续监控，本场直播结束前不再响铃
         makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
         prefs.setServiceRunning(true)

@@ -178,6 +178,10 @@ class MainActivity : AppCompatActivity() {
                 openLiveRoom()
             }
 
+            btnOpenSpace.setOnClickListener {
+                openSpace()
+            }
+
             btnOpenGithub.setOnClickListener {
                 startActivity(
                     Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))
@@ -828,6 +832,26 @@ class MainActivity : AppCompatActivity() {
         return Intent(Intent.ACTION_VIEW, Uri.parse("https://live.bilibili.com/$ROOM_ID")).apply {
             // 用户显式选择某个浏览器时强制用它打开；空包名=系统自选
             if (!pkg.isNullOrEmpty()) setPackage(pkg)
+        }
+    }
+
+    internal fun spaceAppIntent(): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://space/${com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID}"))
+
+    internal fun spaceWebIntent(): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse("https://space.bilibili.com/${com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID}"))
+
+    internal fun openSpace() {
+        // 复用 openLiveRoom 的选择器模式：https 主 intent（浏览器列表）+
+        // EXTRA_INITIAL_INTENTS 注入 bilibili://space 排最前
+        val chooser = Intent.createChooser(spaceWebIntent(), "打开空间主页").apply {
+            putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(spaceAppIntent()))
+        }
+        try {
+            startActivity(chooser)
+        } catch (e: Exception) {
+            AppLogger.w("MainActivity", "space chooser failed, fallback to web", e)
+            startActivity(spaceWebIntent())
         }
     }
 
