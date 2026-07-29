@@ -414,6 +414,7 @@ class MainActivityTest {
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true
             override fun login(
+                activity: android.app.Activity,
                 onAuthorized: () -> Unit,
                 onCancelled: () -> Unit,
                 onError: (errorCode: Int, message: String?) -> Unit
@@ -456,6 +457,7 @@ class MainActivityTest {
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(
+                activity: android.app.Activity,
                 onAuthorized: () -> Unit,
                 onCancelled: () -> Unit,
                 onError: (errorCode: Int, message: String?) -> Unit
@@ -493,6 +495,7 @@ class MainActivityTest {
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(
+                activity: android.app.Activity,
                 onAuthorized: () -> Unit,
                 onCancelled: () -> Unit,
                 onError: (errorCode: Int, message: String?) -> Unit
@@ -539,6 +542,7 @@ class MainActivityTest {
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true  // session 看起来还有效
             override fun login(
+                activity: android.app.Activity,
                 onAuthorized: () -> Unit,
                 onCancelled: () -> Unit,
                 onError: (errorCode: Int, message: String?) -> Unit

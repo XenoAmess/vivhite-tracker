@@ -106,6 +106,7 @@ interface QqSdkSharer {
      * @param onError 授权过程出错时回调
      */
     fun login(
+        activity: android.app.Activity,
         onAuthorized: () -> Unit,
         onCancelled: () -> Unit,
         onError: (errorCode: Int, message: String?) -> Unit
@@ -140,17 +141,16 @@ class DefaultQqSdkSharer : QqSdkSharer {
     }
 
     override fun login(
+        activity: android.app.Activity,
         onAuthorized: () -> Unit,
         onCancelled: () -> Unit,
         onError: (errorCode: Int, message: String?) -> Unit
     ) {
-        val ctx = contextRef.get() ?: run {
-            onError(-1, "context null")
-            return
-        }
-        val tencent = QqShare.obtainTencent(ctx)
+        // login() 必须用 Activity 上下文（QQ 授权页是一个透明 Activity），
+        // 之前用 applicationContext 强转 Activity 导致 ClassCastException 崩溃
+        val tencent = QqShare.obtainTencent(activity)
         AppLogger.d(TAG, "qq requesting login")
-        tencent.login(ctx as android.app.Activity, "all", object : com.tencent.tauth.IUiListener {
+        tencent.login(activity, "all", object : com.tencent.tauth.IUiListener {
             override fun onComplete(response: Any?) {
                 AppLogger.d(TAG, "qq login complete: $response")
                 onAuthorized()

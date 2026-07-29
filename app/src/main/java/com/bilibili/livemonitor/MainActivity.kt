@@ -802,9 +802,10 @@ class MainActivity : AppCompatActivity() {
                 "点「去 QQ 授权」完成授权后，下次即可使用真卡片分享。\n" +
                 "点「普通分享」可用纯文本分享（无封面）。"
             )
-            .setPositiveButton("去 QQ 授权") { dialog, _ ->
-                dialog.dismiss()
+            .setPositiveButton("去 QQ 授权") { d, _ ->
+                d.dismiss()
                 qqSdkSharer.login(
+                    activity = this,
                     onAuthorized = {
                         AppLogger.d("MainActivity", "qq auth completed, proceed to share")
                         Toast.makeText(this, "QQ 授权成功", Toast.LENGTH_SHORT).show()
