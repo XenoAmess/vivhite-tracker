@@ -28,7 +28,7 @@
         android:layout_height="wrap_content"
         android:paddingTop="10dp"
         android:paddingBottom="10dp"
-        android:text="监控动态（实验，不稳定）" />
+        android:text="监控动态" />
 
     <View
         android:layout_width="match_parent"

@@ -258,105 +258,93 @@ class LiveCheckService : Service() {
         com.bilibili.livemonitor.api.BilibiliActivityApi()
 
     private suspend fun checkActivities() {
-        if (preferenceManager.isMonitorVideos()) {
-            checkNewVideos()
-        }
-        if (preferenceManager.isMonitorPinned()) {
-            checkPinnedVideo()
-        }
-    }
-
-    private suspend fun checkNewVideos() {
-        val result = activityApi.fetchLatestVideo(
-            com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID,
-            preferenceManager
-        )
-        when (result) {
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
-                val video = result.data
-                val lastAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
-                    preferenceManager.getLastVideoAid()
-                )
-                preferenceManager.setLastVideoAid(video.aid)
-                if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertVideo(video.aid, lastAid)) {
-                    AppLogger.d(TAG, "new video detected: aid=${video.aid} title=${video.title.take(40)}")
-                    triggerActivityAlert(
-                        com.bilibili.livemonitor.domain.ActivityType.Video(video.aid, video.title)
-                    )
-                }
-            }
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData -> {
-                AppLogger.d(TAG, "video list empty, skip")
-            }
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Err -> {
-                AppLogger.w(TAG, "fetchLatestVideo failed: ${result.reason}")
-            }
+        // 视频/动态/置顶 共用一个 API 调用（desktop feed/space 一条数据全包）
+        if (preferenceManager.isMonitorVideos()
+            || preferenceManager.isMonitorDynamics()
+            || preferenceManager.isMonitorPinned()
+        ) {
+            checkDynamicFeed()
         }
     }
 
-    private suspend fun checkPinnedVideo() {
-        val result = activityApi.fetchPinnedVideo(
+    // 由 ACTION_CHECK_DYNAMICS 单独触发（5min 周期），与 60s 周期解耦
+    suspend fun checkNewDynamics() {
+        if (!preferenceManager.isServiceRunning()) return
+        checkDynamicFeed()
+    }
+
+    private suspend fun checkDynamicFeed() {
+        val result = activityApi.fetchLatestDynamic(
             com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID
         )
         when (result) {
             is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
-                val video = result.data
-                val lastAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
-                    preferenceManager.getLastPinnedAid()
-                )
-                preferenceManager.setLastPinnedAid(video.aid)
-                if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertPinned(video.aid, lastAid)) {
-                    AppLogger.d(TAG, "pinned video changed: aid=${video.aid}")
-                    triggerActivityAlert(
-                        com.bilibili.livemonitor.domain.ActivityType.Pinned(video.aid, video.title)
-                    )
-                }
-            }
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData -> {
-                // UP 取消了置顶也算变化
-                val lastAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
-                    preferenceManager.getLastPinnedAid()
-                )
-                if (lastAid != null) {
-                    preferenceManager.setLastPinnedAid(-1)
-                    AppLogger.d(TAG, "pinned video removed")
-                }
-            }
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Err -> {
-                AppLogger.w(TAG, "fetchPinnedVideo failed: ${result.reason}")
-            }
-        }
-    }
-
-    // 动态流检测（由独立的 5min Alarm 触发，见 ACTION_CHECK_DYNAMICS）
-    suspend fun checkNewDynamics() {
-        if (!preferenceManager.isMonitorDynamics()) return
-        if (!preferenceManager.isServiceRunning()) return
-
-        val result = activityApi.fetchLatestDynamic(
-            com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID,
-            preferenceManager
-        )
-        when (result) {
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
                 val dynamic = result.data
-                val lastId = com.bilibili.livemonitor.domain.ActivityDecider.stringToNullable(
-                    preferenceManager.getLastDynamicId()
-                )
-                preferenceManager.setLastDynamicId(dynamic.id)
-                if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertDynamic(dynamic.id, lastId)) {
-                    AppLogger.d(TAG, "new dynamic detected: id=${dynamic.id}")
-                    triggerActivityAlert(
-                        com.bilibili.livemonitor.domain.ActivityType.Dynamic(dynamic.id, dynamic.displayText)
-                    )
-                }
+                handleDynamicResult(dynamic)
             }
             is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData -> {
                 AppLogger.d(TAG, "dynamic feed empty, skip")
             }
             is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Err -> {
-                // 风控脆弱，失败静默不扰
+                // 失败静默不扰
                 AppLogger.w(TAG, "fetchLatestDynamic failed: ${result.reason}")
+            }
+        }
+    }
+
+    private fun handleDynamicResult(dynamic: com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo) {
+        val lastId = com.bilibili.livemonitor.domain.ActivityDecider.stringToNullable(
+            preferenceManager.getLastDynamicId()
+        )
+
+        // 1) 视频变化（DYNAMIC_TYPE_AV 时 avItem 非空，aid 变化）
+        val avItem = dynamic.avItem
+        if (preferenceManager.isMonitorVideos() && avItem != null) {
+            val lastAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
+                preferenceManager.getLastVideoAid()
+            )
+            preferenceManager.setLastVideoAid(avItem.aid)
+            if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertVideo(avItem.aid, lastAid)) {
+                AppLogger.d(TAG, "new video: aid=${avItem.aid} title=${avItem.title.take(40)}")
+                triggerActivityAlert(
+                    com.bilibili.livemonitor.domain.ActivityType.Video(avItem.aid, avItem.title)
+                )
+            }
+        }
+
+        // 2) 动态变化（首条动态 id 变化，AV 类型已被上面覆盖）
+        if (preferenceManager.isMonitorDynamics() && avItem == null) {
+            preferenceManager.setLastDynamicId(dynamic.id)
+            if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertDynamic(dynamic.id, lastId)) {
+                AppLogger.d(TAG, "new dynamic: id=${dynamic.id} text=${dynamic.displayText.take(40)}")
+                triggerActivityAlert(
+                    com.bilibili.livemonitor.domain.ActivityType.Dynamic(dynamic.id, dynamic.displayText)
+                )
+            }
+        } else {
+            // 即便不需要动态通知，也要记录 id（下次跳变判断的基线）
+            preferenceManager.setLastDynamicId(dynamic.id)
+        }
+
+        // 3) 置顶变化（is_top 状态切换：true↔false）
+        if (preferenceManager.isMonitorPinned()) {
+            val lastPinnedAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
+                preferenceManager.getLastPinnedAid()
+            )
+            val currentPinnedAid: Long? = if (dynamic.isTop && avItem != null) avItem.aid else null
+            if (currentPinnedAid != lastPinnedAid) {
+                preferenceManager.setLastPinnedAid(currentPinnedAid ?: -1)
+                AppLogger.d(TAG, "pinned changed: $lastPinnedAid → $currentPinnedAid")
+                if (lastPinnedAid != null || currentPinnedAid != null) {
+                    // 至少一侧有值才报警（避免首次 null→null 误报）
+                    val title = avItem?.title ?: "置顶已取消"
+                    triggerActivityAlert(
+                        com.bilibili.livemonitor.domain.ActivityType.Pinned(
+                            currentPinnedAid ?: 0,
+                            title
+                        )
+                    )
+                }
             }
         }
     }
@@ -368,7 +356,12 @@ class LiveCheckService : Service() {
                 if (preferenceManager.isAlertRingOnActivity()) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Pinned -> {
-                sendVideoNotification(type.aid, type.title, "置顶视频变更")
+                if (type.aid == 0L) {
+                    // 置顶被取消
+                    sendTextNotification(LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID, "白绮置顶已取消", null)
+                } else {
+                    sendVideoNotification(type.aid, type.title, "置顶视频变更")
+                }
                 if (preferenceManager.isAlertRingOnActivity()) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Dynamic -> {
@@ -379,6 +372,24 @@ class LiveCheckService : Service() {
                 // 不应走到这里，开播提醒走 triggerAlert()
             }
         }
+    }
+
+    private fun sendTextNotification(channelId: String, title: String, text: String?) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, title.hashCode(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle(title)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+        if (!text.isNullOrBlank()) builder.setContentText(text.take(50))
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(title.hashCode(), builder.build())
     }
 
     private fun sendVideoNotification(aid: Long, title: String, prefix: String) {

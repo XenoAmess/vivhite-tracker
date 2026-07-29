@@ -39,32 +39,4 @@ object HttpClient {
             null
         }
     }
-
-    /**
-     * GET 请求并从 Set-Cookie 响应头里提取指定 cookie 的值。
-     * 用于获取 buvid3 等 B 站首次访问自动种下的 cookie。
-     * @return cookie 值（不含 `name=` 前缀和 `; Path=...` 后缀）；未找到返回 null
-     */
-    fun fetchCookie(url: String, cookieName: String, timeoutMs: Int = 8000): String? {
-        return try {
-            val connection = URL(url).openConnection() as HttpsURLConnection
-            connection.apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Referer", "https://www.bilibili.com/")
-                connectTimeout = timeoutMs
-                readTimeout = timeoutMs
-                instanceFollowRedirects = false  // 不跟随重定向，直接读原始响应头
-            }
-            // 先读响应体（即使不关心内容，也要读完才能可靠拿头）
-            try { connection.inputStream.bufferedReader().use { it.readText() } } catch (_: Exception) {}
-            val cookies = connection.headerFields?.get("Set-Cookie") ?: connection.headerFields?.get("set-cookie")
-            connection.disconnect()
-            cookies?.find { it.startsWith("$cookieName=") }?.let { cookieHeader ->
-                cookieHeader.substringAfter("$cookieName=").substringBefore(';').takeIf { it.isNotBlank() }
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
 }

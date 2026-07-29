@@ -179,30 +179,4 @@ class PreferenceManagerTest {
         prefs.setLastDynamicId("dyn123456")
         assertEquals("dyn123456", prefs.getLastDynamicId())
     }
-
-    @Test
-    fun `wbi keys 默认空`() {
-        assertEquals("", prefs.getWbiImgKey())
-        assertEquals("", prefs.getWbiSubKey())
-        assertEquals(0L, prefs.getWbiKeyUpdatedAt())
-    }
-
-    @Test
-    fun `wbi keys round trip`() {
-        prefs.setWbiKeys("img_key_abc", "sub_key_xyz")
-        assertEquals("img_key_abc", prefs.getWbiImgKey())
-        assertEquals("sub_key_xyz", prefs.getWbiSubKey())
-        assertTrue("updatedAt 应 > 0", prefs.getWbiKeyUpdatedAt() > 0)
-    }
-
-    @Test
-    fun `buvid3 默认空串`() {
-        assertEquals("", prefs.getBuvid3())
-    }
-
-    @Test
-    fun `buvid3 round trip`() {
-        prefs.setBuvid3("some-uuid-value")
-        assertEquals("some-uuid-value", prefs.getBuvid3())
-    }
 }
