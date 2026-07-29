@@ -412,7 +412,11 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         var capturedParams: android.os.Bundle? = null
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
-            override fun shareToQQ(activity: android.app.Activity, params: android.os.Bundle) {
+            override fun loginAndShare(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onFallback: () -> Unit
+            ) {
                 capturedParams = params
             }
         }
@@ -442,8 +446,13 @@ class MainActivityTest {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
-            override fun shareToQQ(activity: android.app.Activity, params: android.os.Bundle) {
-                throw RuntimeException("simulated sdk failure")
+            override fun loginAndShare(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onFallback: () -> Unit
+            ) {
+                // 模拟 SDK 同步异常：直接调 onFallback
+                onFallback()
             }
         }
 
@@ -470,7 +479,11 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         var invoked = false
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
-            override fun shareToQQ(activity: android.app.Activity, params: android.os.Bundle) {
+            override fun loginAndShare(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onFallback: () -> Unit
+            ) {
                 invoked = true
             }
         }

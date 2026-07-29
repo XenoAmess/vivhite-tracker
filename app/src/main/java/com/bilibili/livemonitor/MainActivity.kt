@@ -777,11 +777,11 @@ class MainActivity : AppCompatActivity() {
                 BilibiliApi().fetchRoomCover(QqShare.ROOM_ID)
             } ?: QqShare.FALLBACK_COVER_URL
             AppLogger.d("MainActivity", "share cover=$cover")
-            try {
-                qqSdkSharer.shareToQQ(this@MainActivity, QqShare.buildSdkShareParams(cover))
-                AppLogger.d("MainActivity", "qq sdk shareToQQ invoked")
-            } catch (e: Exception) {
-                AppLogger.e("MainActivity", "qq sdk share failed, fallback to system share", e)
+            val params = QqShare.buildSdkShareParams(cover)
+            // loginAndShare 内部已处理：未授权先 login、异步 onError 触发 fallback。
+            // 这里的 fallback 兜底同步异常（如 Tencent 初始化失败）。
+            qqSdkSharer.loginAndShare(this@MainActivity, params) {
+                AppLogger.d("MainActivity", "fallback to system share")
                 startActivity(Intent.createChooser(QqShare.buildSystemShareIntent(), "分享直播间"))
             }
         }
