@@ -166,16 +166,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            btnBackgroundSettings.setOnClickListener {
-                openBackgroundSettings()
-            }
-
-            btnAlertSound.setOnClickListener {
-                showAlertDialogSoundDialog()
-            }
-
-            btnActivityMonitor.setOnClickListener {
-                showActivitySettingsDialog()
+            btnSettings.setOnClickListener {
+                showSettingsDrawer()
             }
 
             btnViewLog.setOnClickListener {
@@ -199,10 +191,6 @@ class MainActivity : AppCompatActivity() {
             btnCheckUpdate.setOnClickListener {
                 checkForUpdate(manual = true)
             }
-
-            btnUpdateSettings.setOnClickListener {
-                showUpdateSettingsDialog()
-            }
         }
 
         setupQqGroups()
@@ -223,6 +211,212 @@ class MainActivity : AppCompatActivity() {
         if (now - preferenceManager.getLastUpdateCheckTime() < UPDATE_CHECK_INTERVAL_MS) return
         preferenceManager.setLastUpdateCheckTime(now)
         checkForUpdate(manual = false)
+    }
+
+    // ========== 统一设置抽屉 ==========
+
+    /**
+     * 弹出 BottomSheet 抽屉，4 个设置项内嵌展开。
+     * 同一时刻只有一个 Section 展开（互斥）。
+     */
+    internal fun showSettingsDrawer() {
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val root = layoutInflater.inflate(R.layout.dialog_settings_drawer, null)
+        val container = root.findViewById<android.widget.LinearLayout>(R.id.itemsContainer)
+
+        val entries = listOf(
+            SettingsEntry(
+                title = "后台保活设置",
+                subtitle = "电池优化 / OEM 自启动引导",
+                iconRes = android.R.drawable.ic_menu_manage,
+                expandLayoutRes = R.layout.expand_section_maintenance,
+                onExpand = { view -> bindMaintenanceSection(view) }
+            ),
+            SettingsEntry(
+                title = "提醒铃声",
+                subtitle = computeRingtoneSubtitle(),
+                iconRes = android.R.drawable.ic_media_play,
+                expandLayoutRes = R.layout.expand_section_ringtone,
+                onExpand = { view -> bindRingtoneSection(view) }
+            ),
+            SettingsEntry(
+                title = "活动监控",
+                subtitle = computeActivitySubtitle(),
+                iconRes = android.R.drawable.ic_menu_my_calendar,
+                expandLayoutRes = R.layout.expand_section_activity,
+                onExpand = { view -> bindActivitySection(view) }
+            ),
+            SettingsEntry(
+                title = "更新设置",
+                subtitle = computeUpdateSubtitle(),
+                iconRes = android.R.drawable.ic_menu_manage,
+                expandLayoutRes = R.layout.expand_section_update,
+                onExpand = { view -> bindUpdateSection(view) }
+            )
+        )
+
+        entries.forEach { entry ->
+            val itemView = layoutInflater.inflate(R.layout.item_settings_drawer, container, false)
+            container.addView(itemView)
+            bindSettingsItem(itemView, entry)
+        }
+
+        sheet.setContentView(root)
+        sheet.show()
+    }
+
+    private data class SettingsEntry(
+        val title: String,
+        val subtitle: String,
+        val iconRes: Int,
+        val expandLayoutRes: Int,
+        val onExpand: (android.view.View) -> Unit
+    )
+
+    // 互斥展开：同一时刻只有一个 Section 展开
+    private var currentExpanded: android.view.ViewGroup? = null
+
+    private fun bindSettingsItem(itemView: android.view.View, entry: SettingsEntry) {
+        itemView.findViewById<android.widget.TextView>(R.id.tvTitle).text = entry.title
+        itemView.findViewById<android.widget.TextView>(R.id.tvSubtitle).text = entry.subtitle
+        itemView.findViewById<android.widget.ImageView>(R.id.ivIcon).setImageResource(entry.iconRes)
+        val container = itemView.findViewById<android.widget.FrameLayout>(R.id.expandContainer)
+
+        itemView.findViewById<android.view.View>(R.id.itemRoot).setOnClickListener {
+            if (container.visibility == android.view.View.VISIBLE) {
+                collapseSection(container)
+            } else {
+                currentExpanded?.let { collapseSection(it) }
+                container.removeAllViews()
+                val content = layoutInflater.inflate(entry.expandLayoutRes, container, false)
+                entry.onExpand(content)
+                container.addView(content)
+                expandSection(container)
+            }
+        }
+    }
+
+    private fun expandSection(container: android.view.ViewGroup) {
+        container.visibility = android.view.View.VISIBLE
+        currentExpanded = container
+    }
+
+    private fun collapseSection(container: android.view.ViewGroup) {
+        container.visibility = android.view.View.GONE
+        container.removeAllViews()
+        if (currentExpanded === container) currentExpanded = null
+    }
+
+    private fun computeRingtoneSubtitle(): String {
+        val title = preferenceManager.getAlertSoundTitle()
+        return if (title.isNotBlank()) "当前: $title" else "当前: 应用默认"
+    }
+
+    private fun computeActivitySubtitle(): String {
+        var on = 0
+        if (preferenceManager.isMonitorVideos()) on++
+        if (preferenceManager.isMonitorPinned()) on++
+        if (preferenceManager.isMonitorDynamics()) on++
+        val ring = preferenceManager.isAlertRingOnActivity()
+        val ringText = if (ring) " 响铃" else ""
+        return "视频·置顶·动态 $on/3 已开$ringText"
+    }
+
+    private fun computeUpdateSubtitle(): String {
+        val check = if (preferenceManager.isAutoCheckUpdate()) "开" else "关"
+        val dl = if (preferenceManager.isAutoDownloadUpdate()) "开" else "关"
+        return "自动检查: $check  自动下载: $dl"
+    }
+
+    private fun bindMaintenanceSection(view: android.view.View) {
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBackgroundSettings)
+            .setOnClickListener { openBackgroundSettings() }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBatterySettings)
+            .setOnClickListener { openBatterySettings() }
+    }
+
+    private fun bindRingtoneSection(view: android.view.View) {
+        val container = view.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)
+        val currentUri = preferenceManager.getAlertSoundUri()
+        val currentSource = AlertSoundDecider.resolve(currentUri)
+        val radioButtons = mutableListOf<android.widget.RadioButton>()
+
+        BuiltInSound.values().forEach { sound ->
+            val item = layoutInflater.inflate(R.layout.item_builtin_sound, container, false)
+            val rb = item.findViewById<android.widget.RadioButton>(R.id.rbSound)!!
+            val tvName = item.findViewById<TextView>(R.id.tvSoundName)
+            val btnPreview = item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
+            tvName.text = sound.title
+            radioButtons.add(rb)
+            val isSelected = when (currentSource) {
+                is com.bilibili.livemonitor.domain.SoundSource.Default -> sound == BuiltInSound.DEFAULT
+                is com.bilibili.livemonitor.domain.SoundSource.BuiltIn -> currentSource.key == sound.key
+                else -> false
+            }
+            if (isSelected) rb.isChecked = true
+            item.setOnClickListener {
+                radioButtons.forEach { it.isChecked = false }
+                rb.isChecked = true
+                preferenceManager.setAlertSoundUri(AlertSoundDecider.encodeBuiltIn(sound.key))
+                preferenceManager.setAlertSoundTitle(sound.title)
+                AppLogger.d("MainActivity", "builtin sound selected: ${sound.key}")
+            }
+            btnPreview.setOnClickListener { previewSound(sound) }
+            container.addView(item)
+        }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickSystemRingtone)
+            .setOnClickListener {
+                stopPreview()
+                val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "选择提醒铃声")
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                }
+                systemRingtoneLauncher.launch(intent)
+            }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickAudioFile)
+            .setOnClickListener {
+                stopPreview()
+                audioFileLauncher.launch(arrayOf("audio/*"))
+            }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRestoreDefault)
+            .setOnClickListener {
+                preferenceManager.setAlertSoundUri("")
+                preferenceManager.setAlertSoundTitle("")
+                AppLogger.d("MainActivity", "alert sound restored to default")
+                Toast.makeText(this, "已恢复默认铃声", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun bindActivitySection(view: android.view.View) {
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorVideos).apply {
+            isChecked = preferenceManager.isMonitorVideos()
+            setOnCheckedChangeListener { _, c -> preferenceManager.setMonitorVideos(c) }
+        }
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorPinned).apply {
+            isChecked = preferenceManager.isMonitorPinned()
+            setOnCheckedChangeListener { _, c -> preferenceManager.setMonitorPinned(c) }
+        }
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorDynamics).apply {
+            isChecked = preferenceManager.isMonitorDynamics()
+            setOnCheckedChangeListener { _, c -> preferenceManager.setMonitorDynamics(c) }
+        }
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAlertRingOnActivity).apply {
+            isChecked = preferenceManager.isAlertRingOnActivity()
+            setOnCheckedChangeListener { _, c -> preferenceManager.setAlertRingOnActivity(c) }
+        }
+    }
+
+    private fun bindUpdateSection(view: android.view.View) {
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoCheck).apply {
+            isChecked = preferenceManager.isAutoCheckUpdate()
+            setOnCheckedChangeListener { _, c -> preferenceManager.setAutoCheckUpdate(c) }
+        }
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoDownload).apply {
+            isChecked = preferenceManager.isAutoDownloadUpdate()
+            setOnCheckedChangeListener { _, c -> preferenceManager.setAutoDownloadUpdate(c) }
+        }
     }
 
     internal fun checkForUpdate(manual: Boolean) {

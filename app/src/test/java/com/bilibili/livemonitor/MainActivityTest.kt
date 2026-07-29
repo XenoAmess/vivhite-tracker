@@ -549,9 +549,16 @@ class MainActivityTest {
         makeBatteryIntentResolvable()
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnBackgroundSettings
-        ).performClick()
+        // 抽屉里展开「后台保活设置」section 后点「去电池优化设置」按钮
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 0)
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val sheetView = (org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog)
+            .findViewById<android.view.View>(R.id.itemsContainer)!!
+        sheetView.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnOpenBatterySettings
+        )?.performClick()
 
         val started = shadowOf(context).nextStartedActivity
         assertEquals(
@@ -567,9 +574,15 @@ class MainActivityTest {
         setManufacturer("HONOR")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnBackgroundSettings
-        ).performClick()
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 0)
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val sheetView = (org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog)
+            .findViewById<android.view.View>(R.id.itemsContainer)!!
+        sheetView.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnOpenBackgroundSettings
+        )?.performClick()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
             as androidx.appcompat.app.AlertDialog
@@ -600,9 +613,15 @@ class MainActivityTest {
         makeBatteryIntentResolvable()
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnBackgroundSettings
-        ).performClick()
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 0)
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val sheetView = (org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog)
+            .findViewById<android.view.View>(R.id.itemsContainer)!!
+        sheetView.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnOpenBackgroundSettings
+        )?.performClick()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
             as androidx.appcompat.app.AlertDialog
@@ -673,9 +692,9 @@ class MainActivityTest {
         )
         assertEquals("检查更新", btn.text.toString())
         val settings = activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnUpdateSettings
+            R.id.btnSettings
         )
-        assertEquals("更新设置", settings.contentDescription.toString())
+        assertEquals("设置", settings.text.toString())
     }
 
     @Test
@@ -753,9 +772,8 @@ class MainActivityTest {
     fun `更新设置对话框 开关状态与prefs双向同步`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnUpdateSettings
-        ).performClick()
+        // 更新设置入口整合到抽屉，直接调原对话框方法
+        activity.showUpdateSettingsDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
             as androidx.appcompat.app.AlertDialog
@@ -833,9 +851,8 @@ class MainActivityTest {
     fun `点提醒铃声按钮 弹出铃声设置对话框`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnAlertSound
-        ).performClick()
+        // 设置入口整合到抽屉，弹出原铃声对话框的内部方法
+        activity.showAlertDialogSoundDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
         assertTrue("应弹出 AlertDialog", dialog is androidx.appcompat.app.AlertDialog)
@@ -844,9 +861,7 @@ class MainActivityTest {
     @Test
     fun `铃声对话框显示 4 个内置铃声选项`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnAlertSound
-        ).performClick()
+        activity.showAlertDialogSoundDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
@@ -858,9 +873,7 @@ class MainActivityTest {
         prefs.setAlertSoundUri("builtin:alert_gentle")
         prefs.setAlertSoundTitle("柔和提示")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnAlertSound
-        ).performClick()
+        activity.showAlertDialogSoundDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         dialog.findViewById<com.google.android.material.button.MaterialButton>(
@@ -875,9 +888,7 @@ class MainActivityTest {
     fun `未设置铃声时 内置默认项被勾选`() {
         prefs.setAlertSoundUri("")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnAlertSound
-        ).performClick()
+        activity.showAlertDialogSoundDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
@@ -891,9 +902,7 @@ class MainActivityTest {
         prefs.setAlertSoundUri("builtin:alert_gentle")
         prefs.setAlertSoundTitle("柔和提示")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnAlertSound
-        ).performClick()
+        activity.showAlertDialogSoundDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
@@ -908,9 +917,8 @@ class MainActivityTest {
     fun `点活动监控按钮 弹出设置对话框`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnActivityMonitor
-        ).performClick()
+        // 设置入口整合到抽屉，弹出原活动对话框的内部方法
+        activity.showActivitySettingsDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
         assertTrue("应弹出 AlertDialog", dialog is androidx.appcompat.app.AlertDialog)
@@ -919,9 +927,7 @@ class MainActivityTest {
     @Test
     fun `活动监控对话框有 4 个开关`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnActivityMonitor
-        ).performClick()
+        activity.showActivitySettingsDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         assertNotNull(dialog.findViewById(R.id.switchMonitorVideos))
@@ -933,9 +939,7 @@ class MainActivityTest {
     @Test
     fun `活动监控开关切换落 prefs`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnActivityMonitor
-        ).performClick()
+        activity.showActivitySettingsDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         val switchVideos = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorVideos)!!
@@ -947,6 +951,16 @@ class MainActivityTest {
 
         assertEquals(true, prefs.isMonitorVideos())
         assertEquals(true, prefs.isMonitorDynamics())
+    }
+
+    private fun expandSectionAt(activity: MainActivity, position: Int) {
+        // 点第 N 个条目的 itemRoot 让其内嵌容器展开
+        val sheetDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog
+        val itemsContainer = sheetDialog.findViewById<android.widget.LinearLayout>(R.id.itemsContainer)!!
+        val itemView = itemsContainer.getChildAt(position)
+        itemView.findViewById<android.view.View>(R.id.itemRoot).performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 
     private fun makeBilibiliInstalled(vararg variants: Pair<String, String>) {
