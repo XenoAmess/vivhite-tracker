@@ -582,8 +582,10 @@ class MainActivityTest {
         val target = capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TARGET_URL)!!
         assertTrue("应含 bbid 归因: $target", target.contains("bbid=8945059"))
         assertTrue("应含直播间链接: $target", target.contains("live.bilibili.com/11258892"))
-        assertEquals("白绮开播啦！", capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
-        assertEquals("牢白播了吗", capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_APP_NAME))
+        val title = capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE)!!
+        assertTrue("标题非空: $title", title.isNotBlank())
+        val summary = capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY)!!
+        assertTrue("内容含房间号: $summary", summary.contains("11258892"))
         val cover = capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_IMAGE_URL)!!
         assertTrue("封面应为有效 https 地址: $cover", cover.startsWith("https://"))
         // SDK 路径成功时不应再发系统分享

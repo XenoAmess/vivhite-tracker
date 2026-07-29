@@ -595,6 +595,8 @@ class MainActivity : AppCompatActivity() {
     // 试听播放器（dialog dismiss 时必须释放，避免泄漏）
     private var previewPlayer: MediaPlayer? = null
     private val alertSoundProvider = AlertSoundProvider()
+    // 当前分享用的直播标题（fetchRoomInfo 拿到，供 fallbackToSystemShare 使用）
+    private var currentShareTitle: String? = null
 
     internal fun showAlertDialogSoundDialog() {
         val view = layoutInflater.inflate(R.layout.dialog_alert_sound, null)
@@ -771,11 +773,14 @@ class MainActivity : AppCompatActivity() {
         // 注入 applicationContext 给 DefaultQqSdkSharer（isAuthorized/login 需要）
         (qqSdkSharer as? com.bilibili.livemonitor.util.DefaultQqSdkSharer)?.bind(applicationContext)
         shareScope.launch {
-            val cover = withTimeoutOrNull(3000) {
-                BilibiliApi().fetchRoomCover(QqShare.ROOM_ID)
-            } ?: QqShare.FALLBACK_COVER_URL
-            AppLogger.d("MainActivity", "share cover=$cover")
-            val params = QqShare.buildSdkShareParams(cover)
+            val roomInfo = withTimeoutOrNull(3000) {
+                BilibiliApi().fetchRoomInfo(QqShare.ROOM_ID)
+            }
+            val cover = roomInfo?.cover ?: QqShare.FALLBACK_COVER_URL
+            val title = roomInfo?.title
+            AppLogger.d("MainActivity", "share cover=$cover title=$title")
+            currentShareTitle = title
+            val params = QqShare.buildSdkShareParams(cover, title)
             doQqShare(params)
         }
     }
@@ -856,7 +861,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun fallbackToSystemShare() {
         AppLogger.d("MainActivity", "fallback to system share")
-        startActivity(Intent.createChooser(QqShare.buildSystemShareIntent(), "分享直播间"))
+        startActivity(Intent.createChooser(QqShare.buildSystemShareIntent(currentShareTitle), "分享直播间"))
     }
 
     // 最终兜底：把带 bbid 归因的分享链接复制到剪贴板

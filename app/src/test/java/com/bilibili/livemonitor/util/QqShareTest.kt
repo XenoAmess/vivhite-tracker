@@ -33,26 +33,37 @@ class QqShareTest {
     }
 
     @Test
-    fun `SDK分享参数 卡片字段完整且归因正确`() {
-        val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg")
-        assertEquals("白绮开播啦！", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
-        assertTrue(params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY)!!.contains("11258892"))
-        val target = params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TARGET_URL)!!
-        assertTrue(target.contains("live.bilibili.com/11258892"))
-        assertTrue(target.contains("bbid=8945059"))
+    fun `SDK分享参数 有直播标题时展示动态标题`() {
+        val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", "失眠 无言")
+        assertEquals("「失眠 无言」", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
+        assertEquals("白绮正在直播 · 11258892", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY))
         assertEquals("https://i0.hdslb.com/cover.jpg", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_IMAGE_URL))
         assertEquals("牢白播了吗", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_APP_NAME))
     }
 
     @Test
+    fun `SDK分享参数 无标题时兜底硬编码`() {
+        val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", null)
+        assertEquals("白绮开播啦！", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
+        assertEquals("白绮直播间 · 11258892", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY))
+    }
+
+    @Test
     fun `系统分享兜底 intent 为ACTION_SEND纯文本`() {
-        val intent = QqShare.buildSystemShareIntent()
+        val intent = QqShare.buildSystemShareIntent("失眠 无言")
         assertEquals(android.content.Intent.ACTION_SEND, intent.action)
         assertEquals("text/plain", intent.type)
         val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT) ?: ""
-        assertTrue(text.contains("快来看"))
+        assertTrue(text.contains("失眠 无言"))
+        assertTrue(text.contains("11258892"))
         assertTrue(text.contains("bbid=8945059"))
-        assertEquals("白绮开播啦！", intent.getStringExtra(android.content.Intent.EXTRA_SUBJECT))
+    }
+
+    @Test
+    fun `系统分享兜底 无标题时走硬编码`() {
+        val intent = QqShare.buildSystemShareIntent(null)
+        val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT) ?: ""
+        assertTrue(text.contains("快来看"))
     }
 
     @Test

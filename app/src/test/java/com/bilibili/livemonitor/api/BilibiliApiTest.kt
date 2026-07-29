@@ -97,4 +97,23 @@ class BilibiliApiTest {
         assertNull(BilibiliApi.parseRoomCover("""{"code":0,"data":{"user_cover":""}}"""))
         assertNull(BilibiliApi.parseRoomCover("not a json"))
     }
+
+    // ---------- parseRoomTitle ----------
+
+    @Test
+    fun `parseRoomTitle 正常标题返回`() {
+        val title = BilibiliApi.parseRoomTitle("""{"code":0,"data":{"title":"失眠 无言"}}""")
+        assertEquals("失眠 无言", title)
+    }
+
+    @Test
+    fun `parseRoomTitle 空标题返回 null`() {
+        assertNull(BilibiliApi.parseRoomTitle("""{"code":0,"data":{"title":""}}"""))
+        assertNull(BilibiliApi.parseRoomTitle("""{"code":0,"data":{}}"""))
+    }
+
+    @Test
+    fun `parseRoomTitle 非法 JSON 返回 null`() {
+        assertNull(BilibiliApi.parseRoomTitle("not a json"))
+    }
 }

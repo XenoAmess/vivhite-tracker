@@ -36,9 +36,6 @@ object QqShare {
 
     // 分享归因用户（B 站 bbid 参数）：琉焰卿Official
     private const val SHARER_UID = "8945059"
-
-    private const val SHARE_TITLE = "白绮开播啦！"
-    private const val SHARE_DESC = "B站直播间 11258892，快来看！"
     private const val APP_NAME = "牢白播了吗"
 
     // 实时封面获取失败时的兜底静态图（仓库内白绮头像）
@@ -53,10 +50,17 @@ object QqShare {
     }
 
     // QQ 互联 SDK 分享参数（真卡片：标题+描述+封面+来源）
-    fun buildSdkShareParams(coverUrl: String): Bundle {
+    /**
+     * @param coverUrl 封面图 URL
+     * @param liveTitle 直播标题（如 "失眠 无言"）。null → 兜底硬编码
+     */
+    fun buildSdkShareParams(coverUrl: String, liveTitle: String? = null): Bundle {
+        val title = if (!liveTitle.isNullOrBlank()) "「$liveTitle」" else "白绮开播啦！"
+        val summary = if (!liveTitle.isNullOrBlank()) "白绮正在直播 · $ROOM_ID"
+                      else "白绮直播间 · $ROOM_ID"
         return Bundle().apply {
-            putString(QQShare.SHARE_TO_QQ_TITLE, SHARE_TITLE)
-            putString(QQShare.SHARE_TO_QQ_SUMMARY, SHARE_DESC)
+            putString(QQShare.SHARE_TO_QQ_TITLE, title)
+            putString(QQShare.SHARE_TO_QQ_SUMMARY, summary)
             putString(QQShare.SHARE_TO_QQ_TARGET_URL, buildShareUrl())
             putString(QQShare.SHARE_TO_QQ_IMAGE_URL, coverUrl)
             putString(QQShare.SHARE_TO_QQ_APP_NAME, APP_NAME)
@@ -64,11 +68,16 @@ object QqShare {
     }
 
     // 系统分享 intent：标题 + 描述 + 归因链接
-    fun buildSystemShareIntent(): Intent {
+    /**
+     * @param liveTitle 直播标题。null → 兜底硬编码
+     */
+    fun buildSystemShareIntent(liveTitle: String? = null): Intent {
+        val desc = if (!liveTitle.isNullOrBlank()) "白绮正在直播 · $ROOM_ID · 「$liveTitle」"
+                   else "B站直播间 $ROOM_ID，快来看！"
         return Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, SHARE_TITLE)
-            putExtra(Intent.EXTRA_TEXT, "$SHARE_DESC ${buildShareUrl()}")
+            putExtra(Intent.EXTRA_SUBJECT, "白绮开播啦！")
+            putExtra(Intent.EXTRA_TEXT, "$desc ${buildShareUrl()}")
         }
     }
 

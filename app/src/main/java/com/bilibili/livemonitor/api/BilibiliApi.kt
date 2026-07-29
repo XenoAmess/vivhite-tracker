@@ -78,8 +78,18 @@ open class BilibiliApi : LiveStatusChecker {
         }
     }
 
-    // 取直播间封面 URL（user_cover 字段），用于 QQ 分享卡片封面；失败返回 null
-    suspend fun fetchRoomCover(roomId: Long): String? = withContext(Dispatchers.IO) {
+    /**
+     * 直播间信息（一次 API 调用同时拿标题和封面，避免冗余网络请求）。
+     * @param title 直播标题（如 "失眠 无言"），未开播时可能是上次直播的旧标题
+     * @param cover 直播间封面 URL，null 时取 FALLBACK_COVER_URL
+     */
+    data class RoomInfo(val title: String?, val cover: String?)
+
+    /**
+     * 取直播间标题 + 封面。返回 null = 网络/API 异常。
+     * 替代旧版 fetchRoomCover（标题之前被丢弃了，现在一次请求拿回）。
+     */
+    suspend fun fetchRoomInfo(roomId: Long): RoomInfo? = withContext(Dispatchers.IO) {
         try {
             val url = URL("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId")
             val connection = url.openConnection() as HttpsURLConnection
@@ -92,7 +102,10 @@ open class BilibiliApi : LiveStatusChecker {
             }
             val response = connection.inputStream.bufferedReader().use { it.readText() }
             connection.disconnect()
-            parseRoomCover(response)
+            RoomInfo(
+                title = parseRoomTitle(response),
+                cover = parseRoomCover(response)
+            )
         } catch (e: Exception) {
             null
         }
@@ -100,6 +113,17 @@ open class BilibiliApi : LiveStatusChecker {
 
     companion object {
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        // internal 便于单测
+        internal fun parseRoomTitle(response: String): String? {
+            return try {
+                val json = JSONObject(response)
+                val data = json.optJSONObject("data") ?: return null
+                data.optString("title").takeIf { it.isNotBlank() }
+            } catch (e: Exception) {
+                null
+            }
+        }
 
         // internal 便于单测：从 get_info 响应里解析封面 URL
         internal fun parseRoomCover(response: String): String? {
