@@ -502,9 +502,10 @@ class LiveCheckService : Service() {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
-                isLooping = true
+                isLooping = false
                 prepare()
                 start()
+                setOnCompletionListener { it.start() }
 
                 // 10秒后停止
                 serviceScope.launch {

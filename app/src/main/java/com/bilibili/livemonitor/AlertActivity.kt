@@ -109,9 +109,10 @@ class AlertActivity : AppCompatActivity() {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
-                isLooping = true
+                isLooping = false
                 prepare()
                 start()
+                setOnCompletionListener { it.start() }
             }
         } catch (e: Exception) {
             e.printStackTrace()

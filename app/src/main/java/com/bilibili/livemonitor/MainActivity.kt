@@ -145,6 +145,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        stopPreview()
+    }
+
     private fun setupUI() {
         binding.apply {
             btnToggle.setOnClickListener {
@@ -266,6 +271,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         sheet.setContentView(root)
+        sheet.setOnDismissListener { stopPreview() }
         sheet.show()
     }
 
@@ -309,6 +315,7 @@ class MainActivity : AppCompatActivity() {
         container.visibility = android.view.View.GONE
         container.removeAllViews()
         if (currentExpanded === container) currentExpanded = null
+        stopPreview()
     }
 
     private fun computeRingtoneSubtitle(): String {
@@ -699,9 +706,10 @@ class MainActivity : AppCompatActivity() {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
-                isLooping = true
+                isLooping = false
                 prepare()
                 start()
+                setOnCompletionListener { it.start() }
             }
         } catch (e: Exception) {
             AppLogger.e("MainActivity", "preview sound ${sound.key} failed", e)
