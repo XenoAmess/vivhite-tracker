@@ -686,7 +686,7 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    // 试听内置铃声 2 秒（用 android.resource:// uri，与 AlertSoundProvider 一致）
+    // 试听内置铃声（循环播放，直到用户点其他按钮或关对话框）
     private fun previewSound(sound: BuiltInSound) {
         stopPreview()
         try {
@@ -703,8 +703,6 @@ class MainActivity : AppCompatActivity() {
                 prepare()
                 start()
             }
-            // 兜底：2 秒后强制停（防止某些 ogg 解码异常导致不触发 onCompletion）
-            binding.root.postDelayed({ stopPreview() }, 2000)
         } catch (e: Exception) {
             AppLogger.e("MainActivity", "preview sound ${sound.key} failed", e)
         }
