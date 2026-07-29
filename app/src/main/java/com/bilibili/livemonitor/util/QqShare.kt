@@ -140,17 +140,44 @@ interface QqSdkSharer {
 class DefaultQqSdkSharer : QqSdkSharer {
     private val contextRef = java.util.concurrent.atomic.AtomicReference<android.content.Context>()
     private var currentLoginListener: com.tencent.tauth.IUiListener? = null
-    // 手动持久化授权状态标记：SDK 内部 AES 加密保存的 token
-    // 在 Tencent.createInstance() 新建实例时可能读不到，所以 OAuth 成功后
-    // 我们自己记一笔，避免每次分享都重复弹授权引导
-    private var manualAuthorized = false
+
+    companion object {
+        private const val PREFS_NAME = "qq_share_state"
+        private const val KEY_AUTHORIZED = "authorized"
+        private const val KEY_EXPIRES_AT = "expires_at"
+        private const val TAG = "QqSdkSharer"
+    }
+
+    private fun isManuallyAuthorized(): Boolean {
+        val ctx = contextRef.get() ?: return false
+        val prefs = ctx.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        val authorized = prefs.getBoolean(KEY_AUTHORIZED, false)
+        if (!authorized) return false
+        // 检查过期（默认 60 天，与 SDK 的 5184000s 对齐）
+        val expiresAt = prefs.getLong(KEY_EXPIRES_AT, 0L)
+        if (System.currentTimeMillis() > expiresAt) {
+            prefs.edit().clear().apply()
+            return false
+        }
+        return true
+    }
+
+    private fun setManuallyAuthorized(expiresInSeconds: Long) {
+        val ctx = contextRef.get() ?: return
+        val prefs = ctx.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean(KEY_AUTHORIZED, true)
+            .putLong(KEY_EXPIRES_AT, System.currentTimeMillis() + expiresInSeconds * 1000)
+            .apply()
+        AppLogger.d(TAG, "manual authorized until ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(System.currentTimeMillis() + expiresInSeconds * 1000))}")
+    }
 
     override fun isAuthorized(): Boolean {
-        if (manualAuthorized) return true
+        // 先查持久化标记（跨进程重启有效）
+        if (isManuallyAuthorized()) return true
         val ctx = contextRef.get() ?: return false
         return try {
             val valid = QqShare.obtainTencent(ctx).isSessionValid
-            if (valid) manualAuthorized = true
             AppLogger.d(TAG, "isAuthorized: sessionValid=$valid")
             valid
         } catch (e: Exception) {
@@ -184,7 +211,9 @@ class DefaultQqSdkSharer : QqSdkSharer {
         currentLoginListener = object : com.tencent.tauth.IUiListener {
             override fun onComplete(response: Any?) {
                 AppLogger.d(TAG, "qq login complete: $response")
-                manualAuthorized = true
+                // 持久化授权状态 + 过期时间（跨进程重启有效）
+                val json = org.json.JSONObject(response?.toString() ?: "{}")
+                setManuallyAuthorized(json.optLong("expires_in", 5184000L))
                 currentLoginListener = null
                 onAuthorized()
             }
@@ -271,10 +300,6 @@ class DefaultQqSdkSharer : QqSdkSharer {
 
     fun bind(context: android.content.Context) {
         contextRef.set(context.applicationContext)
-    }
-
-    companion object {
-        private const val TAG = "QqSdkSharer"
     }
 }
 
