@@ -1,20 +1,23 @@
 package com.bilibili.livemonitor
 
 import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.AudioAttributes as Media3AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import com.bilibili.livemonitor.databinding.ActivityAlertBinding
 import kotlinx.coroutines.*
 
 class AlertActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAlertBinding
-    private var mediaPlayer: MediaPlayer? = null
+    private var mediaPlayer: ExoPlayer? = null
     private val scope = CoroutineScope(Dispatchers.Main)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -94,7 +97,12 @@ class AlertActivity : AppCompatActivity() {
     private fun playAlarm() {
         try {
             val prefs = com.bilibili.livemonitor.util.PreferenceManager(this)
-            mediaPlayer = MediaPlayer().apply {
+            mediaPlayer = ExoPlayer.Builder(this).build().apply {
+                val attrs = Media3AudioAttributes.Builder()
+                    .setUsage(C.USAGE_ALARM)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)
+                    .build()
+                setAudioAttributes(attrs, /* handleAudioFocus = */ false)
                 if (!alertSoundProvider.setupDataSource(
                         this@AlertActivity, this, prefs.getAlertSoundUri()
                     )) {
@@ -103,16 +111,8 @@ class AlertActivity : AppCompatActivity() {
                     mediaPlayer = null
                     return@apply
                 }
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                isLooping = false
-                prepare()
-                start()
-                setOnCompletionListener { it.start() }
+                repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
+                playWhenReady = true
             }
         } catch (e: Exception) {
             e.printStackTrace()

@@ -9,8 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.net.Uri
+import androidx.media3.common.AudioAttributes as Media3AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -480,14 +483,19 @@ class LiveCheckService : Service() {
     // 提醒铃声播放器引用（internal 便于测试）。此前是局部变量：
     // 服务在 10 秒内被停止时 serviceScope 取消，停止协程被杀，
     // 铃声会永远循环直到进程死亡
-    internal var alertPlayer: MediaPlayer? = null
+    internal var alertPlayer: ExoPlayer? = null
 
     // 铃声源加载器（internal 便于测试注入 fake）
     internal var alertSoundProvider: AlertSoundProvider = AlertSoundProvider()
 
     private fun playAlertSound() {
         try {
-            alertPlayer = MediaPlayer().apply {
+            alertPlayer = ExoPlayer.Builder(this).build().apply {
+                val attrs = Media3AudioAttributes.Builder()
+                    .setUsage(C.USAGE_ALARM)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)
+                    .build()
+                setAudioAttributes(attrs, /* handleAudioFocus = */ false)
                 if (!alertSoundProvider.setupDataSource(
                         this@LiveCheckService, this, preferenceManager.getAlertSoundUri()
                     )) {
@@ -496,16 +504,8 @@ class LiveCheckService : Service() {
                     alertPlayer = null
                     return@apply
                 }
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                isLooping = false
-                prepare()
-                start()
-                setOnCompletionListener { it.start() }
+                repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
+                playWhenReady = true
 
                 // 10秒后停止
                 serviceScope.launch {

@@ -1,9 +1,10 @@
 package com.bilibili.livemonitor.util
 
 import android.content.Context
-import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.domain.AlertSoundDecider
 import com.bilibili.livemonitor.domain.SoundSource
@@ -30,7 +31,7 @@ enum class BuiltInSound(val key: String, val resId: Int, val title: String) {
 }
 
 /**
- * 把 [MediaPlayer] 设置到正确的铃声数据源，含三档兜底：
+ * 把 [Player] (ExoPlayer) 设置到正确的铃声数据源，含三档兜底：
  *
  * 1. 用户选择的（file / system / builtin）→ 尝试加载
  * 2. 失败 → 内置默认（[BuiltInSound.DEFAULT]）
@@ -41,26 +42,24 @@ enum class BuiltInSound(val key: String, val resId: Int, val title: String) {
  *
  * 用法：
  * ```
- * val player = MediaPlayer()
+ * val player = ExoPlayer.Builder(context).build()
  * if (!provider.setupDataSource(context, player, prefs.getAlertSoundUri())) {
  *     player.release()
  *     return
  * }
- * player.setAudioAttributes(...)
- * player.isLooping = true
- * player.prepare()
- * player.start()
+ * player.repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
+ * player.playWhenReady = true
  * ```
  */
 class AlertSoundProvider {
 
     /**
      * @param context 用于取 resources / contentResolver
-     * @param player 要设置数据源的 MediaPlayer（调用方负责后续 prepare/start/release）
+     * @param player 要设置数据源的 ExoPlayer（调用方负责后续 prepare/play/release）
      * @param uriPref prefs 里的原始字符串（见 [AlertSoundDecider.resolve]）
-     * @return true = 数据源已就绪，调用方可继续 prepare；false = 全部兜底失败，调用方应放弃
+     * @return true = 数据源已就绪，调用方可继续 play；false = 全部兜底失败，调用方应放弃
      */
-    fun setupDataSource(context: Context, player: MediaPlayer, uriPref: String?): Boolean {
+    fun setupDataSource(context: Context, player: Player, uriPref: String?): Boolean {
         val source = AlertSoundDecider.resolve(uriPref)
 
         // 第一选择
@@ -77,7 +76,7 @@ class AlertSoundProvider {
         return setupSystemAlarm(context, player)
     }
 
-    private fun trySetup(context: Context, player: MediaPlayer, source: SoundSource): Boolean {
+    private fun trySetup(context: Context, player: Player, source: SoundSource): Boolean {
         return when (source) {
             is SoundSource.Default -> setupBuiltin(context, player, BuiltInSound.DEFAULT)
             is SoundSource.BuiltIn -> {
@@ -94,13 +93,14 @@ class AlertSoundProvider {
         }
     }
 
-    private fun setupBuiltin(context: Context, player: MediaPlayer, sound: BuiltInSound): Boolean {
+    private fun setupBuiltin(context: Context, player: Player, sound: BuiltInSound): Boolean {
         return try {
             // 用 android.resource:// uri 方式而不是 AssetFileDescriptor：
             // 1. 更简洁，不需要手动 close AFD
-            // 2. Robolectric 的 ShadowMediaPlayer 对 setDataSource(Context, Uri) 支持更好
+            // 2. ExoPlayer 对 setMediaItem(Uri) 支持很好
             val uri = Uri.parse("android.resource://${context.packageName}/${sound.resId}")
-            player.setDataSource(context, uri)
+            player.setMediaItem(MediaItem.fromUri(uri))
+            player.prepare()
             true
         } catch (e: Exception) {
             AppLogger.e(TAG, "setup builtin ${sound.key} failed", e)
@@ -108,9 +108,10 @@ class AlertSoundProvider {
         }
     }
 
-    private fun setupUri(context: Context, player: MediaPlayer, uri: Uri): Boolean {
+    private fun setupUri(context: Context, player: Player, uri: Uri): Boolean {
         return try {
-            player.setDataSource(context, uri)
+            player.setMediaItem(MediaItem.fromUri(uri))
+            player.prepare()
             true
         } catch (e: Exception) {
             AppLogger.e(TAG, "setup uri $uri failed", e)
@@ -118,7 +119,7 @@ class AlertSoundProvider {
         }
     }
 
-    private fun setupSystemAlarm(context: Context, player: MediaPlayer): Boolean {
+    private fun setupSystemAlarm(context: Context, player: Player): Boolean {
         val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)

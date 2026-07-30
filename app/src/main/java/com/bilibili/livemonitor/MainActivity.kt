@@ -6,13 +6,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.media3.common.AudioAttributes as Media3AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -600,7 +603,7 @@ class MainActivity : AppCompatActivity() {
     // ========== 提醒铃声自定义 ==========
 
     // 试听播放器（dialog dismiss 时必须释放，避免泄漏）
-    private var previewPlayer: MediaPlayer? = null
+    private var previewPlayer: ExoPlayer? = null
     private val alertSoundProvider = AlertSoundProvider()
     // 当前分享用的直播标题（fetchRoomInfo 拿到，供 fallbackToSystemShare 使用）
     private var currentShareTitle: String? = null
@@ -693,23 +696,25 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    // 试听内置铃声（循环播放，直到用户点其他按钮或关对话框）
+    // 试听内置铃声（ExoPlayer gapless 循环，停止由 stopPreview() 触发）
     private fun previewSound(sound: BuiltInSound) {
         stopPreview()
         try {
-            previewPlayer = MediaPlayer().apply {
-                val uri = Uri.parse("android.resource://$packageName/${sound.resId}")
-                setDataSource(this@MainActivity, uri)
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                isLooping = false
-                prepare()
-                start()
-                setOnCompletionListener { it.start() }
+            previewPlayer = ExoPlayer.Builder(this).build().apply {
+                val attrs = Media3AudioAttributes.Builder()
+                    .setUsage(C.USAGE_ALARM)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)
+                    .build()
+                setAudioAttributes(attrs, /* handleAudioFocus = */ false)
+                if (!alertSoundProvider.setupDataSource(
+                        this@MainActivity, this, sound.key
+                    )) {
+                    release()
+                    previewPlayer = null
+                    return@apply
+                }
+                repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
+                playWhenReady = true
             }
         } catch (e: Exception) {
             AppLogger.e("MainActivity", "preview sound ${sound.key} failed", e)
