@@ -500,8 +500,15 @@ class LiveCheckService : Service() {
     // 并被 catch 静默吞掉，导致检测到了开播但完全无声。
     internal var mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Main
 
+    // 提醒链路的独立 Job：onDestroy 时同步取消（不依赖主线程调度是否通畅），
+    // 保证 10 秒自动停止定时器随服务销毁立即取消。
+    // （测试视角：不取消的话，挂起的定时器会把整个 Robolectric sandbox 钉到 OOM）
+    private val alertScopeJob = SupervisorJob()
+    private val alertScope: CoroutineScope
+        get() = CoroutineScope(mainDispatcher + alertScopeJob)
+
     private fun playAlertSound() {
-        CoroutineScope(mainDispatcher).launch {
+        alertScope.launch {
             try {
                 // 开播提醒与活动提醒同一周期撞车时，先取消旧定时器、
                 // 再释放上一个未停的播放器，防止旧播放器泄漏成双音轨循环直到进程死亡
@@ -536,7 +543,7 @@ class LiveCheckService : Service() {
 
                 // 10秒后停止。身份校验：若期间来了新提醒换了新播放器，
                 // 旧定时器不能误杀新播放器
-                alertStopJob = CoroutineScope(mainDispatcher).launch {
+                alertStopJob = alertScope.launch {
                     delay(10000)
                     if (alertPlayer === player) {
                         stopAlertSound()
@@ -555,7 +562,7 @@ class LiveCheckService : Service() {
     // 停止提醒铃声（停止监控/onDestroy/10秒自动停止 共用）。
     // 切到主线程：ExoPlayer 的 stop/release 必须在创建它的线程上调用。
     internal fun stopAlertSound() {
-        CoroutineScope(mainDispatcher).launch {
+        alertScope.launch {
             alertStopJob?.cancel()
             alertStopJob = null
             alertPlayer?.let {
@@ -689,6 +696,9 @@ class LiveCheckService : Service() {
         lastLiveStatus = false
         // 停止提醒铃声（用户停止监控/服务销毁时铃声必须停）
         stopAlertSound()
+        // 同步取消提醒链路 Job（不依赖主线程调度）：10 秒定时器立即失效，
+        // 播放器 release 由上面的 stopAlertSound 在主线程完成
+        alertScopeJob.cancel()
         // 只有用户主动停止才清除运行标记；系统杀进程/异常销毁要保留 true，
         // 否则 onDestroy→ServiceRestartReceiver 重启链会被自己卡死
         // （Receiver 启动前检查 prefs，false 会拒绝重启）

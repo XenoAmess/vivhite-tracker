@@ -4,10 +4,14 @@ import com.bilibili.livemonitor.domain.UpdateDecider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.HttpURLConnection
 import java.net.URL
-import javax.net.ssl.HttpsURLConnection
 
 open class UpdateChecker {
+
+    // internal open var：测试可指向本地 HttpServer 做真实端到端；
+    // 生产恒为 LATEST_RELEASE_API
+    internal open var latestReleaseApi: String = LATEST_RELEASE_API
 
     // 检查 GitHub 最新 Release：version.json 提供精确 versionCode，缺失则返回 Error
     suspend fun checkLatestRelease(
@@ -15,7 +19,7 @@ open class UpdateChecker {
         localVersionName: String
     ): UpdateDecider.UpdateState =
         withContext(Dispatchers.IO) {
-            val releaseJson = httpGet(LATEST_RELEASE_API)
+            val releaseJson = httpGet(latestReleaseApi)
                 ?: return@withContext UpdateDecider.UpdateState.Error("network error")
             val raw = UpdateDecider.parseLatestRelease(releaseJson)
                 ?: return@withContext UpdateDecider.UpdateState.Error("release parse error")
@@ -28,7 +32,9 @@ open class UpdateChecker {
     // internal open：测试可注入 fake 响应
     internal open suspend fun httpGet(url: String): String? {
         return try {
-            val connection = URL(url).openConnection() as HttpsURLConnection
+            // 用父类 HttpURLConnection 接收：生产 https 行为不变，
+            // 测试可用本地 http HttpServer 做真实端到端
+            val connection = URL(url).openConnection() as HttpURLConnection
             connection.apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
@@ -52,7 +58,7 @@ open class UpdateChecker {
         onProgress: (percent: Int) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val connection = URL(url).openConnection() as HttpsURLConnection
+            val connection = URL(url).openConnection() as HttpURLConnection
             connection.apply {
                 setRequestProperty("User-Agent", USER_AGENT)
                 connectTimeout = 10000

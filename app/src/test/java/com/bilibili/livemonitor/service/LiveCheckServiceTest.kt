@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -16,8 +15,8 @@ import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.api.BilibiliApi
 import com.bilibili.livemonitor.api.LiveStatusChecker
 import com.bilibili.livemonitor.util.AlertSoundProvider
+import com.bilibili.livemonitor.util.FakeExoPlayer
 import com.bilibili.livemonitor.util.PreferenceManager
-import java.lang.reflect.Proxy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,6 +43,7 @@ class LiveCheckServiceTest {
     private val context: Application = ApplicationProvider.getApplicationContext()
     private lateinit var prefs: PreferenceManager
     private lateinit var fakeApi: FakeApi
+    private val controllers = mutableListOf<ServiceController<LiveCheckService>>()
 
     class FakeApi : LiveStatusChecker {
         val responses = ArrayDeque<BilibiliApi.LiveStatus>()
@@ -75,6 +75,10 @@ class LiveCheckServiceTest {
 
     @After
     fun tearDown() {
+        // 销毁所有 service 实例：触发 onDestroy → 取消 10 秒提醒定时器。
+        // 不销毁的话，挂起的定时器把整个 Robolectric sandbox 钉住（OOM 根源）
+        controllers.forEach { runCatching { it.destroy() } }
+        controllers.clear()
         LiveCheckService.isRunning = false
         LiveCheckService.isUserStopped = false
     }
@@ -84,6 +88,7 @@ class LiveCheckServiceTest {
         if (intent != null) controller.withIntent(intent)
         val service = controller.get()
         service.api = fakeApi
+        controllers.add(controller)
         return controller
     }
 
@@ -339,52 +344,6 @@ class LiveCheckServiceTest {
 
     // ---------- P2: 提醒铃声主线程修复 + 播放器生命周期 ----------
 
-    /**
-     * ExoPlayer 是接口，用动态代理手写 fake（避免引 mock 框架）。
-     * 记录服务代码会调用的全部方法，其余返回类型默认值。
-     */
-    private class FakeExoPlayer {
-        var audioAttrsSet = false
-        var prepared = false
-        var mediaSet = false
-        var repeatMode = -1
-        var playWhenReady = false
-        var stopped = false
-        var released = false
-
-        val player: ExoPlayer = Proxy.newProxyInstance(
-            ExoPlayer::class.java.classLoader,
-            arrayOf(ExoPlayer::class.java)
-        ) { proxy, method, args ->
-            when (method.name) {
-                "setAudioAttributes" -> { audioAttrsSet = true; null }
-                "prepare" -> { prepared = true; null }
-                "setMediaItem" -> { mediaSet = true; null }
-                "setRepeatMode" -> { repeatMode = args[0] as Int; null }
-                "setPlayWhenReady" -> { playWhenReady = args[0] as Boolean; null }
-                "isPlaying" -> playWhenReady && prepared && !stopped && !released
-                "stop" -> { stopped = true; null }
-                "release" -> { released = true; stopped = true; null }
-                "toString" -> "FakeExoPlayer"
-                "hashCode" -> System.identityHashCode(proxy)
-                "equals" -> proxy === args[0]
-                else -> defaultValue(method.returnType)
-            }
-        } as ExoPlayer
-
-        private fun defaultValue(type: Class<*>): Any? = when (type) {
-            java.lang.Boolean.TYPE -> false
-            java.lang.Integer.TYPE -> 0
-            java.lang.Long.TYPE -> 0L
-            java.lang.Float.TYPE -> 0f
-            java.lang.Double.TYPE -> 0.0
-            java.lang.Short.TYPE -> 0.toShort()
-            java.lang.Byte.TYPE -> 0.toByte()
-            java.lang.Character.TYPE -> '0'
-            else -> null
-        }
-    }
-
     /** 全源失败 provider（守护 fallback 链返回 false 时的清理逻辑） */
     private class FailingSoundProvider : AlertSoundProvider() {
         override fun setupDataSource(context: Context, player: Player, uriPref: String?): Boolean = false
@@ -549,5 +508,247 @@ class LiveCheckServiceTest {
         // 幂等：再调不得崩
         service.stopAlertSound()
         service.stopAlertSound()
+    }
+
+    // ---------- P3: 活动监控提醒编排（新视频/动态/置顶） ----------
+
+    /** 可编程 fake 活动 API：按队列返回 DynamicInfo/Err */
+    private class FakeActivityApi : com.bilibili.livemonitor.api.BilibiliActivityApi() {
+        val queue = ArrayDeque<com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult<com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo>>()
+        var callCount = 0
+            private set
+
+        override suspend fun fetchLatestDynamic(mid: Long): com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult<com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo> {
+            callCount++
+            return queue.removeFirstOrNull()
+                ?: com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData
+        }
+
+        fun enqueue(vararg r: com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult<com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo>) {
+            r.forEach { queue.addLast(it) }
+        }
+    }
+
+    private fun videoDynamic(aid: Long, title: String, isTop: Boolean = false, id: String = "dyn_$aid") =
+        com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo(
+                id = id,
+                type = "DYNAMIC_TYPE_AV",
+                displayText = "",
+                avItem = com.bilibili.livemonitor.api.BilibiliActivityApi.AvItem(
+                    aid = aid, title = title, bvid = "BV$aid",
+                    durationText = "10:00", cover = "", playCount = 0, likeCount = 0
+                ),
+                isTop = isTop,
+                pubTs = 1700000000L
+            )
+        )
+
+    private fun textDynamic(id: String, text: String) =
+        com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo(
+                id = id, type = "DYNAMIC_TYPE_DRAW", displayText = text,
+                avItem = null, isTop = false, pubTs = 1700000000L
+            )
+        )
+
+    /** 装配：fake live api（恒 NotLive 避免开播提醒干扰）+ fake activity api + fake 播放器 */
+    private fun wireActivity(
+        controller: ServiceController<LiveCheckService>,
+        activityApi: FakeActivityApi,
+        fakes: MutableList<FakeExoPlayer>
+    ): LiveCheckService {
+        val service = controller.get()
+        service.api = fakeApi
+        service.activityApi = activityApi
+        service.mainDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
+        service.playerFactory = { FakeExoPlayer().also { fakes.add(it) }.player }
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive)
+        return service
+    }
+
+    @Test
+    fun `A1 新视频投稿 通知发出且响铃且lastAid落盘`() {
+        // 用户场景：主播发了新视频 → 通知 + 响铃（默认 ringOnActivity=true）
+        prefs.setServiceRunning(true)
+        // 基线：上次见过 aid=100
+        prefs.setLastVideoAid(100L)
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(videoDynamic(200L, "【白绮】新投稿！"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveCheckUntil(controller, "video alert fired") { fakes.isNotEmpty() }
+
+        assertNotNull(
+            "视频通知必须发出",
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO)
+        )
+        assertEquals("lastAid 必须更新", 200L, prefs.getLastVideoAid())
+        assertEquals("应响铃一次", 1, fakes.size)
+        assertTrue(fakes[0].playWhenReady)
+    }
+
+    @Test
+    fun `A2 首次检测只记录基线不提醒`() {
+        // 核心原则：新装/升级后第一次检测只记录当前最新 id，
+        // 否则用户装完瞬间收到"新视频"通知（实际是历史视频）
+        prefs.setServiceRunning(true)
+        // lastAid 未初始化（-1 → null）
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(videoDynamic(300L, "历史视频"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        driveCheckUntil(controller, "baseline recorded") { prefs.getLastVideoAid() == 300L }
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        assertNull(
+            "首次不得发视频通知",
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO)
+        )
+        assertEquals("首次不得响铃", 0, fakes.size)
+    }
+
+    @Test
+    fun `A3 同一aid重复检测 不重复提醒`() {
+        prefs.setServiceRunning(true)
+        prefs.setLastVideoAid(100L)
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(videoDynamic(200L, "新视频"), videoDynamic(200L, "新视频"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveCheckUntil(controller, "first video notification") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO) != null
+        }
+        // 第二次检测：同 aid，不得再触发
+        driveCheckUntil(controller, "second check consumed") { activityApi.callCount >= 2 }
+        Thread.sleep(300)
+        assertEquals("同 aid 不得重复响铃", 1, fakes.size)
+    }
+
+    @Test
+    fun `A4 新动态发布 动态通知发出且lastDynamicId落盘`() {
+        prefs.setServiceRunning(true)
+        prefs.setLastDynamicId("old_id")
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(textDynamic("new_id", "今天也是元气满满的一天"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveCheckUntil(controller, "dynamic notification") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC) != null
+        }
+
+        assertEquals("new_id", prefs.getLastDynamicId())
+    }
+
+    @Test
+    fun `A5 置顶被取消 发出置顶取消文本通知`() {
+        // 用户场景：UP 主取消置顶 → lastPinnedAid 有值、currentPinnedAid=null →
+        // 必须提醒"置顶已取消"（sendTextNotification，id=title.hashCode）
+        prefs.setServiceRunning(true)
+        // 基线：上次置顶 aid=500；本次 feed 第一条不是置顶（isTop=false）→ 置顶没了
+        prefs.setLastPinnedAid(500L)
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(videoDynamic(600L, "普通新视频", isTop = false))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveCheckUntil(controller, "pinned-cancel notification") {
+            shadowOf(nm).getNotification("白绮置顶已取消".hashCode()) != null
+        }
+    }
+
+    @Test
+    fun `A6 活动提醒铃声关闭时 只通知不响铃`() {
+        // 用户场景：用户在设置里关掉"活动响铃"（不想被新视频吵醒）→
+        // 通知照发但 playAlertSound 不得触发
+        prefs.setServiceRunning(true)
+        prefs.setLastVideoAid(100L)
+        prefs.setAlertRingOnActivity(false)
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(videoDynamic(200L, "新视频"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveCheckUntil(controller, "video notification") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO) != null
+        }
+
+        assertEquals("关闭活动响铃后不得创建播放器", 0, fakes.size)
+    }
+
+    @Test
+    fun `A7 活动API失败 静默不扰不崩`() {
+        // 动态接口风控/网络抖动是常态（文档明确"动态流风控脆弱"），失败必须静默
+        prefs.setServiceRunning(true)
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Err("risk control"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        driveCheckUntil(controller, "activity api called") { activityApi.callCount >= 1 }
+        Thread.sleep(300)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        assertNull(shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO))
+        assertNull(shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC))
+        assertTrue("服务不得因活动API失败而挂", LiveCheckService.isRunning)
+    }
+
+    // ---------- P4: onTaskRemoved 重启链 ----------
+
+    @Test
+    fun `T1 用户划掉任务卡片 排Alarm和一次性Worker双保险拉起`() {
+        // 真机场景：部分 ROM 划掉最近任务会杀服务，
+        // 必须立即排 Alarm + Worker 双保险，否则监控静默死亡
+        prefs.setServiceRunning(true)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+
+        service.onTaskRemoved(Intent())
+
+        assertTrue(
+            "应排下一次检测 alarm",
+            shadowOf(alarmManager).scheduledAlarms.isNotEmpty()
+        )
+        val oneTime = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("live_check_one_time").get()
+        assertTrue(
+            "应排一次性兜底任务",
+            oneTime.any { it.state == WorkInfo.State.ENQUEUED }
+        )
+    }
+
+    @Test
+    fun `T2 监控已停止时划卡片 不排任何拉起`() {
+        // 用户已主动停止监控，划卡片绝不能复活监控
+        prefs.setServiceRunning(false)
+        val controller = buildService(Intent(context, LiveCheckService::class.java))
+        val service = controller.get()
+        // prefs=false 时 onCreate 会自毁；直接调 onTaskRemoved 验证守卫
+        controller.create()
+
+        service.onTaskRemoved(Intent())
+
+        val oneTime = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("live_check_one_time").get()
+        assertTrue("已停止监控不得排兜底任务", oneTime.isEmpty())
     }
 }

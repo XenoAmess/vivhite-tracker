@@ -65,8 +65,11 @@ open class BilibiliActivityApi {
     /**
      * 拉取最新动态（desktop 端点，未登录可用）。
      * 返回 NoData 表示该 UP 无任何动态（不太可能但保留语义）。
+     *
+     * open：测试可注入 fake 响应，验证活动监控提醒编排
+     * （新视频/动态/置顶去重与通知触发）。
      */
-    suspend fun fetchLatestDynamic(mid: Long): ActivityResult<DynamicInfo> = withContext(Dispatchers.IO) {
+    open suspend fun fetchLatestDynamic(mid: Long): ActivityResult<DynamicInfo> = withContext(Dispatchers.IO) {
         val url = "https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/space?host_mid=$mid&features=itemOpusStyle"
         val json = HttpClient.get(url) ?: return@withContext ActivityResult.Err("network error")
         parseDynamicFeed(json)

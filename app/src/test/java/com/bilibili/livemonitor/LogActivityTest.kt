@@ -32,6 +32,8 @@ class LogActivityTest {
         // 旧沙箱路径（导出功能 FileProvider 会拿它对比当前沙箱 roots 导致不匹配），
         // 每个用例前重置让其重新绑定到当前沙箱
         resetAppLoggerFile()
+        // FileProvider.sCache 同样跨沙箱残留（先跑者的 roots 绑到旧 filesDir）
+        com.bilibili.livemonitor.util.FileProviderTestUtil.clearFileProviderCache()
         AppLogger.init(context)
         AppLogger.clear()
         waitFor { AppLogger.readAll().isEmpty() }
