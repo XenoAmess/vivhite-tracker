@@ -52,7 +52,7 @@ enum class BuiltInSound(val key: String, val resId: Int, val title: String) {
  * player.playWhenReady = true
  * ```
  */
-class AlertSoundProvider {
+open class AlertSoundProvider {
 
     /**
      * @param context 用于取 resources / contentResolver
@@ -60,7 +60,7 @@ class AlertSoundProvider {
      * @param uriPref prefs 里的原始字符串（见 [AlertSoundDecider.resolve]）
      * @return true = 数据源已就绪，调用方可继续 play；false = 全部兜底失败，调用方应放弃
      */
-    fun setupDataSource(context: Context, player: Player, uriPref: String?): Boolean {
+    open fun setupDataSource(context: Context, player: Player, uriPref: String?): Boolean {
         val source = AlertSoundDecider.resolve(uriPref)
 
         // 第一选择

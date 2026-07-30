@@ -488,47 +488,90 @@ class LiveCheckService : Service() {
     // 铃声源加载器（internal 便于测试注入 fake）
     internal var alertSoundProvider: AlertSoundProvider = AlertSoundProvider()
 
+    // ExoPlayer 工厂（internal 便于测试注入 fake）。
+    // Robolectric 无法构造 ExoPlayer，真机/模拟器上用默认实现。
+    internal var playerFactory: (android.content.Context) -> ExoPlayer = { context ->
+        ExoPlayer.Builder(context).build()
+    }
+
+    // 主线程调度器（internal 便于测试注入 TestDispatcher）。
+    // ExoPlayer 必须在有 Looper 的线程（通常是主线程）上创建和操作，
+    // 在 Dispatchers.IO 上创建会抛 "Player is accessed on the wrong thread"
+    // 并被 catch 静默吞掉，导致检测到了开播但完全无声。
+    internal var mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Main
+
     private fun playAlertSound() {
-        try {
-            alertPlayer = ExoPlayer.Builder(this).build().apply {
+        CoroutineScope(mainDispatcher).launch {
+            try {
+                // 开播提醒与活动提醒同一周期撞车时，先取消旧定时器、
+                // 再释放上一个未停的播放器，防止旧播放器泄漏成双音轨循环直到进程死亡
+                alertStopJob?.cancel()
+                alertStopJob = null
+                alertPlayer?.let { old ->
+                    try {
+                        if (old.isPlaying) old.stop()
+                        old.release()
+                    } catch (e: Exception) {
+                        AppLogger.w(TAG, "release stale alert player failed", e)
+                    }
+                    alertPlayer = null
+                }
+
+                val player = playerFactory(this@LiveCheckService)
                 val attrs = Media3AudioAttributes.Builder()
                     .setUsage(C.USAGE_ALARM)
                     .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)
                     .build()
-                setAudioAttributes(attrs, /* handleAudioFocus = */ false)
+                player.setAudioAttributes(attrs, /* handleAudioFocus = */ false)
                 if (!alertSoundProvider.setupDataSource(
-                        this@LiveCheckService, this, preferenceManager.getAlertSoundUri()
+                        this@LiveCheckService, player, preferenceManager.getAlertSoundUri()
                     )) {
                     AppLogger.w(TAG, "all sound sources failed, skip alert")
-                    release()
-                    alertPlayer = null
-                    return@apply
+                    player.release()
+                    return@launch
                 }
-                repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
-                playWhenReady = true
+                player.repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
+                player.playWhenReady = true
+                alertPlayer = player
 
-                // 10秒后停止
-                serviceScope.launch {
+                // 10秒后停止。身份校验：若期间来了新提醒换了新播放器，
+                // 旧定时器不能误杀新播放器
+                alertStopJob = CoroutineScope(mainDispatcher).launch {
                     delay(10000)
-                    stopAlertSound()
+                    if (alertPlayer === player) {
+                        stopAlertSound()
+                    }
                 }
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "playAlertSound failed", e)
             }
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "playAlertSound failed", e)
         }
     }
 
-    // 停止提醒铃声（停止监控/onDestroy/10秒自动停止 共用）
+    // 10 秒自动停止的协程句柄，stopAlertSound/新提醒到来时取消，
+    // 防止陈旧定时器在服务停止后误触发（或误杀后来的新播放器）
+    private var alertStopJob: Job? = null
+
+    // 停止提醒铃声（停止监控/onDestroy/10秒自动停止 共用）。
+    // 切到主线程：ExoPlayer 的 stop/release 必须在创建它的线程上调用。
     internal fun stopAlertSound() {
-        alertPlayer?.let {
-            try {
-                if (it.isPlaying) it.stop()
-            } catch (e: Exception) {
-                AppLogger.w(TAG, "stop alert sound failed", e)
+        CoroutineScope(mainDispatcher).launch {
+            alertStopJob?.cancel()
+            alertStopJob = null
+            alertPlayer?.let {
+                try {
+                    if (it.isPlaying) it.stop()
+                } catch (e: Exception) {
+                    AppLogger.w(TAG, "stop alert sound failed", e)
+                }
+                try {
+                    it.release()
+                } catch (e: Exception) {
+                    AppLogger.w(TAG, "release alert player failed", e)
+                }
             }
-            it.release()
+            alertPlayer = null
         }
-        alertPlayer = null
     }
 
     private fun vibrate() {

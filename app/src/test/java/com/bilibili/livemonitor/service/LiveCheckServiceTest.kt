@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -13,12 +15,15 @@ import com.bilibili.livemonitor.AlertActivity
 import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.api.BilibiliApi
 import com.bilibili.livemonitor.api.LiveStatusChecker
+import com.bilibili.livemonitor.util.AlertSoundProvider
 import com.bilibili.livemonitor.util.PreferenceManager
+import java.lang.reflect.Proxy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -330,5 +335,219 @@ class LiveCheckServiceTest {
         controller.withIntent(Intent(LiveCheckService.ACTION_STOP_SERVICE)).startCommand(0, 1)
 
         assertNull("停止监控后铃声播放器必须释放", field.get(service))
+    }
+
+    // ---------- P2: 提醒铃声主线程修复 + 播放器生命周期 ----------
+
+    /**
+     * ExoPlayer 是接口，用动态代理手写 fake（避免引 mock 框架）。
+     * 记录服务代码会调用的全部方法，其余返回类型默认值。
+     */
+    private class FakeExoPlayer {
+        var audioAttrsSet = false
+        var prepared = false
+        var mediaSet = false
+        var repeatMode = -1
+        var playWhenReady = false
+        var stopped = false
+        var released = false
+
+        val player: ExoPlayer = Proxy.newProxyInstance(
+            ExoPlayer::class.java.classLoader,
+            arrayOf(ExoPlayer::class.java)
+        ) { proxy, method, args ->
+            when (method.name) {
+                "setAudioAttributes" -> { audioAttrsSet = true; null }
+                "prepare" -> { prepared = true; null }
+                "setMediaItem" -> { mediaSet = true; null }
+                "setRepeatMode" -> { repeatMode = args[0] as Int; null }
+                "setPlayWhenReady" -> { playWhenReady = args[0] as Boolean; null }
+                "isPlaying" -> playWhenReady && prepared && !stopped && !released
+                "stop" -> { stopped = true; null }
+                "release" -> { released = true; stopped = true; null }
+                "toString" -> "FakeExoPlayer"
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === args[0]
+                else -> defaultValue(method.returnType)
+            }
+        } as ExoPlayer
+
+        private fun defaultValue(type: Class<*>): Any? = when (type) {
+            java.lang.Boolean.TYPE -> false
+            java.lang.Integer.TYPE -> 0
+            java.lang.Long.TYPE -> 0L
+            java.lang.Float.TYPE -> 0f
+            java.lang.Double.TYPE -> 0.0
+            java.lang.Short.TYPE -> 0.toShort()
+            java.lang.Byte.TYPE -> 0.toByte()
+            java.lang.Character.TYPE -> '0'
+            else -> null
+        }
+    }
+
+    /** 全源失败 provider（守护 fallback 链返回 false 时的清理逻辑） */
+    private class FailingSoundProvider : AlertSoundProvider() {
+        override fun setupDataSource(context: Context, player: Player, uriPref: String?): Boolean = false
+    }
+
+    /** 记录 dispatch 是否被走过的调度器：证明播放器创建经过了 mainDispatcher 而非裸 IO 线程 */
+    private class RecordingDispatcher : kotlinx.coroutines.CoroutineDispatcher() {
+        @Volatile var dispatched = false
+        override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+            dispatched = true
+            block.run()
+        }
+    }
+
+    /** 注入 eager 调度器 + fake 播放器工厂，关闭活动监控隔离网络噪音 */
+    private fun wireFakePlayer(
+        controller: ServiceController<LiveCheckService>,
+        fakes: MutableList<FakeExoPlayer>,
+        factoryHook: (FakeExoPlayer) -> Unit = {}
+    ): LiveCheckService {
+        val service = controller.get()
+        service.mainDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
+        service.playerFactory = {
+            FakeExoPlayer().also { fake -> factoryHook(fake); fakes.add(fake) }.player
+        }
+        prefs.setMonitorVideos(false)
+        prefs.setMonitorPinned(false)
+        prefs.setMonitorDynamics(false)
+        return service
+    }
+
+    private fun driveCheckUntil(controller: ServiceController<LiveCheckService>, what: String, cond: () -> Boolean) {
+        waitFor(what, 15_000) {
+            controller.startCommand(0, (1..999).random())
+            cond()
+        }
+    }
+
+    @Test
+    fun `P1 开播触发提醒 播放器经主线程调度创建且配置正确`() {
+        // 真机 bug：playAlertSound 在 Dispatchers.IO 上建 ExoPlayer，
+        // wrong-thread 异常被 catch 静默吞掉 → 感知到开播但完全无声。
+        // 修复后必须走 mainDispatcher（测试用 Unconfined 顶替并同步执行）。
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        val service = wireFakePlayer(controller, fakes)
+
+        driveCheckUntil(controller, "alert player created") { service.alertPlayer != null }
+
+        assertEquals("工厂应被调用一次", 1, fakes.size)
+        val fake = fakes[0]
+        assertTrue("应设置 ALARM 音频属性", fake.audioAttrsSet)
+        assertTrue("应加载铃声数据源", fake.mediaSet && fake.prepared)
+        assertEquals("应 gapless 循环", Player.REPEAT_MODE_ONE, fake.repeatMode)
+        assertTrue("应自动播放", fake.playWhenReady)
+        assertTrue("播放器应在响", service.alertPlayer?.isPlaying == true)
+    }
+
+    @Test
+    fun `P2 播放器创建必须经过 mainDispatcher 而非裸 IO 线程`() {
+        // 守护修复核心：若有人把 playAlertSound 改回直接在调用线程建播放器，
+        // RecordingDispatcher.dispatch 不会被走到，此测试变红
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        val recorder = RecordingDispatcher()
+        service.mainDispatcher = recorder
+        val fakes = mutableListOf<FakeExoPlayer>()
+        service.playerFactory = { FakeExoPlayer().also { fakes.add(it) }.player }
+        prefs.setMonitorVideos(false); prefs.setMonitorPinned(false); prefs.setMonitorDynamics(false)
+
+        driveCheckUntil(controller, "alert player created") { service.alertPlayer != null }
+
+        assertTrue("playAlertSound 必须经 mainDispatcher 调度", recorder.dispatched)
+    }
+
+    @Test
+    fun `P3 playerFactory抛异常 静默降级不崩且提醒通知仍发出`() {
+        // 异常安全：就算工厂炸了（如真机 wrong-thread），也只能损失铃声，
+        // 不能阻断 vibrate/通知等后续提醒动作，服务不能崩
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        service.mainDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
+        service.playerFactory = { throw IllegalStateException("Player is accessed on the wrong thread") }
+        prefs.setMonitorVideos(false); prefs.setMonitorPinned(false); prefs.setMonitorDynamics(false)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveCheckUntil(controller, "alert notification posted") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT) != null
+        }
+
+        assertNull("工厂异常时不得残留播放器引用", service.alertPlayer)
+        assertTrue("服务不得崩溃", LiveCheckService.isRunning)
+        assertNotNull("提醒通知仍应发出", shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT))
+    }
+
+    @Test
+    fun `P4 铃声源全部失败 播放器释放且引用清空`() {
+        // 兜底链返回 false 时：已创建的播放器必须 release，不能泄漏
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        val service = wireFakePlayer(controller, fakes)
+        service.alertSoundProvider = FailingSoundProvider()
+
+        driveCheckUntil(controller, "factory invoked") { fakes.isNotEmpty() }
+        waitFor("player released") { fakes[0].released }
+
+        assertTrue("失败的播放器必须释放", fakes[0].released)
+        assertNull("不得残留播放器引用", service.alertPlayer)
+    }
+
+    @Test
+    fun `P5 连续两次开播提醒 旧播放器先释放再换新`() {
+        // 开播提醒与活动提醒同周期撞车（或两场开播挨得近）时：
+        // 旧播放器若不停下释放，会双音轨循环直到进程死亡
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(
+            BilibiliApi.LiveStatus.Live,    // 第1次开播 → 提醒#1
+            BilibiliApi.LiveStatus.NotLive, // 下播
+            BilibiliApi.LiveStatus.Live     // 第2次开播 → 提醒#2
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        val service = wireFakePlayer(controller, fakes)
+
+        driveCheckUntil(controller, "first alert") { fakes.size == 1 }
+        val first = fakes[0]
+        assertSame(service.alertPlayer, first.player)
+
+        driveCheckUntil(controller, "second alert") { fakes.size == 2 }
+        val second = fakes[1]
+
+        assertTrue("旧播放器必须先释放", first.released)
+        assertSame("当前引用必须是新播放器", second.player, service.alertPlayer)
+        assertTrue("新播放器应在响", service.alertPlayer?.isPlaying == true)
+    }
+
+    @Test
+    fun `P6 响铃中停止监控 播放器停止释放且stopAlertSound幂等`() {
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        val service = wireFakePlayer(controller, fakes)
+
+        driveCheckUntil(controller, "alert playing") { service.alertPlayer?.isPlaying == true }
+        val player = fakes[0]
+
+        controller.withIntent(Intent(LiveCheckService.ACTION_STOP_SERVICE)).startCommand(0, 1)
+
+        assertTrue("应停止", player.stopped)
+        assertTrue("应释放", player.released)
+        assertNull("引用应清空", service.alertPlayer)
+
+        // 幂等：再调不得崩
+        service.stopAlertSound()
+        service.stopAlertSound()
     }
 }
