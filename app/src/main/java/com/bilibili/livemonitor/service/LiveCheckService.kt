@@ -55,6 +55,9 @@ class LiveCheckService : Service() {
     override fun onCreate() {
         super.onCreate()
         AppLogger.d(TAG, "onCreate")
+        // androidTest 注入位（同进程 instrumented test 用 fake api 驱动完整提醒链路）；
+        // 生产恒为 null。必须在任何检测发生前应用
+        apiOverride?.let { api = it }
         preferenceManager = PreferenceManager(this)
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -539,7 +542,15 @@ class LiveCheckService : Service() {
                 }
                 player.repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
                 player.playWhenReady = true
+                // 异步错误监听：prepare 之后的加载失败（SAF 权限丢失/codec 不支持）
+                // 通过 onPlayerError 回调而非抛异常，此前完全无声无日志
+                player.addListener(object : Player.Listener {
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        AppLogger.e(TAG, "alert playback error: ${error.errorCodeName}", error)
+                    }
+                })
                 alertPlayer = player
+                lastAlertPlayer = player
 
                 // 10秒后停止。身份校验：若期间来了新提醒换了新播放器，
                 // 旧定时器不能误杀新播放器
@@ -578,6 +589,7 @@ class LiveCheckService : Service() {
                 }
             }
             alertPlayer = null
+            lastAlertPlayer = null
         }
     }
 
@@ -864,5 +876,13 @@ class LiveCheckService : Service() {
         // 标记是否是用户手动停止，避免自动重启
         @Volatile
         var isUserStopped = false
+
+        // androidTest 钩子（同进程 instrumented test 专用，生产恒为 null）：
+        // apiOverride 注入 fake 检测源；lastAlertPlayer 观测真实提醒播放器
+        @Volatile
+        internal var apiOverride: LiveStatusChecker? = null
+
+        @Volatile
+        internal var lastAlertPlayer: ExoPlayer? = null
     }
 }
