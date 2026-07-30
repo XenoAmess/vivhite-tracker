@@ -707,7 +707,7 @@ class MainActivity : AppCompatActivity() {
                     .build()
                 setAudioAttributes(attrs, /* handleAudioFocus = */ false)
                 if (!alertSoundProvider.setupDataSource(
-                        this@MainActivity, this, sound.key
+                        this@MainActivity, this, AlertSoundDecider.encodeBuiltIn(sound.key)
                     )) {
                     release()
                     previewPlayer = null
