@@ -79,15 +79,18 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-                ?.let { uri ->
-                    val title = resolveRingtoneTitle(uri)
-                    val encoded = AlertSoundDecider.encodeSystem(uri.toString())
-                    preferenceManager.setAlertSoundUri(encoded)
-                    preferenceManager.setAlertSoundTitle(title)
-                    AppLogger.d("MainActivity", "system ringtone picked: $uri ($title)")
-                    Toast.makeText(this, "已设置铃声：$title", Toast.LENGTH_SHORT).show()
-                }
+                ?.let { uri -> onSystemRingtonePicked(uri) }
         }
+    }
+
+    // internal：抽出来便于 Robolectric 直接测（launcher 回调无法直接触发）
+    internal fun onSystemRingtonePicked(uri: Uri) {
+        val title = resolveRingtoneTitle(uri)
+        val encoded = AlertSoundDecider.encodeSystem(uri.toString())
+        preferenceManager.setAlertSoundUri(encoded)
+        preferenceManager.setAlertSoundTitle(title)
+        AppLogger.d("MainActivity", "system ringtone picked: $uri ($title)")
+        Toast.makeText(this, "已设置铃声：$title", Toast.LENGTH_SHORT).show()
     }
 
     // 音频文件 picker：SAF OPEN_DOCUMENT，返回的 uri 必须 takePersistableUriPermission
@@ -95,21 +98,24 @@ class MainActivity : AppCompatActivity() {
     private val audioFileLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-                val title = resolveRingtoneTitle(uri)
-                val encoded = AlertSoundDecider.encodeFile(uri.toString())
-                preferenceManager.setAlertSoundUri(encoded)
-                preferenceManager.setAlertSoundTitle(title)
-                AppLogger.d("MainActivity", "audio file picked: $uri ($title)")
-                Toast.makeText(this, "已设置铃声：$title", Toast.LENGTH_SHORT).show()
-            } catch (e: SecurityException) {
-                AppLogger.e("MainActivity", "takePersistableUriPermission failed", e)
-                Toast.makeText(this, "无法获取该文件的长期访问权限，请换一个文件", Toast.LENGTH_LONG).show()
-            }
+        if (uri != null) onAudioFilePicked(uri)
+    }
+
+    // internal：抽出来便于 Robolectric 直接测
+    internal fun onAudioFilePicked(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            val title = resolveRingtoneTitle(uri)
+            val encoded = AlertSoundDecider.encodeFile(uri.toString())
+            preferenceManager.setAlertSoundUri(encoded)
+            preferenceManager.setAlertSoundTitle(title)
+            AppLogger.d("MainActivity", "audio file picked: $uri ($title)")
+            Toast.makeText(this, "已设置铃声：$title", Toast.LENGTH_SHORT).show()
+        } catch (e: SecurityException) {
+            AppLogger.e("MainActivity", "takePersistableUriPermission failed", e)
+            Toast.makeText(this, "无法获取该文件的长期访问权限，请换一个文件", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -602,8 +608,6 @@ class MainActivity : AppCompatActivity() {
 
     // ========== 提醒铃声自定义 ==========
 
-    // 试听播放器（dialog dismiss 时必须释放，避免泄漏）
-    private var previewPlayer: ExoPlayer? = null
     private val alertSoundProvider = AlertSoundProvider()
     // 当前分享用的直播标题（fetchRoomInfo 拿到，供 fallbackToSystemShare 使用）
     private var currentShareTitle: String? = null
@@ -696,11 +700,19 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
+    // 试听播放器（internal 便于测试断言释放）。试听播放器若泄漏会一直在后台循环响
+    internal var previewPlayer: ExoPlayer? = null
+
+    // 试听播放器工厂（internal 便于测试注入 fake；Robolectric 无法构造真 ExoPlayer）
+    internal var previewPlayerFactory: (android.content.Context) -> ExoPlayer = { context ->
+        ExoPlayer.Builder(context).build()
+    }
+
     // 试听内置铃声（ExoPlayer gapless 循环，停止由 stopPreview() 触发）
     private fun previewSound(sound: BuiltInSound) {
         stopPreview()
         try {
-            previewPlayer = ExoPlayer.Builder(this).build().apply {
+            previewPlayer = previewPlayerFactory(this).apply {
                 val attrs = Media3AudioAttributes.Builder()
                     .setUsage(C.USAGE_ALARM)
                     .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)

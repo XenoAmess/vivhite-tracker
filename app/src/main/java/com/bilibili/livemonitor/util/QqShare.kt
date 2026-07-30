@@ -192,6 +192,11 @@ class DefaultQqSdkSharer : QqSdkSharer {
         } catch (e: Exception) {
             AppLogger.w(TAG, "isAuthorized check failed", e)
             false
+        } catch (e: LinkageError) {
+            // SDK 类损坏（NoClassDefFoundError 等，dex 异常/依赖断裂）时
+            // 抛的是 Error 不是 Exception——不防御的话分享按钮直接崩 App
+            AppLogger.w(TAG, "isAuthorized check failed with linkage error", e)
+            false
         }
     }
 

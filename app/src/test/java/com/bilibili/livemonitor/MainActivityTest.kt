@@ -1032,6 +1032,131 @@ class MainActivityTest {
     }
 
     @Test
+    fun `无安装权限时点立即更新 弹引导对话框并跳未知来源设置页`() {
+        // 用户场景：首次更新时系统未授「安装未知应用」权限 →
+        // 必须弹引导而不是静默失败，点「去开启」跳系统设置页
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        shadowOf(context.packageManager).setCanRequestPackageInstalls(false)
+        val info = com.bilibili.livemonitor.domain.UpdateDecider.ReleaseInfo(
+            versionCode = 999, versionName = "9.9.9",
+            apkUrl = "https://example.com/a.apk", changelog = "", tagName = "v9.9.9"
+        )
+
+        val baseline = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        activity.startUpdateDownload(info)
+
+        val dialog = waitForNewDialog(baseline)
+        assertTrue("应弹出安装权限引导", dialog != null)
+        val title = dialog!!.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)
+        assertEquals("需要安装权限", title?.text?.toString())
+
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val started = shadowOf(activity).nextStartedActivity
+        assertEquals(
+            android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            started?.action
+        )
+        assertEquals("package:${context.packageName}", started?.dataString)
+    }
+
+    @Test
+    fun `下载更新包失败时 Toast提示且不留半成品`() {
+        // 用户场景：下载中途断网 → downloadApk 返回 false →
+        // 必须明确提示失败（不能假装成功弹安装器）
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        shadowOf(context.packageManager).setCanRequestPackageInstalls(true)
+        activity.updateChecker = object : com.bilibili.livemonitor.api.UpdateChecker() {
+            override suspend fun downloadApk(
+                url: String, dest: java.io.File, onProgress: (Int) -> Unit
+            ): Boolean {
+                onProgress(30) // 下到 30% 断网
+                return false
+            }
+        }
+        val info = com.bilibili.livemonitor.domain.UpdateDecider.ReleaseInfo(
+            versionCode = 999, versionName = "9.9.9",
+            apkUrl = "https://example.com/a.apk", changelog = "", tagName = "v9.9.9"
+        )
+
+        activity.startUpdateDownload(info)
+
+        val deadline = System.currentTimeMillis() + 10_000
+        var toast: String? = null
+        while (System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            toast = org.robolectric.shadows.ShadowToast.getTextOfLatestToast()
+            if (toast == "更新包下载失败，请稍后再试") break
+            Thread.sleep(100)
+        }
+        assertEquals("更新包下载失败，请稍后再试", toast)
+    }
+
+    @Test
+    fun `系统铃声选择后 prefs写入system编码且标题非空`() {
+        // 用户场景：从系统铃声库挑了一个铃声 → 必须以 system: 前缀落盘，
+        // 否则 AlertSoundDecider.resolve 认不出来 → 回退默认铃声（用户困惑"选了没生效"）
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val uri = android.net.Uri.parse("content://settings/system/notification_sound")
+
+        activity.onSystemRingtonePicked(uri)
+
+        assertEquals(
+            "system:content://settings/system/notification_sound",
+            prefs.getAlertSoundUri()
+        )
+        assertTrue("标题不得为空", prefs.getAlertSoundTitle().isNotEmpty())
+    }
+
+    @Test
+    fun `SAF音频文件选择后 拿长期权限且prefs写入file编码`() {
+        // 用户场景：选了自定义音频文件 → 必须 takePersistableUriPermission，
+        // 否则进程被杀后读不出（SAF 最大坑）→ 下次开播静默不响
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val uri = android.net.Uri.parse("content://media/external/audio/media/12345")
+
+        activity.onAudioFilePicked(uri)
+
+        val persisted = activity.contentResolver.persistedUriPermissions
+        assertTrue(
+            "必须拿到长期读权限",
+            persisted.any { it.uri == uri && it.isReadPermission }
+        )
+        assertEquals(
+            "file:content://media/external/audio/media/12345",
+            prefs.getAlertSoundUri()
+        )
+    }
+
+    @Test
+    fun `铃声对话框试听中关闭对话框 试听播放器必须释放`() {
+        // 回归（真机 bug）：试听循环播放中直接关对话框，旧版不停止 → 后台一直响
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val fakes = mutableListOf<com.bilibili.livemonitor.util.FakeExoPlayer>()
+        activity.previewPlayerFactory = {
+            com.bilibili.livemonitor.util.FakeExoPlayer().also { fakes.add(it) }.player
+        }
+        activity.showAlertDialogSoundDialog()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        val firstItem = container.getChildAt(0)
+        firstItem.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
+            .performClick()
+
+        assertNotNull("试听应已启动", activity.previewPlayer)
+        assertEquals(1, fakes.size)
+        assertTrue(fakes[0].playWhenReady)
+
+        dialog.dismiss()
+        // Dialog.dismiss 的 OnDismissListener 通过主线程 Handler 派发，
+        // Robolectric 暂停模式下必须泵一次 Looper 才会执行
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        assertNull("关闭对话框后试听必须停止", activity.previewPlayer)
+        assertTrue("播放器必须被释放", fakes[0].released)
+    }
+
+    @Test
     fun `更新设置对话框 开关状态与prefs双向同步`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
