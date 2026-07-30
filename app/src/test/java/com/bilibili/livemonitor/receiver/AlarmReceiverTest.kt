@@ -36,6 +36,13 @@ class AlarmReceiverTest {
         }
     }
 
+    /** 抛 Android 12+ 真实的 FGS 拒绝异常（覆盖 FGS 专属日志分支） */
+    class FgsNotAllowedStarter : ServiceStarter {
+        override fun startForegroundService(context: Context, intent: Intent) {
+            throw android.app.ForegroundServiceStartNotAllowedException("simulated real FGS denial")
+        }
+    }
+
     @Before
     fun setUp() {
         WorkManagerTestInitHelper.initializeTestWorkManager(
@@ -83,5 +90,37 @@ class AlarmReceiverTest {
 
         val started = shadowOf(context).peekNextStartedService()
         assertEquals(LiveCheckService::class.java.name, started?.component?.className)
+    }
+
+    @Test
+    fun `真实FGS拒绝异常 同样降级WorkManager不崩`() {
+        // Android 12+ 专属异常类型 ForegroundServiceStartNotAllowedException
+        // 走的是与通用异常不同的日志分支，但降级行为必须一致
+        prefs.setServiceRunning(true)
+        val receiver = AlarmReceiver()
+        receiver.starter = FgsNotAllowedStarter()
+
+        receiver.onReceive(context, Intent())
+
+        val oneTime = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("live_check_one_time").get()
+        assertTrue(
+            "FGS 专属异常也必须降级排一次性任务",
+            oneTime.any { it.state == WorkInfo.State.ENQUEUED }
+        )
+    }
+
+    @Test
+    fun `精确闹钟权限已授予 走setExactAndAllowWhileIdle路径`() {
+        // 默认 shadow 里 canScheduleExactAlarms=false（走 inexact 兜底分支），
+        // 授予后必须走 setExactAndAllowWhileIdle，且 alarm 被排上
+        prefs.setServiceRunning(true)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(true)
+
+        AlarmReceiver().onReceive(context, Intent())
+
+        val scheduled = shadowOf(alarmManager).scheduledAlarms
+        assertTrue("应排上下一次 alarm", scheduled.isNotEmpty())
     }
 }

@@ -5,13 +5,16 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import androidx.core.content.ContextCompat
 import com.bilibili.livemonitor.service.LiveCheckService
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.PreferenceManager
 import com.bilibili.livemonitor.worker.LiveCheckWorker
 
 class BootReceiver : BroadcastReceiver() {
+
+    // internal var：测试可注入抛异常的 fake starter，验证 WorkManager 降级路径
+    // （与 AlarmReceiver 同一模式）
+    internal var starter: ServiceStarter = DefaultServiceStarter()
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
@@ -22,7 +25,7 @@ class BootReceiver : BroadcastReceiver() {
                     val serviceIntent = Intent(context, LiveCheckService::class.java).apply {
                         putExtra(LiveCheckService.EXTRA_ROOM_ID, preferenceManager.getRoomId())
                     }
-                    ContextCompat.startForegroundService(context, serviceIntent)
+                    starter.startForegroundService(context, serviceIntent)
                 } catch (e: Exception) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e is ForegroundServiceStartNotAllowedException) {
                         AppLogger.e(TAG, "FGS start not allowed on boot, fallback to WorkManager", e)
