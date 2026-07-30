@@ -21,7 +21,8 @@ enum class BuiltInSound(val key: String, val resId: Int, val title: String) {
     CL_3("alert_3", R.raw.alert_3, "Ad astra"),
     CL_4("alert_4", R.raw.alert_4, "BATTLEPLAN ARCLIGHT"),
     CL_5("alert_5", R.raw.alert_5, "星之所在"),
-    CL_6("alert_6", R.raw.alert_6, "遊園施設");
+    CL_6("alert_6", R.raw.alert_6, "遊園施設"),
+    CL_7("alert_7", R.raw.alert_7, "Dear Milady de Vtuber");
 
     companion object {
         val DEFAULT: BuiltInSound = CL_1

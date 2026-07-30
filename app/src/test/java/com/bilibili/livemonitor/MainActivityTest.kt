@@ -1122,13 +1122,13 @@ class MainActivityTest {
     }
 
     @Test
-    fun `铃声对话框显示 6 个内置铃声选项`() {
+    fun `铃声对话框显示 7 个内置铃声选项`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.showAlertDialogSoundDialog()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
         val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
-        assertEquals(6, container.childCount)
+        assertEquals(7, container.childCount)
     }
 
     @Test

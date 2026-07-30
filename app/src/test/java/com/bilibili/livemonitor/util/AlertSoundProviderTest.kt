@@ -29,6 +29,7 @@ class AlertSoundProviderTest {
         assertEquals(BuiltInSound.CL_4, BuiltInSound.fromKey("alert_4"))
         assertEquals(BuiltInSound.CL_5, BuiltInSound.fromKey("alert_5"))
         assertEquals(BuiltInSound.CL_6, BuiltInSound.fromKey("alert_6"))
+        assertEquals(BuiltInSound.CL_7, BuiltInSound.fromKey("alert_7"))
     }
 
     @Test
@@ -38,9 +39,9 @@ class AlertSoundProviderTest {
     }
 
     @Test
-    fun `BuiltInSound 有 6 个条目`() {
+    fun `BuiltInSound 有 7 个条目`() {
         // 守护铃声池条目数，新增/删除时提醒更新 UI 和测试
-        assertEquals(6, BuiltInSound.values().size)
+        assertEquals(7, BuiltInSound.values().size)
     }
 
     @Test
