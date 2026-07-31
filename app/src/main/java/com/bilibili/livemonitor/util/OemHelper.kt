@@ -262,21 +262,6 @@ object OemHelper {
         return null
     }
 
-    // 枚举全部可打开 https 的浏览器类应用：
-    // 按包名去重、排除 bilibili 自家（已在客户端段列出）和本应用。
-    // queries 里已声明 https scheme，可见性现成
-    fun installedBrowsers(
-        packageManager: android.content.pm.PackageManager,
-        httpsIntent: android.content.Intent,
-        selfPackageName: String
-    ): List<BilibiliVariant> {
-        return packageManager.queryIntentActivities(httpsIntent, 0)
-            .distinctBy { it.activityInfo.packageName }
-            .filter { it.activityInfo.packageName !in BILIBILI_PACKAGES }
-            .filter { it.activityInfo.packageName != selfPackageName }
-            .map { BilibiliVariant(it.activityInfo.packageName, it.loadLabel(packageManager).toString()) }
-    }
-
     fun openOemSettings(context: Context) {
         val info = getOemInfo() ?: return
         for (intent in info.intents) {

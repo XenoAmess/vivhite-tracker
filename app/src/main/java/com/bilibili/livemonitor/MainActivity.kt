@@ -618,96 +618,6 @@ class MainActivity : AppCompatActivity() {
     // 当前分享用的直播标题（fetchRoomInfo 拿到，供 fallbackToSystemShare 使用）
     private var currentShareTitle: String? = null
 
-    internal fun showAlertDialogSoundDialog() {
-        val view = layoutInflater.inflate(R.layout.dialog_alert_sound, null)
-        val container = view.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)
-        val currentUri = preferenceManager.getAlertSoundUri()
-
-        // 手动管理单选（RadioGroup 只能管理直接子 RadioButton，
-        // 但我们的 item 是 LinearLayout 包含 RadioButton，所以用手动方式）
-        val radioButtons = mutableListOf<android.widget.RadioButton>()
-
-        // 解析当前铃声源，判断该勾哪个内置项
-        val currentSource = AlertSoundDecider.resolve(currentUri)
-
-        // 填充内置铃声池
-        BuiltInSound.values().forEach { sound ->
-            val item = layoutInflater.inflate(R.layout.item_builtin_sound, container, false)
-            val rb = item.findViewById<android.widget.RadioButton>(R.id.rbSound)!!
-            val tvName = item.findViewById<TextView>(R.id.tvSoundName)
-            val btnPreview = item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
-
-            tvName.text = sound.title
-            radioButtons.add(rb)
-
-            // 勾选当前生效的内置项：Default → CLASSIC_1，BuiltIn → 匹配 key 的项
-            val isSelected = when (currentSource) {
-                is com.bilibili.livemonitor.domain.SoundSource.Default -> sound == BuiltInSound.DEFAULT
-                is com.bilibili.livemonitor.domain.SoundSource.BuiltIn -> currentSource.key == sound.key
-                else -> false  // System/File 不勾任何内置项
-            }
-            if (isSelected) rb.isChecked = true
-
-            // 点整行 = 选中这一项（先清其他，再勾自己）
-            item.setOnClickListener {
-                radioButtons.forEach { it.isChecked = false }
-                rb.isChecked = true
-                preferenceManager.setAlertSoundUri(AlertSoundDecider.encodeBuiltIn(sound.key))
-                preferenceManager.setAlertSoundTitle(sound.title)
-                AppLogger.d("MainActivity", "builtin sound selected: ${sound.key}")
-                Toast.makeText(this, "已设置铃声：${sound.title}", Toast.LENGTH_SHORT).show()
-            }
-
-            // 点试听按钮 = 选中并预览（试听即选中，理由同设置抽屉里的同款注释）
-            btnPreview.setOnClickListener {
-                item.performClick()
-                previewSound(sound)
-            }
-
-            container.addView(item)
-        }
-
-        // 如果当前是自定义（system/file），不勾任何内置项
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("提醒铃声")
-            .setView(view)
-            .setPositiveButton("完成", null)
-            .setOnDismissListener {
-                stopPreview()
-            }
-            .show()
-
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickSystemRingtone)
-            .setOnClickListener {
-                stopPreview()
-                val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                    putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
-                    putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "选择提醒铃声")
-                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-                }
-                systemRingtoneLauncher.launch(intent)
-                dialog.dismiss()
-            }
-
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickAudioFile)
-            .setOnClickListener {
-                stopPreview()
-                audioFileLauncher.launch(arrayOf("audio/*"))
-                dialog.dismiss()
-            }
-
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRestoreDefault)
-            .setOnClickListener {
-                preferenceManager.setAlertSoundUri("")
-                preferenceManager.setAlertSoundTitle("")
-                AppLogger.d("MainActivity", "alert sound restored to default")
-                Toast.makeText(this, "已恢复默认铃声", Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
-            }
-    }
-
     // 试听播放器（internal 便于测试断言释放）。试听播放器若泄漏会一直在后台循环响
     internal var previewPlayer: ExoPlayer? = null
 
@@ -1063,6 +973,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // internal：Robolectric shadow 不支持 shouldShowRequestPermissionRationale，
+    // 抽出便于测试 rationale 弹窗分支
+    internal var notificationRationaleChecker: () -> Boolean = {
+        shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
     private fun checkNotificationPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             when {
@@ -1070,7 +986,7 @@ class MainActivity : AppCompatActivity() {
                     this,
                     Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED -> true
-                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> {
+                notificationRationaleChecker() -> {
                     AlertDialog.Builder(this)
                         .setTitle("需要通知权限")
                         .setMessage("应用需要在通知栏显示以保持后台运行，请授予通知权限")

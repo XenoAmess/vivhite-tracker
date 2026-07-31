@@ -111,6 +111,50 @@ class MainActivityTest {
     }
 
     @Test
+    fun `拒绝通知权限 不启动监控且按钮不变`() {
+        // 用户场景：新用户首次点开始监控，在系统权限弹窗里点了拒绝
+        // → 不能半启动（服务没起、prefs 不写、按钮还是"开始监控"）
+        shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        prefs.setServiceRunning(false)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnToggle
+        ).performClick()
+
+        assertNull("未授权不得启动服务", shadowOf(context).peekNextStartedService())
+        assertFalse("未授权不得写运行标记", prefs.isServiceRunning())
+        assertEquals(
+            "开始监控",
+            activity.findViewById<com.google.android.material.button.MaterialButton>(
+                R.id.btnToggle
+            ).text.toString()
+        )
+    }
+
+    @Test
+    fun `拒绝过一次后再点开始监控 弹权限解释对话框`() {
+        // 用户场景：首次拒绝后再次点击 → 先弹 rationale 解释，而不是直接硬跳系统弹窗
+        shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        prefs.setServiceRunning(false)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        // Robolectric shadow 不支持 shouldShowRequestPermissionRationale，经 seam 注入
+        activity.notificationRationaleChecker = { true }
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnToggle
+        ).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertTrue(
+            "应弹权限解释对话框",
+            dialog is androidx.appcompat.app.AlertDialog && dialog.isShowing
+        )
+        assertNull("解释阶段不得启动服务", shadowOf(context).peekNextStartedService())
+        assertFalse(prefs.isServiceRunning())
+    }
+
+    @Test
     fun `有检测记录时 显示上次检测时间和状态`() {
         prefs.setLastCheck(System.currentTimeMillis(), isLive = true, success = true)
 
@@ -1128,31 +1172,81 @@ class MainActivityTest {
         )
     }
 
+    /** 模拟不签发 persistable 权限的文档提供器：takePersistableUriPermission 必抛 SecurityException */
+    @org.robolectric.annotation.Implements(android.content.ContentResolver::class)
+    class DenyPersistableUriShadow : org.robolectric.shadows.ShadowContentResolver() {
+        @org.robolectric.annotation.Implementation
+        override fun takePersistableUriPermission(uri: android.net.Uri, modeFlags: Int) {
+            throw SecurityException("simulated: provider 不给长期授权")
+        }
+    }
+
     @Test
-    fun `铃声对话框试听中关闭对话框 试听播放器必须释放`() {
-        // 回归（真机 bug）：试听循环播放中直接关对话框，旧版不停止 → 后台一直响
+    @org.robolectric.annotation.Config(shadows = [DenyPersistableUriShadow::class])
+    fun `SAF音频文件拿不到长期权限 明确提示且不落prefs`() {
+        // 用户场景：从某些不签发 persistable 权限的文件管理器选音频
+        // → 必须明确提示"换一个文件"，而不是静默吞掉让用户以为设上了
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val uri = android.net.Uri.parse("content://com.example.noaccess/audio/1")
+
+        activity.onAudioFilePicked(uri)
+
+        assertEquals("失败不得写铃声 uri", "", prefs.getAlertSoundUri())
+        assertEquals("失败不得写铃声标题", "", prefs.getAlertSoundTitle())
+        assertEquals(
+            "无法获取该文件的长期访问权限，请换一个文件",
+            org.robolectric.shadows.ShadowToast.getTextOfLatestToast()
+        )
+    }
+
+    @Test
+    fun `铃声抽屉试听中关闭抽屉 试听播放器必须释放`() {
+        // 回归（真机 bug）：试听循环播放中直接关闭，旧版不停止 → 后台一直响
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         val fakes = mutableListOf<com.bilibili.livemonitor.util.FakeExoPlayer>()
         activity.previewPlayerFactory = {
             com.bilibili.livemonitor.util.FakeExoPlayer().also { fakes.add(it) }.player
         }
-        activity.showAlertDialogSoundDialog()
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
-        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
-        val firstItem = container.getChildAt(0)
-        firstItem.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
+        val sheetView = openRingtoneSection(activity)
+        val container = sheetView.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        container.getChildAt(0)
+            .findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
             .performClick()
 
         assertNotNull("试听应已启动", activity.previewPlayer)
         assertEquals(1, fakes.size)
         assertTrue(fakes[0].playWhenReady)
 
-        dialog.dismiss()
-        // Dialog.dismiss 的 OnDismissListener 通过主线程 Handler 派发，
+        (org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog).dismiss()
+        // dismiss 的 OnDismissListener 通过主线程 Handler 派发，
         // Robolectric 暂停模式下必须泵一次 Looper 才会执行
         shadowOf(android.os.Looper.getMainLooper()).idle()
 
-        assertNull("关闭对话框后试听必须停止", activity.previewPlayer)
+        assertNull("关闭抽屉后试听必须停止", activity.previewPlayer)
+        assertTrue("播放器必须被释放", fakes[0].released)
+    }
+
+    @Test
+    fun `试听中切出App 试听播放器必须停止释放`() {
+        // 用户场景：试听铃声中按 Home/切走，不能留在后台继续循环响
+        val controller = Robolectric.buildActivity(MainActivity::class.java)
+        val activity = controller.setup().get()
+        val fakes = mutableListOf<com.bilibili.livemonitor.util.FakeExoPlayer>()
+        activity.previewPlayerFactory = {
+            com.bilibili.livemonitor.util.FakeExoPlayer().also { fakes.add(it) }.player
+        }
+        val sheetView = openRingtoneSection(activity)
+        sheetView.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+            .getChildAt(0)
+            .findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
+            .performClick()
+        assertNotNull("试听应已启动", activity.previewPlayer)
+
+        controller.pause()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        assertNull("切出 App 后试听必须停止", activity.previewPlayer)
         assertTrue("播放器必须被释放", fakes[0].released)
     }
 
@@ -1236,35 +1330,39 @@ class MainActivityTest {
     // ---------- 提醒铃声自定义 ----------
 
     @Test
-    fun `点提醒铃声按钮 弹出铃声设置对话框`() {
+    fun `点设置按钮 弹出设置抽屉且含提醒铃声入口`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        // 设置入口整合到抽屉，弹出原铃声对话框的内部方法
-        activity.showAlertDialogSoundDialog()
+        activity.findViewById<android.view.View>(R.id.btnSettings).performClick()
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-        assertTrue("应弹出 AlertDialog", dialog is androidx.appcompat.app.AlertDialog)
+        assertTrue(
+            "应弹出设置抽屉",
+            dialog is com.google.android.material.bottomsheet.BottomSheetDialog
+        )
+        val container = openRingtoneSection(activity)
+            .findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)
+        assertNotNull("抽屉里应能展开提醒铃声区", container)
     }
 
     @Test
-    fun `铃声对话框显示 7 个内置铃声选项`() {
+    fun `铃声抽屉显示 7 个内置铃声选项`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.showAlertDialogSoundDialog()
 
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
-        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        val container = openRingtoneSection(activity)
+            .findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+
         assertEquals(7, container.childCount)
     }
 
     @Test
-    fun `点恢复默认 清空 prefs 并关闭对话框`() {
+    fun `点恢复默认 清空 prefs`() {
         prefs.setAlertSoundUri("builtin:alert_3")
         prefs.setAlertSoundTitle("Ad astra")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.showAlertDialogSoundDialog()
+        val sheetView = openRingtoneSection(activity)
 
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
-        dialog.findViewById<com.google.android.material.button.MaterialButton>(
+        sheetView.findViewById<com.google.android.material.button.MaterialButton>(
             R.id.btnRestoreDefault
         )!!.performClick()
 
@@ -1276,11 +1374,10 @@ class MainActivityTest {
     fun `未设置铃声时 内置默认项被勾选`() {
         prefs.setAlertSoundUri("")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.showAlertDialogSoundDialog()
 
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
-        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
-        // 第 1 个是 CLASSIC_1（DEFAULT），应被勾选
+        val container = openRingtoneSection(activity)
+            .findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        // 第 1 个是 CL_1（DEFAULT），应被勾选
         val firstRb = container.getChildAt(0).findViewById<android.widget.RadioButton>(R.id.rbSound)!!
         assertTrue("默认应勾选海愿", firstRb.isChecked)
     }
@@ -1290,27 +1387,25 @@ class MainActivityTest {
         prefs.setAlertSoundUri("builtin:alert_3")
         prefs.setAlertSoundTitle("Ad astra")
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.showAlertDialogSoundDialog()
 
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
-        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        val container = openRingtoneSection(activity)
+            .findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
         // alert_3 是第 3 个（CL_1, CL_2, CL_3, CL_4, CL_5, CL_6）
         val astraRb = container.getChildAt(2).findViewById<android.widget.RadioButton>(R.id.rbSound)!!
         assertTrue("应勾选 Ad astra", astraRb.isChecked)
     }
 
     @Test
-    fun `铃声对话框 点试听按钮即选中该铃声`() {
+    fun `铃声抽屉 点试听按钮即选中该铃声`() {
         // 回归（真机用户反馈）：只点试听不点整行 → 以为设上了游园设施，
         // 实际 prefs 没写，开播仍播默认海愿。修复后试听即选中
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.previewPlayerFactory = {
             com.bilibili.livemonitor.util.FakeExoPlayer().player
         }
-        activity.showAlertDialogSoundDialog()
 
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
-        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        val container = openRingtoneSection(activity)
+            .findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
         // 遊園施設是第 6 个（index 5）
         val item = container.getChildAt(5)
         item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
@@ -1375,6 +1470,15 @@ class MainActivityTest {
         val itemView = itemsContainer.getChildAt(position)
         itemView.findViewById<android.view.View>(R.id.itemRoot).performClick()
         shadowOf(android.os.Looper.getMainLooper()).idle()
+    }
+
+    /** 打开设置抽屉并展开「提醒铃声」（第 2 个条目），返回抽屉根视图 */
+    private fun openRingtoneSection(activity: MainActivity): android.view.View {
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 1)
+        return (org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog)
+            .findViewById<android.view.View>(R.id.itemsContainer)!!
     }
 
     private fun makeBilibiliInstalled(vararg variants: Pair<String, String>) {

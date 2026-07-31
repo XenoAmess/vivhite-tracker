@@ -236,6 +236,10 @@ class LiveCheckServiceTest {
         val startedActivity = shadowOf(context).nextStartedActivity
         assertNotNull("应启动全屏提醒", startedActivity)
         assertEquals(AlertActivity::class.java.name, startedActivity.component?.className)
+        // 宣传卖点是"响铃+震动"：铃声有 P 系用例守护，震动此前零断言
+        val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE)
+            as android.os.VibratorManager
+        assertTrue("开播提醒必须震动", shadowOf(vibratorManager.defaultVibrator).isVibrating)
     }
 
     @Test
@@ -727,6 +731,32 @@ class LiveCheckServiceTest {
     }
 
     @Test
+    fun `A8 置顶新视频 发置顶视频变更通知且落盘`() {
+        // 用户场景：UP 主置顶了一个新视频 → 用户要知道"置顶换了"
+        prefs.setServiceRunning(true)
+        // 视频基线同 aid，避免新视频通知干扰；置顶基线 aid=500 → 换成 600
+        prefs.setLastVideoAid(600L)
+        prefs.setLastPinnedAid(500L)
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(videoDynamic(600L, "新的置顶视频", isTop = true))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveCheckUntil(controller, "pinned-change notification") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO) != null
+        }
+
+        val notification = shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO)
+        assertEquals(
+            "白绮 置顶视频变更",
+            notification?.extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()
+        )
+        assertEquals("新置顶必须落盘", 600L, prefs.getLastPinnedAid())
+    }
+
+    @Test
     fun `A6 活动提醒铃声关闭时 只通知不响铃`() {
         // 用户场景：用户在设置里关掉"活动响铃"（不想被新视频吵醒）→
         // 通知照发但 playAlertSound 不得触发
@@ -805,5 +835,92 @@ class LiveCheckServiceTest {
         val oneTime = WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork("live_check_one_time").get()
         assertTrue("已停止监控不得排兜底任务", oneTime.isEmpty())
+    }
+
+    // ---------- D: 动态独立 5min 闹钟路径 ----------
+
+    @Test
+    fun `D1 动态独立闹钟触发 只查动态且重排动态闹钟`() {
+        // 用户场景：开了动态监控，5min 独立闹钟到点 → 只查动态（不走直播检测），
+        // 来了新动态要通知，且下一次动态闹钟必须重排（循环不能断）
+        prefs.setServiceRunning(true)
+        prefs.setLastDynamicId("dyn_old")  // 基线，避免首次只记录不提醒
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(textDynamic("dyn_new1", "白绮发了图文"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        service.activityApi = activityApi
+        service.mainDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
+        service.playerFactory = { FakeExoPlayer().player }
+
+        controller.withIntent(Intent(LiveCheckService.ACTION_CHECK_DYNAMICS)).startCommand(0, 1)
+
+        // 检测跑在 serviceScope(IO 后台线程)，必须轮询等它完成
+        waitFor("dynamic fetched", 10_000) { activityApi.callCount >= 1 }
+        assertEquals("不得走直播检测", 0, fakeApi.callCount)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        waitFor("dynamic notification", 10_000) {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC) != null
+        }
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        waitFor("dynamic alarm rescheduled", 10_000) {
+            shadowOf(alarmManager).scheduledAlarms.isNotEmpty()
+        }
+    }
+
+    @Test
+    fun `D2 监控停止后残留动态闹钟 服务自毁不检测不重排`() {
+        // 用户停止监控后，已排的动态闹钟仍可能送达
+        // （与 S1/S2 同级的 prefs 权威约束，动态路径此前无守护）
+        prefs.setServiceRunning(false)
+        val activityApi = FakeActivityApi()
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        controller.get().activityApi = activityApi
+
+        controller.withIntent(Intent(LiveCheckService.ACTION_CHECK_DYNAMICS)).startCommand(0, 1)
+
+        assertEquals("停止监控后不得查动态", 0, activityApi.callCount)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        // 等一拍确认不会有异步重排（有残留任务才会延迟出现）
+        Thread.sleep(500)
+        assertTrue(
+            "停止监控后不得重排动态闹钟",
+            shadowOf(alarmManager).scheduledAlarms.isEmpty()
+        )
+    }
+
+    // ---------- R: 服务侧排程降级 ----------
+
+    @Test
+    fun `R1 精确闹钟权限未授予 服务侧排程降级且检测循环不断`() {
+        // 用户场景：系统收回了"闹钟和提醒"权限（或从未授予）→
+        // 服务侧排下一次检测必须降级 inexact 而不是抛异常断循环
+        // （shadow 默认 canScheduleExactAlarms=false，即未授予态）
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+
+        controller.startCommand(0, 1)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        // 排程发生在检测完成之后（同一 IO 协程尾部），必须等它落到 shadow
+        driveCheckUntil(controller, "next check alarm scheduled") {
+            shadowOf(alarmManager).scheduledAlarms.isNotEmpty()
+        }
+    }
+
+    @Test
+    fun `R2 精确闹钟权限已授予 服务侧走精确排程`() {
+        org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(true)
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+
+        controller.startCommand(0, 1)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        driveCheckUntil(controller, "next check alarm scheduled") {
+            shadowOf(alarmManager).scheduledAlarms.isNotEmpty()
+        }
+        // 复位静态开关，防泄漏到其他用例
+        org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(false)
     }
 }
