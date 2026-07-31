@@ -542,9 +542,12 @@ class LiveCheckService : Service() {
                 }
                 player.repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
                 player.playWhenReady = true
-                // 异步错误监听：prepare 之后的加载失败（SAF 权限丢失/codec 不支持）
-                // 通过 onPlayerError 回调而非抛异常，此前完全无声无日志
+                // 异步事件监听：准备/起播/异步加载失败
+                // 此前完全无声无日志，排障只能靠 dumpsys audio 外部观察
                 player.addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        if (isPlaying) AppLogger.d(TAG, "alert playback started")
+                    }
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                         AppLogger.e(TAG, "alert playback error: ${error.errorCodeName}", error)
                     }
