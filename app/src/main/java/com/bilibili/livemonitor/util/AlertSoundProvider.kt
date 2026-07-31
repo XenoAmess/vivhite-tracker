@@ -62,6 +62,8 @@ open class AlertSoundProvider {
      */
     open fun setupDataSource(context: Context, player: Player, uriPref: String?): Boolean {
         val source = AlertSoundDecider.resolve(uriPref)
+        // 起播前落源日志：实际播了哪首必须能在 monitor.log 里直接查证
+        AppLogger.d(TAG, "alert sound source: $source")
 
         // 第一选择
         if (trySetup(context, player, source)) return true
@@ -102,6 +104,7 @@ open class AlertSoundProvider {
             val uri = Uri.parse("android.resource://${context.packageName}/${sound.resId}")
             player.setMediaItem(MediaItem.fromUri(uri))
             player.prepare()
+            AppLogger.d(TAG, "builtin sound loaded: ${sound.key} (${sound.title})")
             true
         } catch (e: Exception) {
             AppLogger.e(TAG, "setup builtin ${sound.key} failed", e)

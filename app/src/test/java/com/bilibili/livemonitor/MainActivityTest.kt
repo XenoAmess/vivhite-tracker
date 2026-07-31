@@ -1299,6 +1299,32 @@ class MainActivityTest {
         assertTrue("应勾选 Ad astra", astraRb.isChecked)
     }
 
+    @Test
+    fun `铃声对话框 点试听按钮即选中该铃声`() {
+        // 回归（真机用户反馈）：只点试听不点整行 → 以为设上了游园设施，
+        // 实际 prefs 没写，开播仍播默认海愿。修复后试听即选中
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.previewPlayerFactory = {
+            com.bilibili.livemonitor.util.FakeExoPlayer().player
+        }
+        activity.showAlertDialogSoundDialog()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        val container = dialog.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)!!
+        // 遊園施設是第 6 个（index 5）
+        val item = container.getChildAt(5)
+        item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPreview)
+            .performClick()
+
+        assertEquals("试听必须同步写入选中", "builtin:alert_6", prefs.getAlertSoundUri())
+        assertEquals("遊園施設", prefs.getAlertSoundTitle())
+        assertTrue(
+            "试听即选中应勾选该项",
+            item.findViewById<android.widget.RadioButton>(R.id.rbSound).isChecked
+        )
+        assertNotNull("试听应已启动", activity.previewPlayer)
+    }
+
     // ---------- 活动监控设置 ----------
 
     @Test

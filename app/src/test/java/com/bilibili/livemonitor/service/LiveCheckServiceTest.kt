@@ -239,6 +239,61 @@ class LiveCheckServiceTest {
     }
 
     @Test
+    fun `S14 选定游园设施后开播提醒加载alert_6资源`() {
+        // 回归（真机用户反馈）：以为设了游园设施，开播实际播默认海愿。
+        // 验证「prefs 选中 → playAlertSound 加载对应内置资源」的完整解析链
+        prefs.setServiceRunning(true)
+        prefs.setAlertSoundUri("builtin:alert_6")
+        prefs.setAlertSoundTitle("遊園施設")
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        // 注入 fake 播放器（Robolectric 无法构造真 ExoPlayer），记录实际加载的 uri
+        val fakes = mutableListOf<FakeExoPlayer>()
+        controller.get().playerFactory = {
+            FakeExoPlayer().also { fakes.add(it) }.player
+        }
+        controller.startCommand(0, 1)
+
+        waitFor("alert player setup", 20_000) {
+            controller.startCommand(0, 2)
+            fakes.any { it.mediaSet }
+        }
+        val uris = fakes.flatMap { it.allMediaUris }
+        assertTrue(
+            "必须加载 alert_6 资源而非默认 alert_1，实际加载: $uris",
+            uris.any {
+                it == "android.resource://${context.packageName}/${com.bilibili.livemonitor.R.raw.alert_6}"
+            }
+        )
+    }
+
+    @Test
+    fun `S15 响铃中服务被销毁 播放器必须同步停止释放`() {
+        // 回归（真机测试抓包）：onDestroy 曾把 stop/release 投递到 alertScope，
+        // 协程体在 alertScopeJob.cancel() 之后才有机会跑 → 永远跑不到，
+        // 播放器无限循环直到进程死亡
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        controller.get().playerFactory = {
+            FakeExoPlayer().also { fakes.add(it) }.player
+        }
+        controller.startCommand(0, 1)
+        waitFor("alert player playing", 20_000) {
+            controller.startCommand(0, 2)
+            fakes.any { it.playWhenReady && it.prepared && !it.stopped }
+        }
+        val player = fakes.first { it.playWhenReady }
+
+        controller.destroy()
+
+        assertTrue("销毁时必须同步停止播放", player.stopped)
+        assertTrue("销毁时必须同步释放播放器", player.released)
+        assertNull("销毁后不得残留播放器引用", LiveCheckService.lastAlertPlayer)
+    }
+
+    @Test
     fun `S10 持续在播 不重复触发提醒`() {        // 真机事件：直播中进程重启曾导致重复响铃。恢复状态后 Live→Live 不得再提醒
         prefs.setServiceRunning(true)
         // 预置 10 分钟内的"在播"状态，服务启动时会恢复 lastStatus=true

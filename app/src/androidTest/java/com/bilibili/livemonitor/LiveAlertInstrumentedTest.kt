@@ -60,12 +60,22 @@ class LiveAlertInstrumentedTest {
         prefs.setMonitorVideos(false)
         prefs.setMonitorPinned(false)
         prefs.setMonitorDynamics(false)
+        // 铃声状态显式复位：设备上手工选过的铃声不能漏进用例（hermetic）
+        prefs.setAlertSoundUri("")
+        prefs.setAlertSoundTitle("")
+        // 检测状态复位：上个用例落了 last_check_live=true 时，服务重启会恢复
+        // lastStatus=true → Live→Live 不跳变 → 永不提醒（真踩过的坑）
+        prefs.setLastCheck(0L, false, false)
+        // 上个用例的播放器引用不得残留（isPlaying 轮询会命中陈旧实例）
+        LiveCheckService.lastAlertPlayer = null
         LiveCheckService.apiOverride = AlwaysLiveApi()
     }
 
     @After
     fun tearDown() {
         LiveCheckService.apiOverride = null
+        prefs.setAlertSoundUri("")
+        prefs.setAlertSoundTitle("")
         prefs.setServiceRunning(false)  // 先落 false，挡住 onDestroy 重启广播复活
         context.stopService(Intent(context, LiveCheckService::class.java))
         waitFor("service stopped", 15_000) { !LiveCheckService.isRunning }
@@ -73,24 +83,7 @@ class LiveAlertInstrumentedTest {
 
     @Test
     fun 开播跳变后服务triggerAlert真实ExoPlayer起播且无静默失败() {
-        // MainActivity 前台化：保证 startForegroundService 有前台启动许可
-        // （纯后台上下文起 FGS 在 Android 12+ 受限）
-        instrumentation.startActivitySync(
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        context.startForegroundService(Intent(context, LiveCheckService::class.java))
-
-        // 核心断言：真实播放器创建且真实起播（isPlaying 必须在播放器线程读，
-        // 否则 media3 verifyApplicationThread 抛 wrong-thread）
-        waitFor("alert player created and playing", 30_000) {
-            var playing = false
-            instrumentation.runOnMainSync {
-                playing = runCatching {
-                    LiveCheckService.lastAlertPlayer?.isPlaying == true
-                }.getOrDefault(false)
-            }
-            playing
-        }
+        triggerAlertAndWaitPlaying()
 
         // 提醒通知也真实发出
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -113,6 +106,50 @@ class LiveAlertInstrumentedTest {
             "不得出现 alert playback error（异步解码失败回归）",
             log.contains("alert playback error")
         )
+    }
+
+    @Test
+    fun 选定游园设施后开播提醒真实加载alert_6并起播() {
+        // 回归（2026-07-31 用户反馈）：以为设了游园设施，开播实际播海愿。
+        // 显式落 builtin:alert_6，验证提醒链真实加载该资源并起播、不回退默认
+        prefs.setAlertSoundUri("builtin:alert_6")
+        prefs.setAlertSoundTitle("遊園施設")
+        val logStart = readMonitorLog().length
+
+        triggerAlertAndWaitPlaying()
+
+        // AppLogger 走单线程 executor 异步落盘（in-order），必须轮询等队列排空；
+        // isPlaying 为真时 "alert playback started" 尚未入文件（真踩过的坑）
+        var tail = ""
+        waitFor("alert source log lines", 10_000) {
+            val full = readMonitorLog()
+            // 只断言本次触发新落的日志（设备上历史日志可能含其他用例的 fallback 记录）
+            tail = if (full.length > logStart) full.substring(logStart) else full
+            tail.contains("triggerAlert") &&
+                tail.contains("builtin sound loaded: alert_6") &&
+                tail.contains("alert playback started")
+        }
+        assertFalse("不得回退内置默认", tail.contains("primary source failed"))
+        assertFalse("不得出现未知 key 兜底", tail.contains("unknown builtin key"))
+        assertFalse("不得出现异步解码失败", tail.contains("alert playback error"))
+    }
+
+    /** MainActivity 前台化后起 FGS，等真实播放器创建且真实起播（isPlaying 须在播放器线程读） */
+    private fun triggerAlertAndWaitPlaying() {
+        instrumentation.startActivitySync(
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        context.startForegroundService(Intent(context, LiveCheckService::class.java))
+
+        waitFor("alert player created and playing", 30_000) {
+            var playing = false
+            instrumentation.runOnMainSync {
+                playing = runCatching {
+                    LiveCheckService.lastAlertPlayer?.isPlaying == true
+                }.getOrDefault(false)
+            }
+            playing
+        }
     }
 
     private fun readMonitorLog(): String {

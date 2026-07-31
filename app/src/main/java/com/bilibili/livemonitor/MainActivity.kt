@@ -380,8 +380,14 @@ class MainActivity : AppCompatActivity() {
                 preferenceManager.setAlertSoundUri(AlertSoundDecider.encodeBuiltIn(sound.key))
                 preferenceManager.setAlertSoundTitle(sound.title)
                 AppLogger.d("MainActivity", "builtin sound selected: ${sound.key}")
+                Toast.makeText(this, "已设置铃声：${sound.title}", Toast.LENGTH_SHORT).show()
             }
-            btnPreview.setOnClickListener { previewSound(sound) }
+            // 试听即选中：只试听不选中是真实用户踩过的坑
+            //（试听听到了=以为设上了，实际没写 prefs，开播仍播默认海愿）
+            btnPreview.setOnClickListener {
+                item.performClick()
+                previewSound(sound)
+            }
             container.addView(item)
         }
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickSystemRingtone)
@@ -649,10 +655,12 @@ class MainActivity : AppCompatActivity() {
                 preferenceManager.setAlertSoundUri(AlertSoundDecider.encodeBuiltIn(sound.key))
                 preferenceManager.setAlertSoundTitle(sound.title)
                 AppLogger.d("MainActivity", "builtin sound selected: ${sound.key}")
+                Toast.makeText(this, "已设置铃声：${sound.title}", Toast.LENGTH_SHORT).show()
             }
 
-            // 点试听按钮 = 播 2 秒预览
+            // 点试听按钮 = 选中并预览（试听即选中，理由同设置抽屉里的同款注释）
             btnPreview.setOnClickListener {
+                item.performClick()
                 previewSound(sound)
             }
 

@@ -573,27 +573,34 @@ class LiveCheckService : Service() {
     // 防止陈旧定时器在服务停止后误触发（或误杀后来的新播放器）
     private var alertStopJob: Job? = null
 
-    // 停止提醒铃声（停止监控/onDestroy/10秒自动停止 共用）。
+    // 停止提醒铃声（停止监控/10秒自动停止 共用）。
     // 切到主线程：ExoPlayer 的 stop/release 必须在创建它的线程上调用。
     internal fun stopAlertSound() {
-        alertScope.launch {
-            alertStopJob?.cancel()
-            alertStopJob = null
-            alertPlayer?.let {
-                try {
-                    if (it.isPlaying) it.stop()
-                } catch (e: Exception) {
-                    AppLogger.w(TAG, "stop alert sound failed", e)
-                }
-                try {
-                    it.release()
-                } catch (e: Exception) {
-                    AppLogger.w(TAG, "release alert player failed", e)
-                }
+        alertScope.launch { stopAlertSoundSync() }
+    }
+
+    // 同步停铃，调用方必须已在播放器创建线程（主线程）上。
+    // onDestroy 必须走这里而不是 stopAlertSound()：后者只是把 stop/release
+    // 投递到 alertScope 队列，协程体要等 onDestroy 返回后才有机会执行，
+    // 而紧随的 alertScopeJob.cancel() 会先把投递杀掉——停止逻辑永远跑不到
+    // （真机测试抓包：服务销毁后旧播放器 isPlaying 仍为 true，循环到进程死亡）
+    private fun stopAlertSoundSync() {
+        alertStopJob?.cancel()
+        alertStopJob = null
+        alertPlayer?.let {
+            try {
+                if (it.isPlaying) it.stop()
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "stop alert sound failed", e)
             }
-            alertPlayer = null
-            lastAlertPlayer = null
+            try {
+                it.release()
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "release alert player failed", e)
+            }
         }
+        alertPlayer = null
+        lastAlertPlayer = null
     }
 
     private fun vibrate() {
@@ -709,10 +716,10 @@ class LiveCheckService : Service() {
         serviceScope.cancel()
         isRunning = false
         lastLiveStatus = false
-        // 停止提醒铃声（用户停止监控/服务销毁时铃声必须停）
-        stopAlertSound()
-        // 同步取消提醒链路 Job（不依赖主线程调度）：10 秒定时器立即失效，
-        // 播放器 release 由上面的 stopAlertSound 在主线程完成
+        // 停止提醒铃声（用户停止监控/服务销毁时铃声必须停）。
+        // onDestroy 跑在主线程，直接同步停——投递到 alertScope 会被下面的 cancel 杀掉
+        stopAlertSoundSync()
+        // 同步取消提醒链路 Job（不依赖主线程调度）：10 秒定时器立即失效
         alertScopeJob.cancel()
         // 只有用户主动停止才清除运行标记；系统杀进程/异常销毁要保留 true，
         // 否则 onDestroy→ServiceRestartReceiver 重启链会被自己卡死
