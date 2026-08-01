@@ -59,20 +59,15 @@ class QqShareTest {
     }
 
     @Test
-    fun `SDK分享参数 模板决定req_type且带SITE`() {
-        // 模板 A/B 对比（2026-08）：WEB=经典网页卡，AUDIO=大方图卡实验位
-        val web = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", null, true, QqShare.CardTemplate.WEB)
+    fun `SDK分享参数 网页卡req_type为默认且带SITE`() {
+        // 真机实测（2026-08）：TYPE_AUDIO 大方图卡被 QQ 服务端拒绝
+        // （901114 强制 music_url）——网页卡是唯一可行模板
+        val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", null, true)
         assertEquals(
             com.tencent.connect.share.QQShare.SHARE_TO_QQ_TYPE_DEFAULT,
-            web.getInt(com.tencent.connect.share.QQShare.SHARE_TO_QQ_KEY_TYPE)
+            params.getInt(com.tencent.connect.share.QQShare.SHARE_TO_QQ_KEY_TYPE)
         )
-        assertEquals("哔哩哔哩直播", web.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SITE))
-
-        val audio = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", null, true, QqShare.CardTemplate.AUDIO)
-        assertEquals(
-            com.tencent.connect.share.QQShare.SHARE_TO_QQ_TYPE_AUDIO,
-            audio.getInt(com.tencent.connect.share.QQShare.SHARE_TO_QQ_KEY_TYPE)
-        )
+        assertEquals("哔哩哔哩直播", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SITE))
     }
 
     @Test

@@ -938,64 +938,6 @@ class MainActivityTest {
     }
 
     @Test
-    fun `长按QQ卡片项 循环切换卡片模板并持久化`() {
-        // 模板 A/B 对比入口：经典网页卡 ↔ 大方图卡（实验）
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare)
-            .performClick()
-        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-            as com.google.android.material.bottomsheet.BottomSheetDialog
-
-        assertEquals("默认经典网页卡", "WEB", prefs.getQqCardTemplate())
-        assertTrue(
-            sheet.findViewById<android.view.View>(R.id.rowShareQq)!!.performLongClick()
-        )
-        assertEquals("AUDIO", prefs.getQqCardTemplate())
-        assertEquals(
-            "QQ 卡片模板：大方图卡（实验）",
-            org.robolectric.shadows.ShadowToast.getTextOfLatestToast()
-        )
-
-        sheet.findViewById<android.view.View>(R.id.rowShareQq)!!.performLongClick()
-        assertEquals("WEB", prefs.getQqCardTemplate())
-    }
-
-    @Test
-    fun `卡片模板为AUDIO时 分享参数req_type为2`() {
-        makeQqInstalled(true)
-        prefs.setQqCardTemplate("AUDIO")
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.roomInfoFetcher = { null }
-        activity.faceFetcher = { null }
-        var capturedParams: android.os.Bundle? = null
-        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
-            override fun isAuthorized(): Boolean = true
-            override fun login(
-                activity: android.app.Activity,
-                onAuthorized: () -> Unit,
-                onCancelled: () -> Unit,
-                onError: (errorCode: Int, message: String?) -> Unit
-            ) { }
-            override fun shareToQQ(
-                activity: android.app.Activity,
-                params: android.os.Bundle,
-                onComplete: () -> Unit,
-                onCancel: () -> Unit,
-                onError: (errorCode: Int, message: String?) -> Unit
-            ) { capturedParams = params }
-            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
-        }
-
-        clickShareOption(activity, R.id.rowShareQq)
-        waitShareResult("qq params captured") { capturedParams != null }
-
-        assertEquals(
-            com.tencent.connect.share.QQShare.SHARE_TO_QQ_TYPE_AUDIO,
-            capturedParams!!.getInt(com.tencent.connect.share.QQShare.SHARE_TO_QQ_KEY_TYPE)
-        )
-    }
-
-    @Test
     fun `图文分享 封面就绪时 intent 带图片流与状态文案`() {
         // 用户场景：选图文分享 → 系统面板，图片流是 FileProvider 授权 uri
         // （封面底部已烙文案条），EXTRA_TEXT 是状态感知正文 + 归因链接
