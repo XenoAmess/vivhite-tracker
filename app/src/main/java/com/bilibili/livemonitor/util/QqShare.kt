@@ -49,21 +49,39 @@ object QqShare {
             "&bbid=$SHARER_UID&ts=$ts"
     }
 
+    /** QQ 卡片模板：WEB=经典网页卡（小缩略图）；AUDIO=大方图卡（实验位，真机 A/B 对比） */
+    enum class CardTemplate { WEB, AUDIO }
+
     // QQ 互联 SDK 分享参数（真卡片：标题+描述+封面+来源）
     /**
-     * @param coverUrl 封面图 URL
+     * @param coverUrl 缩略图 URL（方形最佳：开播=直播封面，未开播=白绮头像）
      * @param liveTitle 直播标题（如 "失眠 无言"）。null → 兜底硬编码
      * @param isLive 实时开播状态：false 时文案体现"还没开播，期待开播"
+     * @param template 卡片模板（见 [CardTemplate]，默认 WEB）
      */
-    fun buildSdkShareParams(coverUrl: String, liveTitle: String? = null, isLive: Boolean = true): Bundle {
-        val title = com.bilibili.livemonitor.domain.ShareTextDecider.title(isLive, liveTitle)
+    fun buildSdkShareParams(
+        coverUrl: String,
+        liveTitle: String? = null,
+        isLive: Boolean = true,
+        template: CardTemplate = CardTemplate.WEB
+    ): Bundle {
+        val title = com.bilibili.livemonitor.domain.ShareTextDecider.qqCardTitle(isLive, liveTitle)
         val summary = com.bilibili.livemonitor.domain.ShareTextDecider.summary(isLive, ROOM_ID)
         return Bundle().apply {
+            putInt(
+                QQShare.SHARE_TO_QQ_KEY_TYPE,
+                when (template) {
+                    CardTemplate.WEB -> QQShare.SHARE_TO_QQ_TYPE_DEFAULT
+                    // 实验位：音乐卡样式=方形大封面。不填 audio_url（播放键行为待真机验证）
+                    CardTemplate.AUDIO -> QQShare.SHARE_TO_QQ_TYPE_AUDIO
+                }
+            )
             putString(QQShare.SHARE_TO_QQ_TITLE, title)
             putString(QQShare.SHARE_TO_QQ_SUMMARY, summary)
             putString(QQShare.SHARE_TO_QQ_TARGET_URL, buildShareUrl())
             putString(QQShare.SHARE_TO_QQ_IMAGE_URL, coverUrl)
             putString(QQShare.SHARE_TO_QQ_APP_NAME, APP_NAME)
+            putString(QQShare.SHARE_TO_QQ_SITE, "哔哩哔哩直播")
         }
     }
 

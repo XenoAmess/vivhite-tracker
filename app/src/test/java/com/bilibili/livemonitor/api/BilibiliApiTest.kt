@@ -92,6 +92,19 @@ class BilibiliApiTest {
     }
 
     @Test
+    fun `parseFace 有face时返回URL`() {
+        // QQ 卡片缩略图用：B站 acc/info 的 data.face（白绮方形头像）
+        val json = """{"code":0,"data":{"mid":251990176,"name":"白绮","face":"https://i1.hdslb.com/bfs/face/abc123.jpg"}}"""
+        assertEquals("https://i1.hdslb.com/bfs/face/abc123.jpg", BilibiliApi.parseFace(json))
+    }
+
+    @Test
+    fun `parseFace 无data或坏JSON 返回null`() {
+        assertNull(BilibiliApi.parseFace("""{"code":-404}"""))
+        assertNull(BilibiliApi.parseFace("not json"))
+    }
+
+    @Test
     fun `parseRoomCover 无字段或非字符串时返回null`() {
         assertNull(BilibiliApi.parseRoomCover("""{"code":0,"data":{"room_id":1}}"""))
         assertNull(BilibiliApi.parseRoomCover("""{"code":0,"data":{"user_cover":""}}"""))

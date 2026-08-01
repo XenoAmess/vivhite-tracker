@@ -36,7 +36,7 @@ class QqShareTest {
     @Test
     fun `SDK分享参数 有直播标题时展示动态标题`() {
         val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", "失眠 无言")
-        assertEquals("「失眠 无言」", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
+        assertEquals("🔴「失眠 无言」", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
         assertEquals("白绮正在直播 · 11258892", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY))
         assertEquals("https://i0.hdslb.com/cover.jpg", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_IMAGE_URL))
         assertEquals("牢白播了吗", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_APP_NAME))
@@ -45,7 +45,7 @@ class QqShareTest {
     @Test
     fun `SDK分享参数 无标题时兜底硬编码`() {
         val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", null)
-        assertEquals("白绮开播啦！", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
+        assertEquals("🔴 白绮开播啦！", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
         // 有实时状态后 summary 用准确的开播文案（旧版"白绮直播间"是不知道状态时的中性词）
         assertEquals("白绮正在直播 · 11258892", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY))
     }
@@ -54,8 +54,25 @@ class QqShareTest {
     fun `SDK分享参数 未开播时文案体现期待开播`() {
         // 用户需求：没开播时分享内容不能再误报"开播了"
         val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", "旧标题", isLive = false)
-        assertEquals("白绮还没开播", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
+        assertEquals("⚪ 白绮还没开播", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
         assertEquals("白绮还没开播 · 11258892", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY))
+    }
+
+    @Test
+    fun `SDK分享参数 模板决定req_type且带SITE`() {
+        // 模板 A/B 对比（2026-08）：WEB=经典网页卡，AUDIO=大方图卡实验位
+        val web = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", null, true, QqShare.CardTemplate.WEB)
+        assertEquals(
+            com.tencent.connect.share.QQShare.SHARE_TO_QQ_TYPE_DEFAULT,
+            web.getInt(com.tencent.connect.share.QQShare.SHARE_TO_QQ_KEY_TYPE)
+        )
+        assertEquals("哔哩哔哩直播", web.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SITE))
+
+        val audio = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", null, true, QqShare.CardTemplate.AUDIO)
+        assertEquals(
+            com.tencent.connect.share.QQShare.SHARE_TO_QQ_TYPE_AUDIO,
+            audio.getInt(com.tencent.connect.share.QQShare.SHARE_TO_QQ_KEY_TYPE)
+        )
     }
 
     @Test

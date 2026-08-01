@@ -29,4 +29,12 @@ object ShareTextDecider {
         } else {
             "白绮还没开播，先来直播间蹲一个开播！"
         }
+
+    /** QQ 卡片标题（带状态 emoji，比纯文字醒目）：🔴 开播 / ⚪ 未开播 */
+    fun qqCardTitle(isLive: Boolean, liveTitle: String?): String =
+        if (isLive) {
+            if (!liveTitle.isNullOrBlank()) "🔴「$liveTitle」" else "🔴 白绮开播啦！"
+        } else {
+            "⚪ 白绮还没开播"
+        }
 }

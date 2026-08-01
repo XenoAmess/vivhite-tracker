@@ -753,6 +753,10 @@ class MainActivity : AppCompatActivity() {
     internal var roomInfoFetcher: suspend (Long) -> com.bilibili.livemonitor.api.BilibiliApi.RoomInfo? =
         { roomId -> com.bilibili.livemonitor.api.BilibiliApi().fetchRoomInfo(roomId) }
 
+    // internal：白绮头像获取 seam（未开播时卡片缩略图用方形头像，见 shareLiveRoom）
+    internal var faceFetcher: suspend (Long) -> String? =
+        { mid -> com.bilibili.livemonitor.api.BilibiliApi().fetchAnchorFace(mid) }
+
     // internal：分享配图加载器（单测可整体替换，避免 Bitmap.compress 等真机路径）
     internal var shareImageLoader = com.bilibili.livemonitor.util.ShareImageLoader()
 
@@ -774,6 +778,20 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<android.view.View>(R.id.rowShareQq).setOnClickListener {
             sheet.dismiss()
             shareLiveRoom()
+        }
+        // 长按循环切换 QQ 卡片模板（经典网页卡 ↔ 大方图卡实验位），选择持久化
+        view.findViewById<android.view.View>(R.id.rowShareQq).setOnLongClickListener {
+            val next = when (preferenceManager.getQqCardTemplate()) {
+                QqShare.CardTemplate.WEB.name -> QqShare.CardTemplate.AUDIO
+                else -> QqShare.CardTemplate.WEB
+            }
+            preferenceManager.setQqCardTemplate(next.name)
+            val label = when (next) {
+                QqShare.CardTemplate.WEB -> "经典网页卡"
+                QqShare.CardTemplate.AUDIO -> "大方图卡（实验）"
+            }
+            Toast.makeText(this, "QQ 卡片模板：$label", Toast.LENGTH_SHORT).show()
+            true
         }
         view.findViewById<android.view.View>(R.id.rowShareQzone).setOnClickListener {
             sheet.dismiss()
@@ -810,13 +828,24 @@ class MainActivity : AppCompatActivity() {
             val roomInfo = withTimeoutOrNull(3000) {
                 roomInfoFetcher(QqShare.ROOM_ID)
             }
-            val cover = roomInfo?.cover ?: QqShare.FALLBACK_COVER_URL
             val title = roomInfo?.title
             val isLive = resolveShareLiveState(roomInfo)
-            AppLogger.d("MainActivity", "share cover=$cover title=$title live=$isLive")
+            // 缩略图策略：开播=直播封面（内容优先）；
+            // 未开播/封面缺失=白绮方形头像（QQ 卡片缩略图按方形裁，16:9 封面会被切边）
+            val cover = if (isLive && roomInfo?.cover != null) {
+                roomInfo.cover
+            } else {
+                withTimeoutOrNull(3000) {
+                    faceFetcher(com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID)
+                } ?: QqShare.FALLBACK_COVER_URL
+            }
+            val template = runCatching {
+                QqShare.CardTemplate.valueOf(preferenceManager.getQqCardTemplate())
+            }.getOrDefault(QqShare.CardTemplate.WEB)
+            AppLogger.d("MainActivity", "share cover=$cover title=$title live=$isLive template=$template")
             currentShareTitle = title
             currentShareLive = isLive
-            val params = QqShare.buildSdkShareParams(cover, title, isLive)
+            val params = QqShare.buildSdkShareParams(cover, title, isLive, template)
             doQqShare(params)
         }
     }

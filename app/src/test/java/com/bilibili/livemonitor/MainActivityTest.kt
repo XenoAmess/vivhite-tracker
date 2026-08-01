@@ -473,6 +473,7 @@ class MainActivityTest {
         }
         // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
         activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true
             override fun login(
@@ -518,6 +519,7 @@ class MainActivityTest {
         var loginCalled = false
         // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
         activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true
             override fun login(
@@ -562,6 +564,7 @@ class MainActivityTest {
         var loginCalled = false
         // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
         activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(
@@ -605,6 +608,7 @@ class MainActivityTest {
         var capturedParams: android.os.Bundle? = null
         // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
         activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true
             override fun login(
@@ -653,6 +657,7 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
         activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(
@@ -694,6 +699,7 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
         activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(
@@ -744,6 +750,7 @@ class MainActivityTest {
         var shareCalled = false
         // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
         activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true  // session 看起来还有效
             override fun login(
@@ -845,12 +852,146 @@ class MainActivityTest {
         waitShareResult("qq params captured") { capturedParams != null }
 
         assertEquals(
-            "白绮还没开播",
+            "⚪ 白绮还没开播",
             capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE)
         )
         assertEquals(
             "白绮还没开播 · 11258892",
             capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY)
+        )
+    }
+
+    @Test
+    fun `未开播时QQ卡片缩略图用主播方形头像`() {
+        // 精修（2026-08）：QQ 卡片缩略图按方形裁，16:9 封面会被切边，
+        // 未开播改用白绮方形头像（face API）
+        makeQqInstalled(true)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.roomInfoFetcher = {
+            com.bilibili.livemonitor.api.BilibiliApi.RoomInfo(null, null, false)
+        }
+        activity.faceFetcher = { "https://i1.hdslb.com/bfs/face/baiqi.jpg" }
+        var capturedParams: android.os.Bundle? = null
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun isAuthorized(): Boolean = true
+            override fun login(
+                activity: android.app.Activity,
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { }
+            override fun shareToQQ(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { capturedParams = params }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
+        }
+
+        clickShareOption(activity, R.id.rowShareQq)
+        waitShareResult("qq params captured") { capturedParams != null }
+
+        assertEquals(
+            "https://i1.hdslb.com/bfs/face/baiqi.jpg",
+            capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_IMAGE_URL)
+        )
+    }
+
+    @Test
+    fun `开播时用直播封面做缩略图且不拉头像`() {
+        makeQqInstalled(true)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.roomInfoFetcher = {
+            com.bilibili.livemonitor.api.BilibiliApi.RoomInfo("失眠 无言", "https://i0.hdslb.com/cover.jpg", true)
+        }
+        var faceCalled = false
+        activity.faceFetcher = { faceCalled = true; null }
+        var capturedParams: android.os.Bundle? = null
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun isAuthorized(): Boolean = true
+            override fun login(
+                activity: android.app.Activity,
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { }
+            override fun shareToQQ(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { capturedParams = params }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
+        }
+
+        clickShareOption(activity, R.id.rowShareQq)
+        waitShareResult("qq params captured") { capturedParams != null }
+
+        assertEquals(
+            "https://i0.hdslb.com/cover.jpg",
+            capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_IMAGE_URL)
+        )
+        assertFalse("开播且有封面时不得多拉头像请求", faceCalled)
+    }
+
+    @Test
+    fun `长按QQ卡片项 循环切换卡片模板并持久化`() {
+        // 模板 A/B 对比入口：经典网页卡 ↔ 大方图卡（实验）
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare)
+            .performClick()
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog
+
+        assertEquals("默认经典网页卡", "WEB", prefs.getQqCardTemplate())
+        assertTrue(
+            sheet.findViewById<android.view.View>(R.id.rowShareQq)!!.performLongClick()
+        )
+        assertEquals("AUDIO", prefs.getQqCardTemplate())
+        assertEquals(
+            "QQ 卡片模板：大方图卡（实验）",
+            org.robolectric.shadows.ShadowToast.getTextOfLatestToast()
+        )
+
+        sheet.findViewById<android.view.View>(R.id.rowShareQq)!!.performLongClick()
+        assertEquals("WEB", prefs.getQqCardTemplate())
+    }
+
+    @Test
+    fun `卡片模板为AUDIO时 分享参数req_type为2`() {
+        makeQqInstalled(true)
+        prefs.setQqCardTemplate("AUDIO")
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
+        var capturedParams: android.os.Bundle? = null
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun isAuthorized(): Boolean = true
+            override fun login(
+                activity: android.app.Activity,
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { }
+            override fun shareToQQ(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { capturedParams = params }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
+        }
+
+        clickShareOption(activity, R.id.rowShareQq)
+        waitShareResult("qq params captured") { capturedParams != null }
+
+        assertEquals(
+            com.tencent.connect.share.QQShare.SHARE_TO_QQ_TYPE_AUDIO,
+            capturedParams!!.getInt(com.tencent.connect.share.QQShare.SHARE_TO_QQ_KEY_TYPE)
         )
     }
 
@@ -1028,6 +1169,7 @@ class MainActivityTest {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.roomInfoFetcher = { null }
+        activity.faceFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(

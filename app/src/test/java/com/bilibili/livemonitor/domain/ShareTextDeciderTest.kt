@@ -61,4 +61,15 @@ class ShareTextDeciderTest {
         assertFalse(body.contains("旧标题"))
         assertFalse(body.contains("正在直播"))
     }
+
+    @Test
+    fun `QQ卡片标题 开播带红点和标题`() {
+        assertEquals("🔴「失眠 无言」", ShareTextDecider.qqCardTitle(true, "失眠 无言"))
+        assertEquals("🔴 白绮开播啦！", ShareTextDecider.qqCardTitle(true, null))
+    }
+
+    @Test
+    fun `QQ卡片标题 未开播带白圈`() {
+        assertEquals("⚪ 白绮还没开播", ShareTextDecider.qqCardTitle(false, "旧标题"))
+    }
 }

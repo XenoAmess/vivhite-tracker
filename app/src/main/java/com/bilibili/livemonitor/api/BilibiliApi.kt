@@ -113,6 +113,30 @@ open class BilibiliApi : LiveStatusChecker {
         }
     }
 
+    /**
+     * 取主播方形头像 URL（B站 space acc/info 的 data.face）。
+     * QQ 卡片缩略图按方形裁剪，16:9 直播封面会被切边——头像天然方形。
+     * 返回 null = 网络/API 异常（调用方用静态兜底图）。
+     */
+    suspend fun fetchAnchorFace(mid: Long): String? = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("https://api.bilibili.com/x/space/acc/info?mid=$mid")
+            val connection = url.openConnection() as HttpsURLConnection
+            connection.apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Referer", "https://space.bilibili.com/")
+                connectTimeout = 5000
+                readTimeout = 5000
+            }
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            connection.disconnect()
+            parseFace(response)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     companion object {
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -133,6 +157,17 @@ open class BilibiliApi : LiveStatusChecker {
                 val json = JSONObject(response)
                 val data = json.optJSONObject("data") ?: return null
                 data.optString("user_cover").takeIf { it.isNotBlank() }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        // internal 便于单测：从 acc/info 响应里解析主播头像 URL（data.face，方形）
+        internal fun parseFace(response: String): String? {
+            return try {
+                val json = JSONObject(response)
+                val data = json.optJSONObject("data") ?: return null
+                data.optString("face").takeIf { it.isNotBlank() }
             } catch (e: Exception) {
                 null
             }

@@ -135,6 +135,15 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_PROMO_STYLE, DEFAULT_PROMO_STYLE) ?: DEFAULT_PROMO_STYLE
     }
 
+    // QQ 卡片模板（WEB=经典网页卡 / AUDIO=大方图卡实验位，长按分享项循环切换）
+    fun setQqCardTemplate(template: String) {
+        prefs.edit().putString(KEY_QQ_CARD_TEMPLATE, template).apply()
+    }
+
+    fun getQqCardTemplate(): String {
+        return prefs.getString(KEY_QQ_CARD_TEMPLATE, DEFAULT_QQ_CARD_TEMPLATE) ?: DEFAULT_QQ_CARD_TEMPLATE
+    }
+
     // ========== B 站全活动监控 ==========
 
     // 监控新视频投稿，默认开
@@ -236,6 +245,8 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_DYNAMIC_ID = "last_dynamic_id"
         private const val KEY_PROMO_STYLE = "promo_style"
         private const val DEFAULT_PROMO_STYLE = "LIGHT_CARD"
+        private const val KEY_QQ_CARD_TEMPLATE = "qq_card_template"
+        private const val DEFAULT_QQ_CARD_TEMPLATE = "WEB"
         private const val DEFAULT_ROOM_ID = 11258892L
     }
 }
