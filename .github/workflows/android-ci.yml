@@ -50,6 +50,30 @@ jobs:
     - name: Build debug APK
       run: ./gradlew assembleDebug
 
+    # 内测包用 release 构建（debuggable=false）：Play Protect 对 debuggable
+    # 侧载包告警更重，release 与 debug 共用 keystore 可覆盖安装
+    - name: Decode release signing key
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      env:
+        SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+      run: |
+        if [ -n "$SIGNING_KEY" ]; then
+          echo "$SIGNING_KEY" | base64 -d > app/release.keystore
+          ls -la app/release.keystore
+        else
+          echo "SIGNING_KEY unavailable; beta release signing will fail" >&2
+          exit 1
+        fi
+
+    - name: Build beta release APK
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      run: ./gradlew assembleRelease
+      env:
+        SIGNING_KEY_FILE: "release.keystore"
+        KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+        ALIAS: ${{ secrets.ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
     # 内测版尝鲜通道：master 最新构建 → GitHub Pages /beta/
     # （App 内「内测版尝鲜」按钮比对这里的 version.json）
     - name: Prepare beta channel files
@@ -71,8 +95,8 @@ jobs:
         LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
         if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..HEAD"; else RANGE="HEAD"; fi
         git log --oneline --no-decorate "$RANGE" | head -20 > changelog.txt
-        # debug 构建与 release 共用 keystore，内测包可覆盖安装
-        cp app/build/outputs/apk/debug/app-debug.apk vivhite-tracker-beta.apk
+        # release 构建与 debug 共用 keystore，内测包可覆盖安装
+        cp app/build/outputs/apk/release/app-release.apk vivhite-tracker-beta.apk
         python3 - "$VERSION_CODE" "$VERSION_NAME" <<'PY'
         import json, sys
         changelog = open("changelog.txt", encoding="utf-8").read().strip()
