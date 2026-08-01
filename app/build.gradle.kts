@@ -107,6 +107,8 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("org.jsoup:jsoup:1.22.2")
+    // 长宣传图的直播间二维码（纯 JVM，QR 矩阵可单测）
+    implementation("com.google.zxing:core:3.5.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     // 媒体播放器（ExoPlayer/Media3 - 用于 alarm 铃声 gapless 循环，解决 MediaPlayer 循环间隔）
     implementation("androidx.media3:media3-exoplayer:1.5.1")

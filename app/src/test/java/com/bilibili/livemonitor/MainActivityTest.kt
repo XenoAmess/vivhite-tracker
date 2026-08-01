@@ -36,6 +36,9 @@ class MainActivityTest {
         prefs = PreferenceManager(context)
         LiveCheckService.isRunning = false
         LiveCheckService.isUserStopped = false
+        // Robolectric 跨方法复用 classloader，FileProvider.sCache 跨方法存活会
+        // 钉死上个用例的 dataDir（探针实证），凡用到 FileProvider 的用例都会互坑
+        com.bilibili.livemonitor.util.FileProviderTestUtil.clearFileProviderCache()
         // 授权通知权限，否则点开始监控会走权限申请分支而不启动服务
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         // 节流自动更新检查，避免 onCreate 对 api.github.com 发起真实网络请求；
@@ -468,6 +471,8 @@ class MainActivityTest {
             override fun onCancel() {}
             override fun onWarning(code: Int) {}
         }
+        // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
+        activity.roomInfoFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true
             override fun login(
@@ -511,6 +516,8 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         var shareToQQCalled = false
         var loginCalled = false
+        // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
+        activity.roomInfoFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true
             override fun login(
@@ -528,7 +535,7 @@ class MainActivityTest {
             ) { shareToQQCalled = true }
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {}
         }
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        clickShareOption(activity, R.id.rowShareQq)
         // shareLiveRoom 走 shareScope 协程：withTimeoutOrNull(3000) 等 3s
         // 只 idle() 不够，需用 deadline wait 等协程完成
         val deadline = System.currentTimeMillis() + 10_000
@@ -553,6 +560,8 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         var shareToQQCalled = false
         var loginCalled = false
+        // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
+        activity.roomInfoFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(
@@ -570,7 +579,7 @@ class MainActivityTest {
             ) { shareToQQCalled = true }
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {}
         }
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        clickShareOption(activity, R.id.rowShareQq)
         // shareLiveRoom 走 shareScope 协程：withTimeoutOrNull(3000) 等 3s
         val deadline = System.currentTimeMillis() + 10_000
         // 未授权时只弹引导对话框，不直接调 login()——login 在用户点"去 QQ 授权"后才调
@@ -594,6 +603,8 @@ class MainActivityTest {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         var capturedParams: android.os.Bundle? = null
+        // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
+        activity.roomInfoFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true
             override fun login(
@@ -614,7 +625,7 @@ class MainActivityTest {
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
         }
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        clickShareOption(activity, R.id.rowShareQq)
 
         // 分享流程是异步的（取封面 3s 超时），Robolectric 无真网络会走兜底封面
         val deadline = System.currentTimeMillis() + 10_000
@@ -640,6 +651,8 @@ class MainActivityTest {
     fun `未授权时点分享 弹授权引导对话框`() {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
+        activity.roomInfoFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(
@@ -658,7 +671,7 @@ class MainActivityTest {
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
         }
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        clickShareOption(activity, R.id.rowShareQq)
         // shareLiveRoom 走 shareScope(Dispatchers.Main) 协程，跑 cover 取 3s 超时
         // 等到引导 dialog 出现或超时
         val deadline = System.currentTimeMillis() + 10_000
@@ -666,7 +679,7 @@ class MainActivityTest {
         while (guideDialog == null && System.currentTimeMillis() < deadline) {
             shadowOf(android.os.Looper.getMainLooper()).idle()
             guideDialog = org.robolectric.shadows.ShadowDialog.getShownDialogs()
-                .map { it as androidx.appcompat.app.AlertDialog }
+                .mapNotNull { it as? androidx.appcompat.app.AlertDialog }
                 .firstOrNull { it.isShowing && it.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)?.text?.toString() == "QQ 分享需要先授权" }
             if (guideDialog == null) Thread.sleep(100)
         }
@@ -679,6 +692,8 @@ class MainActivityTest {
     fun `引导对话框选普通分享 走系统分享面板`() {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
+        activity.roomInfoFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = false
             override fun login(
@@ -697,14 +712,14 @@ class MainActivityTest {
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
         }
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        clickShareOption(activity, R.id.rowShareQq)
         // 等引导 dialog 出现
         val deadline = System.currentTimeMillis() + 10_000
         var guideDialog: androidx.appcompat.app.AlertDialog? = null
         while (guideDialog == null && System.currentTimeMillis() < deadline) {
             shadowOf(android.os.Looper.getMainLooper()).idle()
             guideDialog = org.robolectric.shadows.ShadowDialog.getShownDialogs()
-                .map { it as androidx.appcompat.app.AlertDialog }
+                .mapNotNull { it as? androidx.appcompat.app.AlertDialog }
                 .firstOrNull { it.isShowing && it.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)?.text?.toString() == "QQ 分享需要先授权" }
             if (guideDialog == null) Thread.sleep(100)
         }
@@ -727,6 +742,8 @@ class MainActivityTest {
         makeQqInstalled(true)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         var shareCalled = false
+        // fake fetcher：免真网络 3s 超时；null → 兜底封面+本地缓存状态
+        activity.roomInfoFetcher = { null }
         activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
             override fun isAuthorized(): Boolean = true  // session 看起来还有效
             override fun login(
@@ -749,7 +766,7 @@ class MainActivityTest {
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
         }
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare).performClick()
+        clickShareOption(activity, R.id.rowShareQq)
         val deadline = System.currentTimeMillis() + 10_000
         while (!shareCalled && System.currentTimeMillis() < deadline) {
             shadowOf(android.os.Looper.getMainLooper()).idle()
@@ -760,7 +777,7 @@ class MainActivityTest {
 
         // 验证：再次弹授权引导对话框
         val dialog = org.robolectric.shadows.ShadowDialog.getShownDialogs()
-            .map { it as androidx.appcompat.app.AlertDialog }
+            .mapNotNull { it as? androidx.appcompat.app.AlertDialog }
             .firstOrNull { it.isShowing && it.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)?.text?.toString() == "QQ 分享需要先授权" }
         assertNotNull("session 过期 -6 应重新弹引导", dialog)
         val titleView = dialog!!.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)
@@ -778,6 +795,145 @@ class MainActivityTest {
         assertTrue("应含直播间链接: $text", text.contains("live.bilibili.com/11258892"))
         assertTrue("应含 bbid 归因: $text", text.contains("bbid=8945059"))
         assertTrue("应含 share_source: $text", text.contains("share_source=copy_link"))
+    }
+
+    @Test
+    fun `点分享按钮 弹出三选一分享面板`() {
+        // 用户需求（2026-08）：分享不再是固定 QQ 卡片，应能三选一
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare)
+            .performClick()
+
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog
+        assertTrue("分享面板应弹出", sheet.isShowing)
+        assertNotNull("应有 QQ 卡片选项", sheet.findViewById(R.id.rowShareQq))
+        assertNotNull("应有图文选项", sheet.findViewById(R.id.rowShareImageText))
+        assertNotNull("应有长宣传图选项", sheet.findViewById(R.id.rowSharePromo))
+    }
+
+    @Test
+    fun `未开播时QQ卡片文案体现期待开播`() {
+        // 用户需求（2026-08）：没开播时分享内容不能再误报"开播了"
+        makeQqInstalled(true)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.roomInfoFetcher = {
+            com.bilibili.livemonitor.api.BilibiliApi.RoomInfo("旧标题", "https://i0.hdslb.com/c.jpg", false)
+        }
+        var capturedParams: android.os.Bundle? = null
+        activity.qqSdkSharer = object : com.bilibili.livemonitor.util.QqSdkSharer {
+            override fun isAuthorized(): Boolean = true
+            override fun login(
+                activity: android.app.Activity,
+                onAuthorized: () -> Unit,
+                onCancelled: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { }
+            override fun shareToQQ(
+                activity: android.app.Activity,
+                params: android.os.Bundle,
+                onComplete: () -> Unit,
+                onCancel: () -> Unit,
+                onError: (errorCode: Int, message: String?) -> Unit
+            ) { capturedParams = params }
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) = Unit
+        }
+
+        clickShareOption(activity, R.id.rowShareQq)
+        waitShareResult("qq params captured") { capturedParams != null }
+
+        assertEquals(
+            "白绮还没开播",
+            capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE)
+        )
+        assertEquals(
+            "白绮还没开播 · 11258892",
+            capturedParams!!.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY)
+        )
+    }
+
+    @Test
+    fun `图文分享 封面就绪时 intent 带图片流与状态文案`() {
+        // 用户场景：选图文分享 → 系统面板，图片流是 FileProvider 授权 uri，
+        // 文案是状态感知正文 + 归因链接
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.roomInfoFetcher = {
+            com.bilibili.livemonitor.api.BilibiliApi.RoomInfo(null, "https://i0.hdslb.com/c.jpg", false)
+        }
+        activity.coverDownloader = {
+            // FileProvider 只映射 cacheDir/shared 下的文件（file_paths.xml）
+            val dir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+            java.io.File(dir, "cover.jpg").apply { writeBytes(byteArrayOf(1, 2, 3, 4)) }
+        }
+
+        clickShareOption(activity, R.id.rowShareImageText)
+        waitShareResult("image-text share intent") {
+            shadowOf(context).peekNextStartedActivity() != null
+        }
+
+        val started = shadowOf(context).nextStartedActivity
+        val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT) ?: started
+        assertEquals(Intent.ACTION_SEND, inner?.action)
+        assertEquals("image/*", inner?.type)
+        val stream = inner?.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+        assertNotNull("必须带图片流", stream)
+        assertTrue("图片流必须经 FileProvider 授权: $stream",
+            stream.toString().startsWith("content://com.bilibili.livemonitor.fileprovider/"))
+        val text = inner?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        assertTrue("未开播文案: $text", text.contains("蹲一个开播"))
+        assertTrue("归因链接: $text", text.contains("live.bilibili.com/11258892"))
+    }
+
+    @Test
+    fun `图文分享 封面下载失败 回退纯文本分享`() {
+        // 用户场景：没网/CDN 挂了 → 不能卡住或消失，降级为纯文本（文案仍准确）
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.roomInfoFetcher = {
+            com.bilibili.livemonitor.api.BilibiliApi.RoomInfo(null, "https://i0.hdslb.com/c.jpg", false)
+        }
+        activity.coverDownloader = { null }
+
+        clickShareOption(activity, R.id.rowShareImageText)
+        waitShareResult("fallback text share intent") {
+            shadowOf(context).peekNextStartedActivity() != null
+        }
+
+        val started = shadowOf(context).nextStartedActivity
+        val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT) ?: started
+        assertEquals(Intent.ACTION_SEND, inner?.action)
+        assertEquals("text/plain", inner?.type)
+        assertNull("下载失败不得带图片流", inner?.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM))
+        val text = inner?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        assertTrue("状态文案仍然准确: $text", text.contains("蹲一个开播"))
+    }
+
+    @Test
+    fun `长宣传图 生成后 intent 带png图片流与状态文案`() {
+        // 用户场景：选长宣传图 → 生成 1080x1680 png（封面+文案+二维码），系统面板分享
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.roomInfoFetcher = {
+            com.bilibili.livemonitor.api.BilibiliApi.RoomInfo("失眠 无言", "https://i0.hdslb.com/c.jpg", true)
+        }
+        activity.coverBitmapDownloader = {
+            android.graphics.Bitmap.createBitmap(64, 32, android.graphics.Bitmap.Config.ARGB_8888)
+        }
+
+        clickShareOption(activity, R.id.rowSharePromo)
+        waitShareResult("promo share intent") {
+            shadowOf(context).peekNextStartedActivity() != null
+        }
+
+        val started = shadowOf(context).nextStartedActivity
+        val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT) ?: started
+        assertEquals(Intent.ACTION_SEND, inner?.action)
+        assertEquals("image/png", inner?.type)
+        val stream = inner?.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+        assertNotNull("必须带长图图片流", stream)
+        assertTrue("图片流必须经 FileProvider 授权: $stream",
+            stream.toString().startsWith("content://com.bilibili.livemonitor.fileprovider/"))
+        val text = inner?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        assertTrue("开播文案: $text", text.contains("正在直播"))
     }
 
     @Test
@@ -1479,6 +1635,27 @@ class MainActivityTest {
         return (org.robolectric.shadows.ShadowDialog.getLatestDialog()
             as com.google.android.material.bottomsheet.BottomSheetDialog)
             .findViewById<android.view.View>(R.id.itemsContainer)!!
+    }
+
+    /** 点分享按钮 → 三选一面板 → 点指定选项（rowShareQq/rowShareImageText/rowSharePromo） */
+    private fun clickShareOption(activity: MainActivity, rowId: Int) {
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShare)
+            .performClick()
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog
+        assertTrue("分享面板应弹出", sheet.isShowing)
+        sheet.findViewById<android.view.View>(rowId)!!.performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+    }
+
+    /** 等分享协程产出结果（shareScope 主线程协程 + Robolectric 暂停模式需泵 looper） */
+    private fun waitShareResult(what: String, cond: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (!cond() && System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            Thread.sleep(50)
+        }
+        assertTrue("timeout: $what", cond())
     }
 
     private fun makeBilibiliInstalled(vararg variants: Pair<String, String>) {

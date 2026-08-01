@@ -203,7 +203,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             btnShare.setOnClickListener {
-                shareLiveRoom()
+                showShareOptions()
             }
 
             btnCheckUpdate.setOnClickListener {
@@ -709,20 +709,148 @@ class MainActivity : AppCompatActivity() {
     internal var qqSdkSharer: com.bilibili.livemonitor.util.QqSdkSharer =
         com.bilibili.livemonitor.util.DefaultQqSdkSharer()
 
+    // internal：分享数据获取 seam（单测注入 fake——真实 fetch 在 Robolectric 里要等满 3s 超时）
+    internal var roomInfoFetcher: suspend (Long) -> com.bilibili.livemonitor.api.BilibiliApi.RoomInfo? =
+        { roomId -> com.bilibili.livemonitor.api.BilibiliApi().fetchRoomInfo(roomId) }
+
+    // internal：分享配图加载器（单测可整体替换，避免 Bitmap.compress 等真机路径）
+    internal var shareImageLoader = com.bilibili.livemonitor.util.ShareImageLoader()
+
+    // internal：封面下载 seam（单测注入 fake 文件/bitmap，不走真网络）
+    internal var coverDownloader: (String) -> java.io.File? = { url ->
+        shareImageLoader.download(this, url, "cover.jpg")
+    }
+    internal var coverBitmapDownloader: (String) -> android.graphics.Bitmap? = { url ->
+        shareImageLoader.downloadBitmap(url)
+    }
+
+    // 当前分享用的实时状态（fetch 成功用 API 的；失败回退本地缓存，供文案/兜底共用）
+    private var currentShareLive: Boolean = false
+
+    /** 分享入口：三选一（QQ 卡片 / 图文 / 长宣传图），BottomSheet 与设置抽屉同风格 */
+    internal fun showShareOptions() {
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val view = layoutInflater.inflate(R.layout.dialog_share_options, null)
+        view.findViewById<android.view.View>(R.id.rowShareQq).setOnClickListener {
+            sheet.dismiss()
+            shareLiveRoom()
+        }
+        view.findViewById<android.view.View>(R.id.rowShareImageText).setOnClickListener {
+            sheet.dismiss()
+            shareAsImageText()
+        }
+        view.findViewById<android.view.View>(R.id.rowSharePromo).setOnClickListener {
+            sheet.dismiss()
+            shareAsPromoImage()
+        }
+        sheet.setContentView(view)
+        sheet.show()
+    }
+
+    /**
+     * 分享文案的开播状态：fetch 成功用 API 实时状态（分享永远新鲜）；
+     * fetch 失败回退本地缓存（监控中的服务状态，否则上次成功检测值）。
+     */
+    private fun resolveShareLiveState(roomInfo: com.bilibili.livemonitor.api.BilibiliApi.RoomInfo?): Boolean =
+        when {
+            roomInfo != null -> roomInfo.live
+            LiveCheckService.isRunning -> LiveCheckService.lastLiveStatus
+            else -> preferenceManager.isLastCheckSuccess() && preferenceManager.isLastCheckLive()
+        }
+
     internal fun shareLiveRoom() {
         Toast.makeText(this, "正在生成分享卡片…", Toast.LENGTH_SHORT).show()
         // 注入 applicationContext 给 DefaultQqSdkSharer（isAuthorized/login 需要）
         (qqSdkSharer as? com.bilibili.livemonitor.util.DefaultQqSdkSharer)?.bind(applicationContext)
         shareScope.launch {
             val roomInfo = withTimeoutOrNull(3000) {
-                BilibiliApi().fetchRoomInfo(QqShare.ROOM_ID)
+                roomInfoFetcher(QqShare.ROOM_ID)
             }
             val cover = roomInfo?.cover ?: QqShare.FALLBACK_COVER_URL
             val title = roomInfo?.title
-            AppLogger.d("MainActivity", "share cover=$cover title=$title")
+            val isLive = resolveShareLiveState(roomInfo)
+            AppLogger.d("MainActivity", "share cover=$cover title=$title live=$isLive")
             currentShareTitle = title
-            val params = QqShare.buildSdkShareParams(cover, title)
+            currentShareLive = isLive
+            val params = QqShare.buildSdkShareParams(cover, title, isLive)
             doQqShare(params)
+        }
+    }
+
+    /**
+     * 图文分享：状态感知文案（EXTRA_TEXT）+ 直播间封面（EXTRA_STREAM）。
+     * 预研结论：QQ/微信收图片分享会丢 EXTRA_TEXT——对面板标题做了预期管理，
+     * 需要"文案绝不丢"的场景引导用户选长宣传图。
+     */
+    internal fun shareAsImageText() {
+        Toast.makeText(this, "正在准备图文分享…", Toast.LENGTH_SHORT).show()
+        shareScope.launch {
+            val roomInfo = withTimeoutOrNull(3000) { roomInfoFetcher(QqShare.ROOM_ID) }
+            val isLive = resolveShareLiveState(roomInfo)
+            val title = roomInfo?.title
+            currentShareTitle = title
+            currentShareLive = isLive
+            val coverUrl = roomInfo?.cover
+            val file = coverUrl?.let {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    coverDownloader(it)
+                }
+            }
+            if (file == null) {
+                // 封面拿不到时降级纯文本，状态文案仍然准确
+                AppLogger.w("MainActivity", "image-text share: cover unavailable, fallback to text")
+                fallbackToSystemShare()
+                return@launch
+            }
+            val uri = shareImageLoader.shareableUri(this@MainActivity, file)
+            val text = "${com.bilibili.livemonitor.domain.ShareTextDecider.body(isLive, QqShare.ROOM_ID, title)} ${QqShare.buildShareUrl()}"
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, text)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "图文分享（部分应用可能只发图片）"))
+        }
+    }
+
+    /**
+     * 生成长宣传图：封面+状态文案+直播间二维码全部烙进图里，
+     * 任何分享目标都不丢文案（预研：QQ/微信会丢 EXTRA_TEXT）。
+     */
+    internal fun shareAsPromoImage() {
+        Toast.makeText(this, "正在生成长宣传图…", Toast.LENGTH_SHORT).show()
+        shareScope.launch {
+            val roomInfo = withTimeoutOrNull(3000) { roomInfoFetcher(QqShare.ROOM_ID) }
+            val isLive = resolveShareLiveState(roomInfo)
+            val title = roomInfo?.title
+            val coverBitmap = roomInfo?.cover?.let {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    coverBitmapDownloader(it)
+                }
+            }
+            val headline = if (isLive && !title.isNullOrBlank()) "白绮开播啦！「$title」"
+                           else com.bilibili.livemonitor.domain.ShareTextDecider.title(isLive, title)
+            val body = com.bilibili.livemonitor.domain.ShareTextDecider.body(isLive, QqShare.ROOM_ID, title)
+            val promo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.bilibili.livemonitor.util.PromoImageRenderer.render(coverBitmap, headline, body)
+            }
+            val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                shareImageLoader.save(this@MainActivity, promo, "promo.png")
+            }
+            promo.recycle()
+            if (file == null) {
+                Toast.makeText(this@MainActivity, "长图生成失败", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val uri = shareImageLoader.shareableUri(this@MainActivity, file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, "$body ${QqShare.buildShareUrl()}")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "分享长宣传图"))
         }
     }
 
@@ -802,7 +930,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun fallbackToSystemShare() {
         AppLogger.d("MainActivity", "fallback to system share")
-        startActivity(Intent.createChooser(QqShare.buildSystemShareIntent(currentShareTitle), "分享直播间"))
+        startActivity(
+            Intent.createChooser(
+                QqShare.buildSystemShareIntent(currentShareTitle, currentShareLive),
+                "分享直播间"
+            )
+        )
     }
 
     // 最终兜底：把带 bbid 归因的分享链接复制到剪贴板

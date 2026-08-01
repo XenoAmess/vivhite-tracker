@@ -53,11 +53,11 @@ object QqShare {
     /**
      * @param coverUrl 封面图 URL
      * @param liveTitle 直播标题（如 "失眠 无言"）。null → 兜底硬编码
+     * @param isLive 实时开播状态：false 时文案体现"还没开播，期待开播"
      */
-    fun buildSdkShareParams(coverUrl: String, liveTitle: String? = null): Bundle {
-        val title = if (!liveTitle.isNullOrBlank()) "「$liveTitle」" else "白绮开播啦！"
-        val summary = if (!liveTitle.isNullOrBlank()) "白绮正在直播 · $ROOM_ID"
-                      else "白绮直播间 · $ROOM_ID"
+    fun buildSdkShareParams(coverUrl: String, liveTitle: String? = null, isLive: Boolean = true): Bundle {
+        val title = com.bilibili.livemonitor.domain.ShareTextDecider.title(isLive, liveTitle)
+        val summary = com.bilibili.livemonitor.domain.ShareTextDecider.summary(isLive, ROOM_ID)
         return Bundle().apply {
             putString(QQShare.SHARE_TO_QQ_TITLE, title)
             putString(QQShare.SHARE_TO_QQ_SUMMARY, summary)
@@ -70,14 +70,14 @@ object QqShare {
     // 系统分享 intent：标题 + 描述 + 归因链接
     /**
      * @param liveTitle 直播标题。null → 兜底硬编码
+     * @param isLive 实时开播状态：false 时文案体现"还没开播，期待开播"
      */
-    fun buildSystemShareIntent(liveTitle: String? = null): Intent {
-        val desc = if (!liveTitle.isNullOrBlank()) "白绮正在直播 · $ROOM_ID · 「$liveTitle」"
-                   else "B站直播间 $ROOM_ID，快来看！"
+    fun buildSystemShareIntent(liveTitle: String? = null, isLive: Boolean = true): Intent {
+        val decider = com.bilibili.livemonitor.domain.ShareTextDecider
         return Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "白绮开播啦！")
-            putExtra(Intent.EXTRA_TEXT, "$desc ${buildShareUrl()}")
+            putExtra(Intent.EXTRA_SUBJECT, decider.title(isLive, liveTitle))
+            putExtra(Intent.EXTRA_TEXT, "${decider.body(isLive, ROOM_ID, liveTitle)} ${buildShareUrl()}")
         }
     }
 

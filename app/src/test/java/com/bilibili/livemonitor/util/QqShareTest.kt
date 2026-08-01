@@ -45,7 +45,26 @@ class QqShareTest {
     fun `SDK分享参数 无标题时兜底硬编码`() {
         val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", null)
         assertEquals("白绮开播啦！", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
-        assertEquals("白绮直播间 · 11258892", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY))
+        // 有实时状态后 summary 用准确的开播文案（旧版"白绮直播间"是不知道状态时的中性词）
+        assertEquals("白绮正在直播 · 11258892", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY))
+    }
+
+    @Test
+    fun `SDK分享参数 未开播时文案体现期待开播`() {
+        // 用户需求：没开播时分享内容不能再误报"开播了"
+        val params = QqShare.buildSdkShareParams("https://i0.hdslb.com/cover.jpg", "旧标题", isLive = false)
+        assertEquals("白绮还没开播", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_TITLE))
+        assertEquals("白绮还没开播 · 11258892", params.getString(com.tencent.connect.share.QQShare.SHARE_TO_QQ_SUMMARY))
+    }
+
+    @Test
+    fun `系统分享兜底 未开播时文案体现期待开播`() {
+        val intent = QqShare.buildSystemShareIntent(null, isLive = false)
+        val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT) ?: ""
+        assertTrue("应体现还没开播: $text", text.contains("还没开播"))
+        assertTrue("应体现蹲开播意向: $text", text.contains("蹲一个开播"))
+        assertFalse("不得误报开播: $text", text.contains("正在直播"))
+        assertTrue("应带直播间链接: $text", text.contains("live.bilibili.com/11258892"))
     }
 
     @Test

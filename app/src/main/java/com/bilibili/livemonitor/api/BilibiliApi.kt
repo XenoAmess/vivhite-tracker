@@ -79,14 +79,15 @@ open class BilibiliApi : LiveStatusChecker {
     }
 
     /**
-     * 直播间信息（一次 API 调用同时拿标题和封面，避免冗余网络请求）。
+     * 直播间信息（一次 API 调用同时拿标题、封面、开播状态，避免冗余网络请求）。
      * @param title 直播标题（如 "失眠 无言"），未开播时可能是上次直播的旧标题
      * @param cover 直播间封面 URL，null 时取 FALLBACK_COVER_URL
+     * @param live 实时开播状态（分享文案要区分"开播了"和"还没开播"）
      */
-    data class RoomInfo(val title: String?, val cover: String?)
+    data class RoomInfo(val title: String?, val cover: String?, val live: Boolean)
 
     /**
-     * 取直播间标题 + 封面。返回 null = 网络/API 异常。
+     * 取直播间标题 + 封面 + 实时开播状态。返回 null = 网络/API 异常。
      * 替代旧版 fetchRoomCover（标题之前被丢弃了，现在一次请求拿回）。
      */
     suspend fun fetchRoomInfo(roomId: Long): RoomInfo? = withContext(Dispatchers.IO) {
@@ -104,7 +105,8 @@ open class BilibiliApi : LiveStatusChecker {
             connection.disconnect()
             RoomInfo(
                 title = parseRoomTitle(response),
-                cover = parseRoomCover(response)
+                cover = parseRoomCover(response),
+                live = parseApiResponse(response) is LiveStatus.Live
             )
         } catch (e: Exception) {
             null
