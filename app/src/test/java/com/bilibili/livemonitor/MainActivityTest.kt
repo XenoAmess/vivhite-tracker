@@ -1029,7 +1029,7 @@ class MainActivityTest {
     }
 
     @Test
-    fun `魔法期对话框 渲染日历且点选日期写入三天段`() {
+    fun `魔法期对话框 点空白日建段并自动展开编辑面板`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         prefs.setMagicPeriodsJson("[]")
 
@@ -1038,8 +1038,11 @@ class MainActivityTest {
         val grid = dialog.findViewById<android.widget.GridLayout>(R.id.calendarGrid)!!
         assertTrue("日历网格必须有单元格", grid.childCount > 28)
         assertNotNull(dialog.findViewById<android.widget.TextView>(R.id.tvMonthTitle))
+        // 编辑面板默认隐藏
+        assertEquals(android.view.View.GONE,
+            dialog.findViewById<android.widget.LinearLayout>(R.id.editPanel).visibility)
 
-        // 点选 15 日（任意未标记日）→ 新增 3 天段并持久化
+        // 点选 15 日（未标记）→ 建 3 天段 + 面板自动展开
         var dayCell: android.widget.TextView? = null
         for (i in 0 until grid.childCount) {
             val child = grid.getChildAt(i) as? android.widget.TextView
@@ -1051,36 +1054,97 @@ class MainActivityTest {
 
         val saved = com.bilibili.livemonitor.util.MagicPeriodStore.load(prefs)
         assertEquals(1, saved.size)
-        assertEquals(
-            3 * 86_400_000L,
-            saved[0].end - saved[0].start
-        )
+        assertEquals(3 * 86_400_000L, saved[0].end - saved[0].start)
+        assertEquals("新建段必须自动展开编辑面板", android.view.View.VISIBLE,
+            dialog.findViewById<android.widget.LinearLayout>(R.id.editPanel).visibility)
     }
 
     @Test
-    fun `魔法期对话框 时长加减联动结束时间`() {
+    fun `魔法期对话框 点已标记条打开编辑 时长加减联动 删除该段`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        val t0 = System.currentTimeMillis()
+        // 预置一段：当月 10 日 00:00 起 3 天
+        val t0 = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.DAY_OF_MONTH, 10)
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
         com.bilibili.livemonitor.util.MagicPeriodStore.save(
             prefs, listOf(com.bilibili.livemonitor.domain.MagicPeriod(t0, t0 + 3 * 86_400_000L))
         )
 
         activity.showMagicPeriodDialog()
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-        val tvDuration = dialog.findViewById<android.widget.TextView>(R.id.tvDuration)!!
+        val grid = dialog.findViewById<android.widget.GridLayout>(R.id.calendarGrid)!!
+        // 面板默认隐藏（没有选中任何段）
+        assertEquals(android.view.View.GONE,
+            dialog.findViewById<android.widget.LinearLayout>(R.id.editPanel).visibility)
+
+        // 点已标记的 10 日 → 打开编辑面板
+        var dayCell: android.widget.TextView? = null
+        for (i in 0 until grid.childCount) {
+            val child = grid.getChildAt(i) as? android.widget.TextView
+            if (child?.text?.toString() == "10") { dayCell = child; break }
+        }
+        assertNotNull(dayCell)
+        dayCell!!.performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals("点已标记的条必须展开编辑面板", android.view.View.VISIBLE,
+            dialog.findViewById<android.widget.LinearLayout>(R.id.editPanel).visibility)
+
+        // 时长 ±：可见文本（修复空白按钮回归）且联动结束时间
+        val btnMinus = dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDurMinus)!!
+        val btnPlus = dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDurPlus)!!
+        assertEquals("-", btnMinus.text.toString())
+        assertEquals("+", btnPlus.text.toString())
+        val tvDuration = dialog.findViewById<android.widget.TextView>(R.id.tvEditDuration)!!
         assertEquals("3", tvDuration.text.toString())
 
-        dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDurationPlus)
-            .performClick()
+        btnPlus.performClick()
         shadowOf(android.os.Looper.getMainLooper()).idle()
         assertEquals("4", tvDuration.text.toString())
         val after = com.bilibili.livemonitor.util.MagicPeriodStore.load(prefs)
         assertEquals(t0 + 4 * 86_400_000L, after[0].end)
 
-        dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDurationMinus)
-            .performClick()
+        btnMinus.performClick()
         shadowOf(android.os.Looper.getMainLooper()).idle()
         assertEquals("3", tvDuration.text.toString())
+
+        // 删除这一段 → 段消失 + 面板收起
+        dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDelete)
+            .performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertTrue(com.bilibili.livemonitor.util.MagicPeriodStore.load(prefs).isEmpty())
+        assertEquals(android.view.View.GONE,
+            dialog.findViewById<android.widget.LinearLayout>(R.id.editPanel).visibility)
+    }
+
+    @Test
+    fun `魔法期日历 孤立日背景为全圆角GradientDrawable`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val t0 = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.DAY_OF_MONTH, 20)
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        // 孤日：只标 20 日一天
+        com.bilibili.livemonitor.util.MagicPeriodStore.save(
+            prefs, listOf(com.bilibili.livemonitor.domain.MagicPeriod(t0, t0 + 86_400_000L))
+        )
+
+        activity.showMagicPeriodDialog()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        val grid = dialog.findViewById<android.widget.GridLayout>(R.id.calendarGrid)!!
+        var dayCell: android.widget.TextView? = null
+        for (i in 0 until grid.childCount) {
+            val child = grid.getChildAt(i) as? android.widget.TextView
+            if (child?.text?.toString() == "20") { dayCell = child; break }
+        }
+        assertNotNull(dayCell)
+        val bg = dayCell!!.background
+        assertTrue("标记日背景必须是 GradientDrawable",
+            bg is android.graphics.drawable.GradientDrawable)
+        val radii = (bg as android.graphics.drawable.GradientDrawable).cornerRadii!!
+        assertTrue("孤日四角必须全圆", radii.all { it > 0f })
     }
 
     @Test

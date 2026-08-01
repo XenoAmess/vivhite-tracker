@@ -413,9 +413,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** 魔法期记录对话框：月份导航 + 7 列日历 + 联动编辑 + 记录列表 */
+    /** 魔法期记录对话框：纯日历驱动——点空白日建段（自动展开编辑），点已标记的条编辑/删除 */
     internal fun showMagicPeriodDialog() {
         val periods = loadMagicPeriods()
-        var selectedIndex = periods.indices.lastOrNull() ?: -1
+        var selectedIndex = -1 // -1 = 未在编辑任何段；>=0 = editPanel 正在编辑的段下标
         var viewYear: Int
         var viewMonth: Int // 1-12
         java.util.Calendar.getInstance().let {
@@ -426,12 +427,13 @@ class MainActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.dialog_magic_period, null)
         val grid = view.findViewById<android.widget.GridLayout>(R.id.calendarGrid)
         val tvMonth = view.findViewById<android.widget.TextView>(R.id.tvMonthTitle)
-        val btnStartDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnStartDate)
-        val btnStartTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnStartTime)
-        val btnEndDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEndDate)
-        val btnEndTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEndTime)
-        val tvDuration = view.findViewById<android.widget.TextView>(R.id.tvDuration)
-        val listContainer = view.findViewById<android.widget.LinearLayout>(R.id.magicListContainer)
+        val editPanel = view.findViewById<android.widget.LinearLayout>(R.id.editPanel)
+        val tvEditTitle = view.findViewById<android.widget.TextView>(R.id.tvEditTitle)
+        val btnStartDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditStartDate)
+        val btnStartTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditStartTime)
+        val btnEndDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditEndDate)
+        val btnEndTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditEndTime)
+        val tvDuration = view.findViewById<android.widget.TextView>(R.id.tvEditDuration)
 
         val dialog = AlertDialog.Builder(this).setView(view).create()
 
@@ -441,9 +443,26 @@ class MainActivity : AppCompatActivity() {
             set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
         }.timeInMillis
 
+        fun markedBackground(prev: Boolean, next: Boolean): android.graphics.drawable.GradientDrawable {
+            val r = 16f * resources.displayMetrics.density
+            val radii = when {
+                !prev && !next -> floatArrayOf(r, r, r, r, r, r, r, r) // 孤日全圆
+                !prev && next -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r) // 段首左圆
+                prev && next -> floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f) // 段中直角
+                else -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f) // 段尾右圆
+            }
+            return android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadii = radii
+                setColor(0xFF6750A4.toInt())
+            }
+        }
+
         fun refreshEditors() {
             if (selectedIndex in periods.indices) {
+                editPanel.visibility = android.view.View.VISIBLE
                 val p = periods[selectedIndex]
+                tvEditTitle.text = "编辑这一段（${magicRangeFmt.format(java.util.Date(p.start))} 起）"
                 btnStartDate.text = magicDateFmt.format(java.util.Date(p.start))
                 btnStartTime.text = magicTimeFmt.format(java.util.Date(p.start))
                 btnEndDate.text = magicDateFmt.format(java.util.Date(p.end))
@@ -451,26 +470,7 @@ class MainActivity : AppCompatActivity() {
                 tvDuration.text = com.bilibili.livemonitor.domain.MagicPeriodDecider
                     .computeDurationDays(p.start, p.end).toString()
             } else {
-                btnStartDate.text = "--"; btnStartTime.text = "--"
-                btnEndDate.text = "--"; btnEndTime.text = "--"
-                tvDuration.text = "3"
-            }
-        }
-
-        fun refreshList() {
-            listContainer.removeAllViews()
-            periods.forEachIndexed { idx, p ->
-                val tv = android.widget.TextView(this).apply {
-                    text = "${magicRangeFmt.format(java.util.Date(p.start))}  ~  ${magicRangeFmt.format(java.util.Date(p.end))}"
-                    textSize = 13f
-                    setPadding(8, 8, 8, 8)
-                    setTextColor(if (idx == selectedIndex) 0xFF6750A4.toInt() else 0xFF1A1A1A.toInt())
-                    setOnClickListener {
-                        selectedIndex = idx
-                        refreshEditors(); refreshList()
-                    }
-                }
-                listContainer.addView(tv)
+                editPanel.visibility = android.view.View.GONE
             }
         }
 
@@ -484,7 +484,7 @@ class MainActivity : AppCompatActivity() {
             val firstWeekday = first.get(java.util.Calendar.DAY_OF_WEEK) // 1=周日
             val daysInMonth = first.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
             val cellSize = grid.width.takeIf { it > 0 }?.div(7) ?: 120
-            // 前置空白
+            val margin = (2 * resources.displayMetrics.density).toInt()
             repeat(firstWeekday - 1) {
                 val blank = android.widget.TextView(this)
                 blank.layoutParams = android.widget.GridLayout.LayoutParams().apply {
@@ -498,26 +498,40 @@ class MainActivity : AppCompatActivity() {
                     set(java.util.Calendar.MILLISECOND, 0)
                 }
                 val dayStart = dayStartOf(dayCal)
-                val marked = com.bilibili.livemonitor.domain.MagicPeriodDecider.isDayMarked(periods, dayStart)
+                val pos = com.bilibili.livemonitor.domain.MagicPeriodDecider.segmentPositionOf(periods, dayStart)
+                val marked = pos != com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.NONE
                 val cell = android.widget.TextView(this).apply {
                     text = day.toString()
                     gravity = android.view.Gravity.CENTER
                     textSize = 13f
                     layoutParams = android.widget.GridLayout.LayoutParams().apply {
                         width = cellSize; height = cellSize
+                        setMargins(margin, margin, margin, margin)
                     }
                     if (marked) {
-                        setBackgroundColor(0xFF6750A4.toInt())
+                        val prev = pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.MIDDLE ||
+                            pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.LAST
+                        val next = pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.MIDDLE ||
+                            pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.FIRST
+                        background = markedBackground(prev, next)
                         setTextColor(0xFFFFFFFF.toInt())
                     } else {
                         setTextColor(0xFF1A1A1A.toInt())
                     }
                     setOnClickListener {
-                        val toggled = com.bilibili.livemonitor.domain.MagicPeriodDecider.toggleDay(periods, dayStart)
-                        periods.clear(); periods.addAll(toggled)
-                        selectedIndex = periods.indices.lastOrNull() ?: -1
-                        saveMagicPeriods(periods)
-                        refreshCalendar(); refreshEditors(); refreshList()
+                        if (!marked) {
+                            // 点空白日：建 3 天段并自动展开编辑
+                            val toggled = com.bilibili.livemonitor.domain.MagicPeriodDecider.toggleDay(periods, dayStart)
+                            periods.clear(); periods.addAll(toggled)
+                            selectedIndex = periods.indices.lastOrNull() ?: -1
+                            saveMagicPeriods(periods)
+                        } else {
+                            // 点已标记的条：定位覆盖段，展开编辑
+                            selectedIndex = periods.indexOfFirst {
+                                com.bilibili.livemonitor.domain.MagicPeriodDecider.coversDay(it, dayStart)
+                            }
+                        }
+                        refreshCalendar(); refreshEditors()
                     }
                 }
                 grid.addView(cell)
@@ -536,12 +550,9 @@ class MainActivity : AppCompatActivity() {
                 refreshCalendar()
             }
 
-        // 开始日期/时间
+        // 段编辑：开始/结束（DatePicker + TimePicker，联动照旧）
         fun pickDateTime(isStart: Boolean, isDate: Boolean) {
-            if (selectedIndex !in periods.indices) {
-                Toast.makeText(this, "请先在日历上点选一天", Toast.LENGTH_SHORT).show()
-                return
-            }
+            if (selectedIndex !in periods.indices) return
             val p = periods[selectedIndex]
             val base = if (isStart) p.start else p.end
             val cal = java.util.Calendar.getInstance().apply { timeInMillis = base }
@@ -550,17 +561,14 @@ class MainActivity : AppCompatActivity() {
                     val newCal = java.util.Calendar.getInstance().apply {
                         timeInMillis = base; set(y, m, d)
                     }
-                    if (isStart) {
-                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                            .updateStart(periods, selectedIndex, newCal.timeInMillis)
-                        periods.clear(); periods.addAll(updated)
+                    val updated = if (isStart) {
+                        com.bilibili.livemonitor.domain.MagicPeriodDecider.updateStart(periods, selectedIndex, newCal.timeInMillis)
                     } else {
-                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                            .updateEnd(periods, selectedIndex, newCal.timeInMillis)
-                        periods.clear(); periods.addAll(updated)
+                        com.bilibili.livemonitor.domain.MagicPeriodDecider.updateEnd(periods, selectedIndex, newCal.timeInMillis)
                     }
+                    periods.clear(); periods.addAll(updated)
                     saveMagicPeriods(periods)
-                    refreshEditors(); refreshCalendar(); refreshList()
+                    refreshEditors(); refreshCalendar()
                 }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH),
                     cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
             } else {
@@ -570,17 +578,14 @@ class MainActivity : AppCompatActivity() {
                         set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min)
                         set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
                     }
-                    if (isStart) {
-                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                            .updateStart(periods, selectedIndex, newCal.timeInMillis)
-                        periods.clear(); periods.addAll(updated)
+                    val updated = if (isStart) {
+                        com.bilibili.livemonitor.domain.MagicPeriodDecider.updateStart(periods, selectedIndex, newCal.timeInMillis)
                     } else {
-                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                            .updateEnd(periods, selectedIndex, newCal.timeInMillis)
-                        periods.clear(); periods.addAll(updated)
+                        com.bilibili.livemonitor.domain.MagicPeriodDecider.updateEnd(periods, selectedIndex, newCal.timeInMillis)
                     }
+                    periods.clear(); periods.addAll(updated)
                     saveMagicPeriods(periods)
-                    refreshEditors(); refreshCalendar(); refreshList()
+                    refreshEditors(); refreshCalendar()
                 }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
             }
         }
@@ -589,8 +594,8 @@ class MainActivity : AppCompatActivity() {
         btnEndDate.setOnClickListener { pickDateTime(isStart = false, isDate = true) }
         btnEndTime.setOnClickListener { pickDateTime(isStart = false, isDate = false) }
 
-        // 时长加减
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDurationMinus)
+        // 段编辑：时长 ±
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDurMinus)
             .setOnClickListener {
                 if (selectedIndex in periods.indices) {
                     val cur = com.bilibili.livemonitor.domain.MagicPeriodDecider
@@ -600,11 +605,11 @@ class MainActivity : AppCompatActivity() {
                             .updateDuration(periods, selectedIndex, cur - 1)
                         periods.clear(); periods.addAll(updated)
                         saveMagicPeriods(periods)
-                        refreshEditors(); refreshCalendar(); refreshList()
+                        refreshEditors(); refreshCalendar()
                     }
                 }
             }
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDurationPlus)
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDurPlus)
             .setOnClickListener {
                 if (selectedIndex in periods.indices) {
                     val cur = com.bilibili.livemonitor.domain.MagicPeriodDecider
@@ -613,26 +618,33 @@ class MainActivity : AppCompatActivity() {
                         .updateDuration(periods, selectedIndex, cur + 1)
                     periods.clear(); periods.addAll(updated)
                     saveMagicPeriods(periods)
-                    refreshEditors(); refreshCalendar(); refreshList()
+                    refreshEditors(); refreshCalendar()
                 }
             }
 
-        // 删除选中
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnMagicDelete)
+        // 段编辑：删除这一段
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDelete)
             .setOnClickListener {
                 if (selectedIndex in periods.indices) {
                     periods.removeAt(selectedIndex)
-                    selectedIndex = periods.indices.lastOrNull() ?: -1
+                    selectedIndex = -1
                     saveMagicPeriods(periods)
-                    refreshEditors(); refreshCalendar(); refreshList()
+                    refreshEditors(); refreshCalendar()
                 }
+            }
+
+        // 段编辑：收起
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditClose)
+            .setOnClickListener {
+                selectedIndex = -1
+                refreshEditors(); refreshCalendar()
             }
 
         // 完成
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnMagicDone)
             .setOnClickListener { dialog.dismiss() }
 
-        refreshCalendar(); refreshEditors(); refreshList()
+        refreshCalendar(); refreshEditors()
         dialog.show()
     }
 

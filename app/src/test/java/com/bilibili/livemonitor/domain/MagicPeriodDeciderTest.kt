@@ -63,6 +63,23 @@ class MagicPeriodDeciderTest {
     }
 
     @Test
+    fun `segmentPositionOf 孤日 段首 段中 段尾 未标记`() {
+        val seg = listOf(MagicPeriod(t0, t0 + 3 * dayMs))
+        assertEquals(MagicPeriodDecider.SegmentPosition.FIRST, MagicPeriodDecider.segmentPositionOf(seg, t0))
+        assertEquals(MagicPeriodDecider.SegmentPosition.MIDDLE, MagicPeriodDecider.segmentPositionOf(seg, t0 + dayMs))
+        assertEquals(MagicPeriodDecider.SegmentPosition.LAST, MagicPeriodDecider.segmentPositionOf(seg, t0 + 2 * dayMs))
+        assertEquals(MagicPeriodDecider.SegmentPosition.NONE, MagicPeriodDecider.segmentPositionOf(seg, t0 + 3 * dayMs))
+        assertEquals(MagicPeriodDecider.SegmentPosition.NONE, MagicPeriodDecider.segmentPositionOf(seg, t0 - dayMs))
+        // 孤日
+        val iso = listOf(MagicPeriod(t0 + 10 * dayMs, t0 + 11 * dayMs))
+        assertEquals(MagicPeriodDecider.SegmentPosition.ISOLATED, MagicPeriodDecider.segmentPositionOf(iso, t0 + 10 * dayMs))
+        // 两段不相邻，边界各自独立
+        val two = listOf(seg[0], MagicPeriod(t0 + 5 * dayMs, t0 + 6 * dayMs))
+        assertEquals(MagicPeriodDecider.SegmentPosition.ISOLATED, MagicPeriodDecider.segmentPositionOf(two, t0 + 5 * dayMs))
+        assertEquals(MagicPeriodDecider.SegmentPosition.LAST, MagicPeriodDecider.segmentPositionOf(two, t0 + 2 * dayMs))
+    }
+
+    @Test
     fun `updateStart 保持时长 updateDuration 保持开始 updateEnd 重算时长`() {
         val periods = listOf(MagicPeriod(t0, t0 + 3 * dayMs))
         val moved = MagicPeriodDecider.updateStart(periods, 0, t0 + dayMs)

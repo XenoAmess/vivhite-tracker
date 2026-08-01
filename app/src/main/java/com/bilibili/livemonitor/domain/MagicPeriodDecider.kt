@@ -49,6 +49,29 @@ object MagicPeriodDecider {
     fun isDayMarked(periods: List<MagicPeriod>, dayStartMs: Long): Boolean =
         periods.any { coversDay(it, dayStartMs) }
 
+    /** 连续天长条的分段位置（日历圆角背景用）：孤日/段首/段中/段尾/未标记 */
+    enum class SegmentPosition { ISOLATED, FIRST, MIDDLE, LAST, NONE }
+
+    /**
+     * 某天在连续长条中的位置：
+     * - NONE：未被标记
+     * - ISOLATED：前后一天都未被标记（单日段）
+     * - FIRST：前一天未标记、后一天被标记（段首，左圆角）
+     * - LAST：前一天被标记、后一天未标记（段尾，右圆角）
+     * - MIDDLE：前后一天都被标记（段中，直角连接）
+     */
+    fun segmentPositionOf(periods: List<MagicPeriod>, dayStartMs: Long): SegmentPosition {
+        if (!isDayMarked(periods, dayStartMs)) return SegmentPosition.NONE
+        val prev = isDayMarked(periods, dayStartMs - DAY_MS)
+        val next = isDayMarked(periods, dayStartMs + DAY_MS)
+        return when {
+            !prev && !next -> SegmentPosition.ISOLATED
+            !prev && next -> SegmentPosition.FIRST
+            prev && !next -> SegmentPosition.LAST
+            else -> SegmentPosition.MIDDLE
+        }
+    }
+
     /**
      * 点选 toggle（单击选开始 +3 天 / 再点取消）：
      * - 该日已被某段覆盖 → 删除所有覆盖该日的段（取消整段）
