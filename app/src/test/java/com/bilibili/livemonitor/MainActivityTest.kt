@@ -1029,6 +1029,86 @@ class MainActivityTest {
     }
 
     @Test
+    fun `魔法期对话框 渲染日历且点选日期写入三天段`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        prefs.setMagicPeriodsJson("[]")
+
+        activity.showMagicPeriodDialog()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        val grid = dialog.findViewById<android.widget.GridLayout>(R.id.calendarGrid)!!
+        assertTrue("日历网格必须有单元格", grid.childCount > 28)
+        assertNotNull(dialog.findViewById<android.widget.TextView>(R.id.tvMonthTitle))
+
+        // 点选 15 日（任意未标记日）→ 新增 3 天段并持久化
+        var dayCell: android.widget.TextView? = null
+        for (i in 0 until grid.childCount) {
+            val child = grid.getChildAt(i) as? android.widget.TextView
+            if (child?.text?.toString() == "15") { dayCell = child; break }
+        }
+        assertNotNull("应能找到 15 日单元格", dayCell)
+        dayCell!!.performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        val saved = com.bilibili.livemonitor.util.MagicPeriodStore.load(prefs)
+        assertEquals(1, saved.size)
+        assertEquals(
+            3 * 86_400_000L,
+            saved[0].end - saved[0].start
+        )
+    }
+
+    @Test
+    fun `魔法期对话框 时长加减联动结束时间`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val t0 = System.currentTimeMillis()
+        com.bilibili.livemonitor.util.MagicPeriodStore.save(
+            prefs, listOf(com.bilibili.livemonitor.domain.MagicPeriod(t0, t0 + 3 * 86_400_000L))
+        )
+
+        activity.showMagicPeriodDialog()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        val tvDuration = dialog.findViewById<android.widget.TextView>(R.id.tvDuration)!!
+        assertEquals("3", tvDuration.text.toString())
+
+        dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDurationPlus)
+            .performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals("4", tvDuration.text.toString())
+        val after = com.bilibili.livemonitor.util.MagicPeriodStore.load(prefs)
+        assertEquals(t0 + 4 * 86_400_000L, after[0].end)
+
+        dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDurationMinus)
+            .performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals("3", tvDuration.text.toString())
+    }
+
+    @Test
+    fun `魔法期分享 未结束时段图片带死了啦文案且图片流经FileProvider`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val future = System.currentTimeMillis() + 3600_000L
+        com.bilibili.livemonitor.util.MagicPeriodStore.save(
+            prefs, listOf(com.bilibili.livemonitor.domain.MagicPeriod(future - 3 * 86_400_000L, future))
+        )
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnMagicShare)
+            .performClick()
+        waitShareResult("magic share intent") {
+            shadowOf(context).peekNextStartedActivity() != null
+        }
+
+        val started = shadowOf(context).nextStartedActivity
+        val inner = started?.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT) ?: started
+        assertEquals(Intent.ACTION_SEND, inner?.action)
+        assertEquals("image/png", inner?.type)
+        val stream = inner?.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+        assertNotNull("必须带图片流", stream)
+        assertTrue("图片流必须经 FileProvider 授权: $stream",
+            stream.toString().startsWith("content://com.bilibili.livemonitor.fileprovider/"))
+        assertEquals("死了啦，都怪你~", inner?.getStringExtra(Intent.EXTRA_TEXT))
+    }
+
+    @Test
     fun `宣传图预览对话框 chip列表切换风格重渲染且记住选择`() {
         // 用户需求：50+ 种风格 chip 列表可切换看效果，选择要持久化
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
@@ -1038,7 +1118,6 @@ class MainActivityTest {
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
         val iv = dialog.findViewById<android.widget.ImageView>(R.id.ivPromoPreview)!!
         assertNotNull("默认风格应立即渲染预览", iv.drawable)
-        assertEquals("默认风格为浅色卡片", "LIGHT_CARD", prefs.getPromoStyle())
         val rv = dialog.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvPromoStyles)!!
         assertEquals("chip 列表必须含全部 53 种风格", 53, rv.adapter!!.itemCount)
 

@@ -56,6 +56,15 @@ class LiveMonitorApp : Application() {
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
                     description = "监控的 UP 主发布新动态时提醒（实验功能）"
+                },
+                NotificationChannel(
+                    CHANNEL_MAGIC_ID,
+                    "魔法期结束提醒",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "记录的魔法期到结束时间时响铃提醒"
+                    enableVibration(true)
+                    enableLights(true)
                 }
             )
 
@@ -69,9 +78,11 @@ class LiveMonitorApp : Application() {
         const val CHANNEL_ALERT_ID = "live_alert"
         const val CHANNEL_VIDEO_ALERT_ID = "video_alert"
         const val CHANNEL_DYNAMIC_ALERT_ID = "dynamic_alert"
+        const val CHANNEL_MAGIC_ID = "magic_alert"
         const val NOTIFICATION_ID_SERVICE = 1001
         const val NOTIFICATION_ID_ALERT = 1002
         const val NOTIFICATION_ID_VIDEO = 1003
         const val NOTIFICATION_ID_DYNAMIC = 1004
+        const val NOTIFICATION_ID_MAGIC = 1005
     }
 }

@@ -193,6 +193,14 @@ class MainActivity : AppCompatActivity() {
                 showSettingsDrawer()
             }
 
+            btnMagicRecord.setOnClickListener {
+                showMagicPeriodDialog()
+            }
+
+            btnMagicShare.setOnClickListener {
+                shareMagicImage()
+            }
+
             btnViewLog.setOnClickListener {
                 startActivity(Intent(this@MainActivity, LogActivity::class.java))
             }
@@ -343,6 +351,289 @@ class MainActivity : AppCompatActivity() {
     private fun computeRingtoneSubtitle(): String {
         val title = preferenceManager.getAlertSoundTitle()
         return if (title.isNotBlank()) "当前: $title" else "当前: 应用默认"
+    }
+
+    // ==================== 魔法期记录 ====================
+
+    private val magicDateFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+    private val magicTimeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+    private val magicRangeFmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+
+    private fun loadMagicPeriods(): MutableList<com.bilibili.livemonitor.domain.MagicPeriod> =
+        com.bilibili.livemonitor.util.MagicPeriodStore.load(preferenceManager).toMutableList()
+
+    private fun saveMagicPeriods(periods: List<com.bilibili.livemonitor.domain.MagicPeriod>) {
+        com.bilibili.livemonitor.util.MagicPeriodStore.save(preferenceManager, periods)
+        rescheduleMagicAlarm()
+    }
+
+    private fun rescheduleMagicAlarm() {
+        val next = com.bilibili.livemonitor.domain.MagicPeriodDecider.nextPendingEnd(
+            com.bilibili.livemonitor.util.MagicPeriodStore.load(preferenceManager),
+            System.currentTimeMillis()
+        )
+        if (next != null) {
+            com.bilibili.livemonitor.util.MagicAlarmScheduler.schedule(this, next)
+        } else {
+            com.bilibili.livemonitor.util.MagicAlarmScheduler.cancel(this)
+        }
+    }
+
+    /** 生成并分享魔法期图片（最新未结束 → 死了啦；否则 → 复活吧） */
+    internal fun shareMagicImage() {
+        Toast.makeText(this, "正在生成魔法期图片…", Toast.LENGTH_SHORT).show()
+        shareScope.launch {
+            val periods = com.bilibili.livemonitor.util.MagicPeriodStore.load(preferenceManager)
+            val latestEnd = periods.maxOfOrNull { it.end }
+            val isOngoing = latestEnd != null && latestEnd > System.currentTimeMillis()
+            val rangeText = periods.maxByOrNull { it.end }?.let {
+                com.bilibili.livemonitor.util.MagicImageRenderer.formatRange(it.start, it.end)
+            } ?: "还没有记录魔法期"
+            val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.bilibili.livemonitor.util.MagicImageRenderer.render(isOngoing, rangeText)
+            }
+            val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                shareImageLoader.save(this@MainActivity, bmp, "magic.png")
+            }
+            bmp.recycle()
+            if (file == null) {
+                Toast.makeText(this@MainActivity, "图片生成失败", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val uri = shareImageLoader.shareableUri(this@MainActivity, file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, com.bilibili.livemonitor.domain.MagicPeriodDecider.imageText(latestEnd, System.currentTimeMillis()))
+                clipData = android.content.ClipData.newUri(contentResolver, "magic", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "分享魔法期图片"))
+        }
+    }
+
+    /** 魔法期记录对话框：月份导航 + 7 列日历 + 联动编辑 + 记录列表 */
+    internal fun showMagicPeriodDialog() {
+        val periods = loadMagicPeriods()
+        var selectedIndex = periods.indices.lastOrNull() ?: -1
+        var viewYear: Int
+        var viewMonth: Int // 1-12
+        java.util.Calendar.getInstance().let {
+            viewYear = it.get(java.util.Calendar.YEAR)
+            viewMonth = it.get(java.util.Calendar.MONTH) + 1
+        }
+
+        val view = layoutInflater.inflate(R.layout.dialog_magic_period, null)
+        val grid = view.findViewById<android.widget.GridLayout>(R.id.calendarGrid)
+        val tvMonth = view.findViewById<android.widget.TextView>(R.id.tvMonthTitle)
+        val btnStartDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnStartDate)
+        val btnStartTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnStartTime)
+        val btnEndDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEndDate)
+        val btnEndTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEndTime)
+        val tvDuration = view.findViewById<android.widget.TextView>(R.id.tvDuration)
+        val listContainer = view.findViewById<android.widget.LinearLayout>(R.id.magicListContainer)
+
+        val dialog = AlertDialog.Builder(this).setView(view).create()
+
+        fun dayStartOf(cal: java.util.Calendar): Long = java.util.Calendar.getInstance().apply {
+            timeInMillis = cal.timeInMillis
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        fun refreshEditors() {
+            if (selectedIndex in periods.indices) {
+                val p = periods[selectedIndex]
+                btnStartDate.text = magicDateFmt.format(java.util.Date(p.start))
+                btnStartTime.text = magicTimeFmt.format(java.util.Date(p.start))
+                btnEndDate.text = magicDateFmt.format(java.util.Date(p.end))
+                btnEndTime.text = magicTimeFmt.format(java.util.Date(p.end))
+                tvDuration.text = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                    .computeDurationDays(p.start, p.end).toString()
+            } else {
+                btnStartDate.text = "--"; btnStartTime.text = "--"
+                btnEndDate.text = "--"; btnEndTime.text = "--"
+                tvDuration.text = "3"
+            }
+        }
+
+        fun refreshList() {
+            listContainer.removeAllViews()
+            periods.forEachIndexed { idx, p ->
+                val tv = android.widget.TextView(this).apply {
+                    text = "${magicRangeFmt.format(java.util.Date(p.start))}  ~  ${magicRangeFmt.format(java.util.Date(p.end))}"
+                    textSize = 13f
+                    setPadding(8, 8, 8, 8)
+                    setTextColor(if (idx == selectedIndex) 0xFF6750A4.toInt() else 0xFF1A1A1A.toInt())
+                    setOnClickListener {
+                        selectedIndex = idx
+                        refreshEditors(); refreshList()
+                    }
+                }
+                listContainer.addView(tv)
+            }
+        }
+
+        fun refreshCalendar() {
+            tvMonth.text = "${viewYear}-${"%02d".format(viewMonth)}"
+            grid.removeAllViews()
+            val first = java.util.Calendar.getInstance().apply {
+                set(viewYear, viewMonth - 1, 1, 0, 0, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }
+            val firstWeekday = first.get(java.util.Calendar.DAY_OF_WEEK) // 1=周日
+            val daysInMonth = first.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+            val cellSize = grid.width.takeIf { it > 0 }?.div(7) ?: 120
+            // 前置空白
+            repeat(firstWeekday - 1) {
+                val blank = android.widget.TextView(this)
+                blank.layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                    width = cellSize; height = cellSize
+                }
+                grid.addView(blank)
+            }
+            for (day in 1..daysInMonth) {
+                val dayCal = java.util.Calendar.getInstance().apply {
+                    set(viewYear, viewMonth - 1, day, 0, 0, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                val dayStart = dayStartOf(dayCal)
+                val marked = com.bilibili.livemonitor.domain.MagicPeriodDecider.isDayMarked(periods, dayStart)
+                val cell = android.widget.TextView(this).apply {
+                    text = day.toString()
+                    gravity = android.view.Gravity.CENTER
+                    textSize = 13f
+                    layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                        width = cellSize; height = cellSize
+                    }
+                    if (marked) {
+                        setBackgroundColor(0xFF6750A4.toInt())
+                        setTextColor(0xFFFFFFFF.toInt())
+                    } else {
+                        setTextColor(0xFF1A1A1A.toInt())
+                    }
+                    setOnClickListener {
+                        val toggled = com.bilibili.livemonitor.domain.MagicPeriodDecider.toggleDay(periods, dayStart)
+                        periods.clear(); periods.addAll(toggled)
+                        selectedIndex = periods.indices.lastOrNull() ?: -1
+                        saveMagicPeriods(periods)
+                        refreshCalendar(); refreshEditors(); refreshList()
+                    }
+                }
+                grid.addView(cell)
+            }
+        }
+
+        // 月份导航
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPrevMonth)
+            .setOnClickListener {
+                if (viewMonth == 1) { viewYear--; viewMonth = 12 } else viewMonth--
+                refreshCalendar()
+            }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnNextMonth)
+            .setOnClickListener {
+                if (viewMonth == 12) { viewYear++; viewMonth = 1 } else viewMonth++
+                refreshCalendar()
+            }
+
+        // 开始日期/时间
+        fun pickDateTime(isStart: Boolean, isDate: Boolean) {
+            if (selectedIndex !in periods.indices) {
+                Toast.makeText(this, "请先在日历上点选一天", Toast.LENGTH_SHORT).show()
+                return
+            }
+            val p = periods[selectedIndex]
+            val base = if (isStart) p.start else p.end
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = base }
+            if (isDate) {
+                android.app.DatePickerDialog(this, { _, y, m, d ->
+                    val newCal = java.util.Calendar.getInstance().apply {
+                        timeInMillis = base; set(y, m, d)
+                    }
+                    if (isStart) {
+                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                            .updateStart(periods, selectedIndex, newCal.timeInMillis)
+                        periods.clear(); periods.addAll(updated)
+                    } else {
+                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                            .updateEnd(periods, selectedIndex, newCal.timeInMillis)
+                        periods.clear(); periods.addAll(updated)
+                    }
+                    saveMagicPeriods(periods)
+                    refreshEditors(); refreshCalendar(); refreshList()
+                }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH),
+                    cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
+            } else {
+                android.app.TimePickerDialog(this, { _, h, min ->
+                    val newCal = java.util.Calendar.getInstance().apply {
+                        timeInMillis = base
+                        set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min)
+                        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+                    }
+                    if (isStart) {
+                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                            .updateStart(periods, selectedIndex, newCal.timeInMillis)
+                        periods.clear(); periods.addAll(updated)
+                    } else {
+                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                            .updateEnd(periods, selectedIndex, newCal.timeInMillis)
+                        periods.clear(); periods.addAll(updated)
+                    }
+                    saveMagicPeriods(periods)
+                    refreshEditors(); refreshCalendar(); refreshList()
+                }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
+            }
+        }
+        btnStartDate.setOnClickListener { pickDateTime(isStart = true, isDate = true) }
+        btnStartTime.setOnClickListener { pickDateTime(isStart = true, isDate = false) }
+        btnEndDate.setOnClickListener { pickDateTime(isStart = false, isDate = true) }
+        btnEndTime.setOnClickListener { pickDateTime(isStart = false, isDate = false) }
+
+        // 时长加减
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDurationMinus)
+            .setOnClickListener {
+                if (selectedIndex in periods.indices) {
+                    val cur = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                        .computeDurationDays(periods[selectedIndex].start, periods[selectedIndex].end)
+                    if (cur > 1) {
+                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                            .updateDuration(periods, selectedIndex, cur - 1)
+                        periods.clear(); periods.addAll(updated)
+                        saveMagicPeriods(periods)
+                        refreshEditors(); refreshCalendar(); refreshList()
+                    }
+                }
+            }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDurationPlus)
+            .setOnClickListener {
+                if (selectedIndex in periods.indices) {
+                    val cur = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                        .computeDurationDays(periods[selectedIndex].start, periods[selectedIndex].end)
+                    val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                        .updateDuration(periods, selectedIndex, cur + 1)
+                    periods.clear(); periods.addAll(updated)
+                    saveMagicPeriods(periods)
+                    refreshEditors(); refreshCalendar(); refreshList()
+                }
+            }
+
+        // 删除选中
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnMagicDelete)
+            .setOnClickListener {
+                if (selectedIndex in periods.indices) {
+                    periods.removeAt(selectedIndex)
+                    selectedIndex = periods.indices.lastOrNull() ?: -1
+                    saveMagicPeriods(periods)
+                    refreshEditors(); refreshCalendar(); refreshList()
+                }
+            }
+
+        // 完成
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnMagicDone)
+            .setOnClickListener { dialog.dismiss() }
+
+        refreshCalendar(); refreshEditors(); refreshList()
+        dialog.show()
     }
 
     private fun computeActivitySubtitle(): String {

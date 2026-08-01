@@ -199,9 +199,9 @@ object PromoImageRenderer {
 
     // ==================== 公共绘制件 ====================
 
-    private fun newBitmap() = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+    internal fun newBitmap() = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
 
-    private fun paintText(
+    internal fun paintText(
         size: Float, color: Int, bold: Boolean = false, align: Paint.Align = Paint.Align.LEFT
     ) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = size
@@ -214,7 +214,7 @@ object PromoImageRenderer {
     private fun Paint.setMono(): Paint { typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL); return this }
     private fun Paint.setSerifBold(): Paint { typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD); return this }
 
-    private fun drawCenter(canvas: Canvas, paint: Paint, text: String, cx: Float, y: Float) {
+    internal fun drawCenter(canvas: Canvas, paint: Paint, text: String, cx: Float, y: Float) {
         paint.textAlign = Paint.Align.CENTER
         canvas.drawText(text, cx, y, paint)
     }
@@ -224,7 +224,7 @@ object PromoImageRenderer {
         canvas.drawText(text, x, y, paint)
     }
 
-    private fun drawCenterClipped(canvas: Canvas, paint: Paint, text: String, cx: Float, baselineY: Float, maxWidth: Float) {
+    internal fun drawCenterClipped(canvas: Canvas, paint: Paint, text: String, cx: Float, baselineY: Float, maxWidth: Float) {
         var s = text
         while (paint.measureText(s) > maxWidth && s.length > 1) s = s.dropLast(1)
         if (s != text) s = s.dropLast(1) + "…"
@@ -248,7 +248,7 @@ object PromoImageRenderer {
         canvas.restore()
     }
 
-    private fun drawQrCard(
+    internal fun drawQrCard(
         canvas: Canvas, cx: Float, topY: Float, cardColor: Int = Color.WHITE,
         captionColor: Int = 0xFF1B1B1F.toInt(), pad: Float = 28f, qrSize: Float = QR_SIZE.toFloat()
     ) {
@@ -268,7 +268,7 @@ object PromoImageRenderer {
         canvas.drawTextOnPath(text, path, 0f, baselineOffset, paint)
     }
 
-    private fun drawGlow(canvas: Canvas, cx: Float, cy: Float, radius: Float, color: Int, alphaMax: Int) {
+    internal fun drawGlow(canvas: Canvas, cx: Float, cy: Float, radius: Float, color: Int, alphaMax: Int) {
         val colors = intArrayOf(
             Color.argb(alphaMax, Color.red(color), Color.green(color), Color.blue(color)),
             Color.argb(0, Color.red(color), Color.green(color), Color.blue(color))

@@ -135,6 +135,15 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_PROMO_STYLE, DEFAULT_PROMO_STYLE) ?: DEFAULT_PROMO_STYLE
     }
 
+    // 魔法期记录：JSON 数组 [{start,end}]，ms，可为过去/未来
+    fun setMagicPeriodsJson(json: String) {
+        prefs.edit().putString(KEY_MAGIC_PERIODS, json).apply()
+    }
+
+    fun getMagicPeriodsJson(): String {
+        return prefs.getString(KEY_MAGIC_PERIODS, "[]") ?: "[]"
+    }
+
     // ========== B 站全活动监控 ==========
 
     // 监控新视频投稿，默认开
@@ -236,6 +245,7 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_DYNAMIC_ID = "last_dynamic_id"
         private const val KEY_PROMO_STYLE = "promo_style"
         private const val DEFAULT_PROMO_STYLE = "LIGHT_CARD"
+        private const val KEY_MAGIC_PERIODS = "magic_periods"
         private const val DEFAULT_ROOM_ID = 11258892L
     }
 }

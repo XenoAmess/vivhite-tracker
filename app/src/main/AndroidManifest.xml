@@ -145,7 +145,10 @@
 
         <receiver
             android:name=".receiver.AlarmReceiver"
-            android:enabled="true"
+            android:exported="false" />
+
+        <receiver
+            android:name=".receiver.MagicEndReceiver"
             android:exported="false" />
 
     </application>

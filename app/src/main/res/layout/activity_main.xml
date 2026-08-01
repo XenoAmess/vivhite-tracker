@@ -159,6 +159,44 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/btnOpenSpace" />
 
+        <!-- 魔法期记录行：主按钮 + 同行右侧分享小按钮 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnMagicRecord"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="6dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="魔法期记录"
+            android:textSize="14sp"
+            app:backgroundTint="@color/purple_500"
+            app:icon="@android:drawable/ic_menu_month"
+            app:layout_constraintEnd_toStartOf="@id/btnMagicShare"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnMagicShare"
+            style="@style/Widget.Material3.Button.IconButton.Filled"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:layout_marginTop="8dp"
+            android:contentDescription="生成并分享魔法期图片"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:padding="0dp"
+            app:icon="@drawable/ic_share"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="20dp"
+            app:backgroundTint="@color/purple_500"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/btnMagicRecord"
+            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
+
         <!-- 三个非监控入口并排：日志 | 设置 | 源码 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnViewLog"
@@ -180,7 +218,7 @@
             app:iconGravity="textStart"
             app:layout_constraintEnd_toStartOf="@id/btnSettings"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnToggle"
+            app:layout_constraintTop_toBottomOf="@id/btnMagicRecord"
             app:layout_constraintHorizontal_chainStyle="spread" />
 
         <com.google.android.material.button.MaterialButton
@@ -204,7 +242,7 @@
             app:iconGravity="textStart"
             app:layout_constraintEnd_toStartOf="@id/btnOpenGithub"
             app:layout_constraintStart_toEndOf="@id/btnViewLog"
-            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
+            app:layout_constraintTop_toBottomOf="@id/btnMagicRecord" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenGithub"
@@ -226,7 +264,7 @@
             app:iconGravity="textStart"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/btnSettings"
-            app:layout_constraintTop_toBottomOf="@id/btnToggle" />
+            app:layout_constraintTop_toBottomOf="@id/btnMagicRecord" />
 
         <LinearLayout
             android:id="@+id/qqGroupRow"

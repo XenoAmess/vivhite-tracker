@@ -35,6 +35,14 @@ class BootReceiver : BroadcastReceiver() {
                     LiveCheckWorker.scheduleOneTime(context)
                 }
             }
+            // 魔法期结束闹钟：有未来结束则开机重排
+            val next = com.bilibili.livemonitor.domain.MagicPeriodDecider.nextPendingEnd(
+                com.bilibili.livemonitor.util.MagicPeriodStore.load(preferenceManager),
+                System.currentTimeMillis()
+            )
+            if (next != null) {
+                com.bilibili.livemonitor.util.MagicAlarmScheduler.schedule(context, next)
+            }
         }
     }
 
