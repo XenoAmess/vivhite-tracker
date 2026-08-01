@@ -1,4 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">牢白播了吗</string>
+
+    <!-- 50 种宣传图风格的展示名（预览对话框 chip 列表） -->
+    <string-array name="promo_style_names">
+        <item>浅色卡片</item>
+        <item>虚化背景</item>
+        <item>深色</item>
+        <item>杂志封面</item>
+        <item>报纸头版</item>
+        <item>复古打字机</item>
+        <item>学术期刊</item>
+        <item>杂志大特写</item>
+        <item>专栏卡片</item>
+        <item>商业周刊</item>
+        <item>超大标题</item>
+        <item>黑色方块</item>
+        <item>系统 UI 截图</item>
+        <item>票据收据</item>
+        <item>极简线条</item>
+        <item>巨型单字</item>
+        <item>水墨卷轴</item>
+        <item>青绿山水</item>
+        <item>窗花剪影</item>
+        <item>印章折页</item>
+        <item>扇面</item>
+        <item>黑胶唱片</item>
+        <item>宝丽来</item>
+        <item>VHS 标签</item>
+        <item>旧电视</item>
+        <item>老电影海报</item>
+        <item>玻璃拟态</item>
+        <item>极光渐变</item>
+        <item>Y2K 千禧</item>
+        <item>新丑风</item>
+        <item>3D 浮起</item>
+        <item>渐变网格</item>
+        <item>游戏 HUD</item>
+        <item>像素风</item>
+        <item>赛博终端</item>
+        <item>二维码主视觉</item>
+        <item>App Store 风</item>
+        <item>复古 2000 网页</item>
+        <item>仪表盘</item>
+        <item>票务海报</item>
+        <item>天气卡</item>
+        <item>NFT 卡</item>
+        <item>登机牌</item>
+        <item>生日蛋糕</item>
+        <item>万圣节</item>
+        <item>圣诞</item>
+        <item>情人节</item>
+        <item>新年倒计时</item>
+        <item>水彩晕染</item>
+        <item>手绘涂鸦</item>
+        <item>光圈光斑</item>
+        <item>生物细胞</item>
+        <item>黑白胶片</item>
+    </string-array>
 </resources>

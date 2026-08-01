@@ -955,46 +955,69 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 宣传图预览对话框：三风格即时切换并记住选择，点「分享」才落盘发出 */
+    /**
+     * 宣传图预览对话框：50 种风格 chip 列表，点切换即时重渲染，选择持久化，点「分享」才落盘发出。
+     * chip 用色点 + 名字 3 列网格（RecyclerView + GridLayoutManager）。
+     */
     internal fun showPromoPreview(cover: android.graphics.Bitmap?, headline: String, body: String) {
         val view = layoutInflater.inflate(R.layout.dialog_promo_preview, null)
         val iv = view.findViewById<android.widget.ImageView>(R.id.ivPromoPreview)
+        val rv = view.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvPromoStyles)
         val dialog = AlertDialog.Builder(this).setView(view).create()
 
-        val renderer = com.bilibili.livemonitor.util.PromoImageRenderer
-        var style = runCatching {
+        val allStyles = com.bilibili.livemonitor.util.PromoImageRenderer.Style.values()
+        val initial: com.bilibili.livemonitor.util.PromoImageRenderer.Style = runCatching {
             com.bilibili.livemonitor.util.PromoImageRenderer.Style.valueOf(preferenceManager.getPromoStyle())
-        }.getOrDefault(com.bilibili.livemonitor.util.PromoImageRenderer.Style.LIGHT_CARD)
-        var current: android.graphics.Bitmap? = null
-
-        val radios = mapOf(
-            com.bilibili.livemonitor.util.PromoImageRenderer.Style.LIGHT_CARD to view.findViewById<android.widget.RadioButton>(R.id.rbStyleLightCard),
-            com.bilibili.livemonitor.util.PromoImageRenderer.Style.BLUR_BG to view.findViewById<android.widget.RadioButton>(R.id.rbStyleBlurBg),
-            com.bilibili.livemonitor.util.PromoImageRenderer.Style.DARK to view.findViewById<android.widget.RadioButton>(R.id.rbStyleDark)
-        )
+        }.getOrNull() ?: com.bilibili.livemonitor.util.PromoImageRenderer.Style.LIGHT_CARD
+        var current: com.bilibili.livemonitor.util.PromoImageRenderer.Style = initial
+        var bitmap: android.graphics.Bitmap? = null
 
         fun rerender() {
-            current = renderer.render(style, cover, headline, body)
-            iv.setImageBitmap(current)
-            radios.forEach { (s, rb) -> rb.isChecked = s == style }
+            bitmap = com.bilibili.livemonitor.util.PromoImageRenderer.render(current, cover, headline, body)
+            iv.setImageBitmap(bitmap)
+            rv.adapter?.notifyDataSetChanged()
         }
-        radios.forEach { (s, rb) ->
-            rb.setOnClickListener {
-                style = s
-                preferenceManager.setPromoStyle(s.name)
-                rerender()
+
+        val names = resources.getStringArray(R.array.promo_style_names)
+        rv.layoutManager = androidx.recyclerview.widget.GridLayoutManager(this, 3)
+        rv.adapter = object : androidx.recyclerview.widget.RecyclerView.Adapter<androidx.recyclerview.widget.RecyclerView.ViewHolder>() {
+            override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int) =
+                object : androidx.recyclerview.widget.RecyclerView.ViewHolder(
+                    layoutInflater.inflate(R.layout.item_promo_style_chip, parent, false)
+                ) {}
+
+            override fun onBindViewHolder(holder: androidx.recyclerview.widget.RecyclerView.ViewHolder, position: Int) {
+                val style = allStyles[position]
+                val item = holder.itemView
+                val dot = item.findViewById<android.view.View>(R.id.vChipDot)
+                val name = item.findViewById<android.widget.TextView>(R.id.tvChipName)
+                val check = item.findViewById<android.view.View>(R.id.vChipCheck)
+                dot.setBackgroundColor(com.bilibili.livemonitor.util.PromoImageRenderer.chipColorOf(style))
+                name.text = names[position]
+                check.visibility = if (style == current) android.view.View.VISIBLE else android.view.View.GONE
+                check.setBackgroundColor(0xFF1A1A1A.toInt())
+                item.setOnClickListener {
+                    if (current != style) {
+                        current = style
+                        preferenceManager.setPromoStyle(style.name)
+                        rerender()
+                    }
+                }
             }
+
+            override fun getItemCount(): Int = allStyles.size
         }
+        rerender()
+
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoShare)
             .setOnClickListener {
-                val promo = current ?: return@setOnClickListener
+                val bmp = bitmap ?: return@setOnClickListener
                 dialog.dismiss()
-                sharePromoBitmap(promo, body)
+                sharePromoBitmap(bmp, body)
             }
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoCancel)
             .setOnClickListener { dialog.dismiss() }
 
-        rerender()
         dialog.show()
     }
 

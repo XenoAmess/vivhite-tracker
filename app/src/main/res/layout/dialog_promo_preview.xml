@@ -3,12 +3,13 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="12dp">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:paddingBottom="10dp"
+        android:paddingBottom="8dp"
+        android:paddingStart="4dp"
         android:text="生成宣传图"
         android:textSize="17sp"
         android:textStyle="bold" />
@@ -20,38 +21,29 @@
         android:adjustViewBounds="true"
         android:contentDescription="宣传图预览" />
 
-    <RadioGroup
-        android:layout_width="match_parent"
+    <TextView
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:gravity="center"
-        android:orientation="horizontal">
+        android:layout_marginTop="10dp"
+        android:paddingStart="4dp"
+        android:paddingBottom="6dp"
+        android:text="选择风格（50 种）"
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray" />
 
-        <RadioButton
-            android:id="@+id/rbStyleLightCard"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="浅色卡片" />
-
-        <RadioButton
-            android:id="@+id/rbStyleBlurBg"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            android:text="虚化背景" />
-
-        <RadioButton
-            android:id="@+id/rbStyleDark"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            android:text="深色" />
-    </RadioGroup>
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvPromoStyles"
+        android:layout_width="match_parent"
+        android:layout_height="320dp"
+        android:clipToPadding="false"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:scrollbars="vertical" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="10dp"
         android:gravity="end"
         android:orientation="horizontal">
 

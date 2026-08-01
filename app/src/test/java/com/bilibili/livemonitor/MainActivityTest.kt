@@ -1029,8 +1029,8 @@ class MainActivityTest {
     }
 
     @Test
-    fun `宣传图预览对话框 切换风格重渲染且记住选择`() {
-        // 用户需求：三种风格都做出来可切换看效果，选择要持久化
+    fun `宣传图预览对话框 chip列表切换风格重渲染且记住选择`() {
+        // 用户需求：50+ 种风格 chip 列表可切换看效果，选择要持久化
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
         activity.showPromoPreview(null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
@@ -1039,15 +1039,25 @@ class MainActivityTest {
         val iv = dialog.findViewById<android.widget.ImageView>(R.id.ivPromoPreview)!!
         assertNotNull("默认风格应立即渲染预览", iv.drawable)
         assertEquals("默认风格为浅色卡片", "LIGHT_CARD", prefs.getPromoStyle())
+        val rv = dialog.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvPromoStyles)!!
+        assertEquals("chip 列表必须含全部 53 种风格", 53, rv.adapter!!.itemCount)
 
-        dialog.findViewById<android.widget.RadioButton>(R.id.rbStyleDark).performClick()
-        shadowOf(android.os.Looper.getMainLooper()).idle()
+        // RecyclerView 在 Robolectric 里不做 layout，手动 create+bind ViewHolder 后点击
+        val adapter = rv.adapter!!
+        fun clickChip(position: Int) {
+            val holder = adapter.onCreateViewHolder(rv, 0)
+            adapter.onBindViewHolder(holder, position)
+            holder.itemView.performClick()
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+        }
+
+        // 点第 3 个 chip（DARK，顺序 = LIGHT_CARD/BLUR_BG/DARK/50新）
+        clickChip(2)
         assertEquals("切深色后必须记住", "DARK", prefs.getPromoStyle())
-        assertTrue(dialog.findViewById<android.widget.RadioButton>(R.id.rbStyleDark).isChecked)
 
-        dialog.findViewById<android.widget.RadioButton>(R.id.rbStyleBlurBg).performClick()
-        shadowOf(android.os.Looper.getMainLooper()).idle()
-        assertEquals("BLUR_BG", prefs.getPromoStyle())
+        // 点第 12 个 chip（BLACK_SQUARE）
+        clickChip(11)
+        assertEquals("BLACK_SQUARE", prefs.getPromoStyle())
     }
 
     @Test
