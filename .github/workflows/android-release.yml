@@ -49,6 +49,7 @@ jobs:
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
     # App 内更新检查依赖：APK 文件名带 versionName 供展示，version.json 供精确 versionCode 比较
+    # changelog 字段为两通道统一的更新说明（App 端优先于 release body 展示）
     - name: Prepare versioned artifacts
       run: |
         VERSION_CODE=$(git rev-list --count HEAD)
@@ -56,7 +57,16 @@ jobs:
         TAG=$(git describe --tags --abbrev=0)
         VERSION_NAME="${TAG#v}"
         cp app/build/outputs/apk/release/app-release.apk "vivhite-tracker-${VERSION_NAME}.apk"
-        printf '{"versionCode":%s,"versionName":"%s"}\n' "$VERSION_CODE" "$VERSION_NAME" > version.json
+        # 更新说明：上一个 tag 到本 tag 的提交摘要（首个 tag 则全部历史，取前 20 条）
+        PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+        if [ -n "$PREV_TAG" ]; then RANGE="$PREV_TAG..$TAG"; else RANGE="$TAG"; fi
+        git log --oneline --no-decorate "$RANGE" | head -20 > changelog.txt
+        python3 - "$VERSION_CODE" "$VERSION_NAME" <<'PY'
+        import json, sys
+        changelog = open("changelog.txt", encoding="utf-8").read().strip()
+        with open("version.json", "w", encoding="utf-8") as f:
+            json.dump({"versionCode": int(sys.argv[1]), "versionName": sys.argv[2], "changelog": changelog}, f, ensure_ascii=False)
+        PY
         cat version.json
 
     - name: Create Release

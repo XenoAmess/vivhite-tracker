@@ -71,6 +71,17 @@ object UpdateDecider {
         }
     }
 
+    // version.json 的可选 changelog 字段（CI 生成的最近提交摘要）。
+    // 两个通道共用：beta 的更新说明只能来自这里；stable 优先于 release body。
+    // 字段缺失/空白/JSON 非法 → null（调用方回退 release body 或固定文案）
+    fun parseVersionChangelog(json: String): String? {
+        return try {
+            JSONObject(json).optString("changelog").takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     // 决策：远端 versionCode 更高 → 有更新；versionCode 相等时比 versionName 语义版本；
     // 都判定为最新 → UpToDate；远端版本信息缺失 → Error。
     //

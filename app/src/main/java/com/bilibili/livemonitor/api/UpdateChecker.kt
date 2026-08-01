@@ -13,6 +13,10 @@ open class UpdateChecker {
     // 生产恒为 LATEST_RELEASE_API
     internal open var latestReleaseApi: String = LATEST_RELEASE_API
 
+    // internal open var：内测版尝鲜通道（GitHub Pages 上的 master 最新构建），
+    // 测试可指向本地 HttpServer
+    internal open var betaVersionJsonUrl: String = BETA_VERSION_JSON_URL
+
     // 检查 GitHub 最新 Release：version.json 提供精确 versionCode，缺失则返回 Error
     suspend fun checkLatestRelease(
         localVersionCode: Int,
@@ -23,9 +27,37 @@ open class UpdateChecker {
                 ?: return@withContext UpdateDecider.UpdateState.Error("network error")
             val raw = UpdateDecider.parseLatestRelease(releaseJson)
                 ?: return@withContext UpdateDecider.UpdateState.Error("release parse error")
-            val remoteVersion = raw.versionJsonUrl
-                ?.let { httpGet(it) }
-                ?.let { UpdateDecider.parseVersionJson(it) }
+            val versionJsonText = raw.versionJsonUrl?.let { httpGet(it) }
+            val remoteVersion = versionJsonText?.let { UpdateDecider.parseVersionJson(it) }
+            val state = UpdateDecider.decide(localVersionCode, localVersionName, remoteVersion, raw)
+            // version.json 里的提交摘要优先于 release body（两通道更新说明统一来源）
+            val versionChangelog = versionJsonText?.let { UpdateDecider.parseVersionChangelog(it) }
+            if (state is UpdateDecider.UpdateState.UpdateAvailable && versionChangelog != null) {
+                UpdateDecider.UpdateState.UpdateAvailable(state.info.copy(changelog = versionChangelog))
+            } else {
+                state
+            }
+        }
+
+    // 检查内测版尝鲜通道（GitHub Pages 上的 master 最新构建）：
+    // 只需 version.json，versionCode 比较天然防降级（本地比频道新 → UpToDate）
+    suspend fun checkBetaChannel(
+        localVersionCode: Int,
+        localVersionName: String
+    ): UpdateDecider.UpdateState =
+        withContext(Dispatchers.IO) {
+            val versionJsonText = httpGet(betaVersionJsonUrl)
+                ?: return@withContext UpdateDecider.UpdateState.Error("network error")
+            val remoteVersion = UpdateDecider.parseVersionJson(versionJsonText)
+                ?: return@withContext UpdateDecider.UpdateState.Error("release parse error")
+            val raw = UpdateDecider.RawRelease(
+                tagName = BETA_TAG_NAME,
+                changelog = UpdateDecider.parseVersionChangelog(versionJsonText)
+                    ?: "主分支最新内测构建",
+                apkUrl = BETA_APK_URL,
+                apkFileName = BETA_APK_NAME,
+                versionJsonUrl = betaVersionJsonUrl
+            )
             UpdateDecider.decide(localVersionCode, localVersionName, remoteVersion, raw)
         }
 
@@ -98,5 +130,13 @@ open class UpdateChecker {
         private const val USER_AGENT = "vivhite-tracker-updater"
         const val LATEST_RELEASE_API =
             "https://api.github.com/repos/XenoAmess/vivhite-tracker/releases/latest"
+
+        // 内测版尝鲜通道：GitHub Pages 上的 master 最新构建（android-ci.yml 部署）
+        const val BETA_VERSION_JSON_URL =
+            "https://xenoamess.github.io/vivhite-tracker/beta/version.json"
+        const val BETA_APK_URL =
+            "https://xenoamess.github.io/vivhite-tracker/beta/vivhite-tracker-beta.apk"
+        const val BETA_TAG_NAME = "beta"
+        const val BETA_APK_NAME = "vivhite-tracker-beta.apk"
     }
 }

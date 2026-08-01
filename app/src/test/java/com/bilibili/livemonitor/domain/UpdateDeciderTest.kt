@@ -55,6 +55,21 @@ class UpdateDeciderTest {
         assertNull(UpdateDecider.parseVersionJson("not json"))
     }
 
+    @Test
+    fun `parseVersionChangelog 有效 缺失 空白 非法`() {
+        // 内测版尝鲜：两通道的更新说明统一来自 version.json 的 changelog 字段
+        assertEquals(
+            "abc1234 feat: xxx",
+            UpdateDecider.parseVersionChangelog(
+                """{"versionCode":92,"versionName":"1.1.92","changelog":"abc1234 feat: xxx"}"""
+            )
+        )
+        // 老格式 version.json（无 changelog 字段）→ null，调用方回退
+        assertNull(UpdateDecider.parseVersionChangelog("""{"versionCode":92,"versionName":"1.1.92"}"""))
+        assertNull(UpdateDecider.parseVersionChangelog("""{"changelog":"  "}"""))
+        assertNull(UpdateDecider.parseVersionChangelog("not json"))
+    }
+
     private fun raw(
         apkUrl: String? = "https://example.com/vivhite-tracker-1.1.92.apk"
     ) = UpdateDecider.RawRelease(

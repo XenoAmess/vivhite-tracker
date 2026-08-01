@@ -50,6 +50,46 @@ jobs:
     - name: Build debug APK
       run: ./gradlew assembleDebug
 
+    # 内测版尝鲜通道：master 最新构建 → GitHub Pages /beta/
+    # （App 内「内测版尝鲜」按钮比对这里的 version.json）
+    - name: Prepare beta channel files
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      run: |
+        # 复刻 app/build.gradle.kts 的版本推导：
+        # versionCode = commit 数；versionName = describe（tag 后 N commit → base+N）
+        VERSION_CODE=$(git rev-list --count HEAD)
+        DESCRIBE=$(git describe --tags --long 2>/dev/null || echo "")
+        if [[ "$DESCRIBE" =~ ^v(.+)-([0-9]+)-g[0-9a-f]+$ ]]; then
+          BASE="${BASH_REMATCH[1]}"
+          AHEAD="${BASH_REMATCH[2]}"
+          VERSION_NAME="$BASE"
+          [ "$AHEAD" != "0" ] && VERSION_NAME="$BASE+$AHEAD"
+        else
+          VERSION_NAME="0.0.0+$VERSION_CODE"
+        fi
+        # 更新说明：最近 tag 以来的提交摘要（无 tag 则全部历史，取前 20 条）
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..HEAD"; else RANGE="HEAD"; fi
+        git log --oneline --no-decorate "$RANGE" | head -20 > changelog.txt
+        # debug 构建与 release 共用 keystore，内测包可覆盖安装
+        cp app/build/outputs/apk/debug/app-debug.apk vivhite-tracker-beta.apk
+        python3 - "$VERSION_CODE" "$VERSION_NAME" <<'PY'
+        import json, sys
+        changelog = open("changelog.txt", encoding="utf-8").read().strip()
+        with open("version.json", "w", encoding="utf-8") as f:
+            json.dump({"versionCode": int(sys.argv[1]), "versionName": sys.argv[2], "changelog": changelog}, f, ensure_ascii=False)
+        PY
+        cat version.json
+
+    - name: Upload beta channel artifact
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      uses: actions/upload-artifact@v7
+      with:
+        name: beta-channel
+        path: |
+          vivhite-tracker-beta.apk
+          version.json
+
     - name: Upload lint report
       if: always()
       uses: actions/upload-artifact@v7
@@ -173,6 +213,18 @@ jobs:
         mkdir -p pages/report
         cp -R coverage/html/* pages/report/
         mv pages/report/index.html pages/report/coverage.html
+
+    # 内测版尝鲜通道文件进 Pages（/beta/version.json + /beta/vivhite-tracker-beta.apk）
+    - name: Download beta channel files
+      uses: actions/download-artifact@v8
+      with:
+        name: beta-channel
+        path: beta-channel
+
+    - name: Add beta channel to Pages
+      run: |
+        mkdir -p pages/beta
+        cp beta-channel/vivhite-tracker-beta.apk beta-channel/version.json pages/beta/
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v5

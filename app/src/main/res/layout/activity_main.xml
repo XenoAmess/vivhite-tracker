@@ -298,6 +298,23 @@
                 android:textColor="@color/purple_500"
                 app:strokeColor="@color/purple_500" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBetaUpdate"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:layout_marginStart="8dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="内测版尝鲜"
+                android:textSize="11sp"
+                android:textColor="@color/purple_500"
+                app:strokeColor="@color/purple_500" />
+
         </LinearLayout>
 
     </androidx.constraintlayout.widget.ConstraintLayout>

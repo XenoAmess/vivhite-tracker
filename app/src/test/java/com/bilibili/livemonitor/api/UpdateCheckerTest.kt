@@ -171,6 +171,84 @@ class UpdateCheckerTest {
     }
 
     @Test
+    fun `e2e stable versionJson带changelog时覆盖release body`() = runBlocking {
+        // 用户需求：更新说明两通道统一来自 version.json 的提交摘要
+        lateinit var base: String
+        withServer({ exchange ->
+            val body = when (exchange.requestURI.path) {
+                "/releases/latest" -> releaseJson(
+                    """{"name": "vivhite-tracker-1.1.95.apk", "browser_download_url": "$base/vivhite-tracker-1.1.95.apk"},
+                    {"name": "version.json", "browser_download_url": "$base/version.json"}"""
+                )
+                "/version.json" -> """{"versionCode":95,"versionName":"1.1.95","changelog":"abc1234 feat: 提交摘要"}"""
+                else -> "not found"
+            }
+            val bytes = body.toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }) { baseUrl ->
+            base = baseUrl
+            val checker = UpdateChecker().apply { latestReleaseApi = "$baseUrl/releases/latest" }
+            val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
+
+            assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
+            val info = (state as UpdateDecider.UpdateState.UpdateAvailable).info
+            assertEquals("version.json 提交摘要必须覆盖 release body", "abc1234 feat: 提交摘要", info.changelog)
+        }
+        Unit
+    }
+
+    // ---------- 内测版尝鲜通道（GitHub Pages / master 最新构建） ----------
+
+    @Test
+    fun `e2e beta通道 versionCode更新 返回UpdateAvailable且带提交摘要`() = runBlocking {
+        // 用户场景：点「内测版尝鲜」，主分支最新构建比本地新 → 提示更新
+        withServer({ exchange ->
+            val body = """{"versionCode":150,"versionName":"1.5.1+9","changelog":"abc1234 feat: 内测改动"}"""
+            val bytes = body.toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }) { baseUrl ->
+            val checker = UpdateChecker().apply { betaVersionJsonUrl = "$baseUrl/beta/version.json" }
+            val state = checker.checkBetaChannel(localVersionCode = 141, localVersionName = "1.5.1+3")
+
+            assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
+            val info = (state as UpdateDecider.UpdateState.UpdateAvailable).info
+            assertEquals(150, info.versionCode)
+            assertEquals("1.5.1+9", info.versionName)
+            assertEquals(UpdateChecker.BETA_APK_URL, info.apkUrl)
+            assertEquals(UpdateChecker.BETA_TAG_NAME, info.tagName)
+            assertEquals("abc1234 feat: 内测改动", info.changelog)
+        }
+        Unit
+    }
+
+    @Test
+    fun `e2e beta通道 versionCode不新 返回UpToDate防降级`() = runBlocking {
+        // 用户场景：本地构建比内测频道还新（自己刚编的）→ 不得降级提示
+        withServer({ exchange ->
+            val body = """{"versionCode":141,"versionName":"1.5.1+3"}"""
+            val bytes = body.toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }) { baseUrl ->
+            val checker = UpdateChecker().apply { betaVersionJsonUrl = "$baseUrl/beta/version.json" }
+            val state = checker.checkBetaChannel(localVersionCode = 141, localVersionName = "1.5.1+3")
+            assertTrue("同版本必须 UpToDate", state is UpdateDecider.UpdateState.UpToDate)
+        }
+        Unit
+    }
+
+    @Test
+    fun `e2e beta通道 网络失败 返回Error`() = runBlocking {
+        // 服务器直接拒连（连接被拒不达）
+        val checker = UpdateChecker().apply { betaVersionJsonUrl = "http://127.0.0.1:1/beta/version.json" }
+        val state = checker.checkBetaChannel(localVersionCode = 141, localVersionName = "1.5.1+3")
+        assertTrue(state is UpdateDecider.UpdateState.Error)
+        assertEquals("network error", (state as UpdateDecider.UpdateState.Error).reason)
+    }
+
+    @Test
     fun `e2e 服务器返回200但坏JSON Error`() = runBlocking {
         withServer({ exchange ->
             val bytes = "not json at all".toByteArray()

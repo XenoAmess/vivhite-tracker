@@ -1204,6 +1204,63 @@ class MainActivityTest {
     }
 
     @Test
+    fun `点内测版尝鲜 主分支更新时弹内测对话框且无忽略按钮`() {
+        // 用户需求（2026-08）：检查更新旁边放「内测版尝鲜」，比对主分支最新构建
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val betaCode = BuildConfig.VERSION_CODE + 1
+        activity.updateChecker = FakeUpdateChecker(
+            mapOf(
+                com.bilibili.livemonitor.api.UpdateChecker.BETA_VERSION_JSON_URL to
+                    """{"versionCode":$betaCode,"versionName":"1.5.1+9","changelog":"abc1234 feat: 内测改动"}"""
+            )
+        )
+
+        val baseline = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnBetaUpdate
+        ).performClick()
+
+        val dialog = waitForNewDialog(baseline)
+        assertTrue("应弹出内测更新对话框", dialog != null)
+        val title = dialog!!.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)
+        assertEquals("发现内测版 v1.5.1+9", title?.text?.toString())
+        val message = dialog.findViewById<android.widget.TextView>(android.R.id.message)
+        assertTrue("应含提交摘要: ${message?.text}", message?.text?.contains("abc1234") == true)
+        // beta 对话框不提供「忽略此版本」（与 stable 的 dismissed 逻辑隔离）
+        val neutral = dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL)
+        assertTrue(
+            "内测对话框不应有忽略按钮",
+            neutral == null || neutral.visibility != android.view.View.VISIBLE
+        )
+    }
+
+    @Test
+    fun `点内测版尝鲜 已最新时Toast提示`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        // 主分支构建不比本地新 → 已最新（versionCode 比较天然防降级）
+        activity.updateChecker = FakeUpdateChecker(
+            mapOf(
+                com.bilibili.livemonitor.api.UpdateChecker.BETA_VERSION_JSON_URL to
+                    """{"versionCode":${BuildConfig.VERSION_CODE},"versionName":"${BuildConfig.VERSION_NAME}"}"""
+            )
+        )
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnBetaUpdate
+        ).performClick()
+
+        val deadline = System.currentTimeMillis() + 10_000
+        var toast: String? = null
+        while (System.currentTimeMillis() < deadline) {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            toast = org.robolectric.shadows.ShadowToast.getTextOfLatestToast()
+            if (toast == "已是最新内测版") break
+            Thread.sleep(100)
+        }
+        assertEquals("已是最新内测版", toast)
+    }
+
+    @Test
     fun `手动检查更新 网络失败时弹错误对话框可跳发布页`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.updateChecker = FakeUpdateChecker(emptyMap()) // 所有请求返回 null → network error

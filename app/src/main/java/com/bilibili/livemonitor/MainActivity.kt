@@ -209,6 +209,10 @@ class MainActivity : AppCompatActivity() {
             btnCheckUpdate.setOnClickListener {
                 checkForUpdate(manual = true)
             }
+
+            btnBetaUpdate.setOnClickListener {
+                checkBetaUpdate()
+            }
         }
 
         setupQqGroups()
@@ -497,16 +501,43 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * 内测版尝鲜：比对 GitHub Pages 上的 master 最新构建，比本地新则下载更新。
+     * 手动触发，无忽略版本/自动下载逻辑；versionCode 比较天然防降级。
+     */
+    internal fun checkBetaUpdate() {
+        Toast.makeText(this, "正在检查内测版…", Toast.LENGTH_SHORT).show()
+        updateScope.launch {
+            when (val state = updateChecker.checkBetaChannel(
+                BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME
+            )) {
+                is UpdateDecider.UpdateState.UpdateAvailable -> showUpdateDialog(state.info)
+                UpdateDecider.UpdateState.UpToDate ->
+                    Toast.makeText(this@MainActivity, "已是最新内测版", Toast.LENGTH_SHORT).show()
+                is UpdateDecider.UpdateState.Error -> {
+                    AppLogger.w("MainActivity", "beta update check failed: ${state.reason}")
+                    showUpdateErrorDialog(state.reason)
+                }
+            }
+        }
+    }
+
     internal fun showUpdateDialog(info: UpdateDecider.ReleaseInfo) {
-        AlertDialog.Builder(this)
-            .setTitle("发现新版本 v${info.versionName}")
+        val isBeta = info.tagName == com.bilibili.livemonitor.api.UpdateChecker.BETA_TAG_NAME
+        val title = if (isBeta) "发现内测版 v${info.versionName}" else "发现新版本 v${info.versionName}"
+        val builder = AlertDialog.Builder(this)
+            .setTitle(title)
             .setMessage(info.changelog.trim().ifBlank { "暂无更新说明" }.take(500))
             .setPositiveButton("立即更新") { _, _ -> startUpdateDownload(info) }
-            .setNeutralButton("忽略此版本") { _, _ ->
+            .setNegativeButton("取消", null)
+        if (!isBeta) {
+            // 「忽略此版本」只对正式通道有意义：beta 的 versionCode 与 stable 的
+            // dismissed 逻辑互不相关，避免污染
+            builder.setNeutralButton("忽略此版本") { _, _ ->
                 preferenceManager.setDismissedVersionCode(info.versionCode)
             }
-            .setNegativeButton("取消", null)
-            .show()
+        }
+        builder.show()
     }
 
     internal fun startUpdateDownload(info: UpdateDecider.ReleaseInfo) {
