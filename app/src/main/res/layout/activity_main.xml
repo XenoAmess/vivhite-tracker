@@ -17,10 +17,9 @@
             android:id="@+id/cvStatus"
             android:layout_width="96dp"
             android:layout_height="96dp"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="16dp"
             app:cardCornerRadius="48dp"
             app:cardElevation="0dp"
-            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent">
 
@@ -34,18 +33,22 @@
 
         </androidx.cardview.widget.CardView>
 
+        <!-- 头部：头像居左，标题/状态/房间号/上次检测四行文字在右侧，
+             packed 竖直链与头像垂直居中对齐（省约 150dp 高度） -->
         <TextView
             android:id="@+id/tvTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginStart="16dp"
             android:text="牢白播了吗"
-            android:textSize="26sp"
+            android:textSize="24sp"
             android:textStyle="bold"
+            android:textAlignment="textStart"
             android:textColor="@color/purple_500"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cvStatus" />
+            app:layout_constraintBottom_toTopOf="@id/tvStatus"
+            app:layout_constraintStart_toEndOf="@id/cvStatus"
+            app:layout_constraintTop_toTopOf="@id/cvStatus"
+            app:layout_constraintVertical_chainStyle="packed" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnShare"
@@ -73,43 +76,49 @@
             android:id="@+id/tvStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="6dp"
             android:text="监控状态: 已停止"
             android:textSize="17sp"
+            android:textAlignment="textStart"
             android:textColor="@android:color/holo_red_dark"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/tvRoomId"
+            app:layout_constraintStart_toEndOf="@id/cvStatus"
             app:layout_constraintTop_toBottomOf="@id/tvTitle" />
 
         <TextView
             android:id="@+id/tvRoomId"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="4dp"
             android:text="直播间: 11258892"
             android:textSize="15sp"
+            android:textAlignment="textStart"
             android:textColor="@android:color/darker_gray"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/tvLastCheck"
+            app:layout_constraintStart_toEndOf="@id/cvStatus"
             app:layout_constraintTop_toBottomOf="@id/tvStatus" />
 
         <TextView
             android:id="@+id/tvLastCheck"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="4dp"
             android:text="上次检测: 暂无记录"
             android:textSize="14sp"
+            android:textAlignment="textStart"
             android:textColor="@android:color/darker_gray"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintBottom_toBottomOf="@id/cvStatus"
+            app:layout_constraintStart_toEndOf="@id/cvStatus"
             app:layout_constraintTop_toBottomOf="@id/tvRoomId" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenLive"
             android:layout_width="0dp"
             android:layout_height="46dp"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="16dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:text="打开直播间"
@@ -118,7 +127,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvLastCheck" />
+            app:layout_constraintTop_toBottomOf="@id/cvStatus" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenSpace"
