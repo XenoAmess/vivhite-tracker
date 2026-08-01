@@ -126,6 +126,15 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_ALERT_SOUND_TITLE, "") ?: ""
     }
 
+    // 宣传图风格选择（生成宣传图预览对话框里切换，记住上次选择）
+    fun setPromoStyle(style: String) {
+        prefs.edit().putString(KEY_PROMO_STYLE, style).apply()
+    }
+
+    fun getPromoStyle(): String {
+        return prefs.getString(KEY_PROMO_STYLE, DEFAULT_PROMO_STYLE) ?: DEFAULT_PROMO_STYLE
+    }
+
     // ========== B 站全活动监控 ==========
 
     // 监控新视频投稿，默认开
@@ -225,6 +234,8 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_VIDEO_AID = "last_video_aid"
         private const val KEY_LAST_PINNED_AID = "last_pinned_aid"
         private const val KEY_LAST_DYNAMIC_ID = "last_dynamic_id"
+        private const val KEY_PROMO_STYLE = "promo_style"
+        private const val DEFAULT_PROMO_STYLE = "LIGHT_CARD"
         private const val DEFAULT_ROOM_ID = 11258892L
     }
 }

@@ -81,6 +81,30 @@ object QqShare {
         }
     }
 
+    // QQ空间图文说说参数（TYPE_IMAGE_TEXT：标题+文案+本地封面+链接）。
+    // 系统 ACTION_SEND 的 EXTRA_TEXT 必被 QQ/微信丢弃——说说是图文进 QQ 系的官方通道
+    /**
+     * @param localImagePath 封面本地文件路径（QzoneShare 只收本地路径，调用方先下载落盘）
+     * @param liveTitle 直播标题。null → 兜底硬编码
+     * @param isLive 实时开播状态：false 时文案体现"还没开播，期待开播"
+     */
+    fun buildQzoneShareParams(localImagePath: String?, liveTitle: String? = null, isLive: Boolean = true): Bundle {
+        val decider = com.bilibili.livemonitor.domain.ShareTextDecider
+        return Bundle().apply {
+            putInt(
+                com.tencent.connect.share.QzoneShare.SHARE_TO_QZONE_KEY_TYPE,
+                com.tencent.connect.share.QzoneShare.SHARE_TO_QZONE_TYPE_IMAGE_TEXT
+            )
+            putString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_TITLE, decider.title(isLive, liveTitle))
+            putString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_SUMMARY, decider.body(isLive, ROOM_ID, liveTitle))
+            putString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_TARGET_URL, buildShareUrl())
+            putString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_SITE, "哔哩哔哩直播")
+            if (!localImagePath.isNullOrBlank()) {
+                putString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_IMAGE_LOCAL_URL, localImagePath)
+            }
+        }
+    }
+
     /**
      * 把 Tencent 实例化 + isSessionValid 检查提到这里，避免每次调用都重复创建实例。
      * 旧版 `DefaultQqSdkSharer.shareToQQ` 每次都 `Tencent.createInstance`，
@@ -144,6 +168,24 @@ interface QqSdkSharer {
      * @param data 系统回调 data Intent（可能为 null）
      */
     fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?)
+
+    /**
+     * QQ空间图文说说（SHARE_TO_QZONE_TYPE_IMAGE_TEXT：文案+本地图+链接）。
+     * 这是图文进 QQ 系的官方通道——系统 ACTION_SEND 的 EXTRA_TEXT 必被丢弃，
+     * 说说通道文案图片俱全。
+     *
+     * 接口扩容带默认实现：不破坏既有测试 fake（7 处 object : QqSdkSharer）；
+     * 生产由 DefaultQqSdkSharer 覆盖。默认实现直接回 onError。
+     */
+    fun shareToQzone(
+        activity: android.app.Activity,
+        params: Bundle,
+        onComplete: () -> Unit,
+        onCancel: () -> Unit,
+        onError: (errorCode: Int, message: String?) -> Unit
+    ) {
+        onError(-1, "shareToQzone not implemented")
+    }
 }
 
 class DefaultQqSdkSharer : QqSdkSharer {
@@ -302,6 +344,45 @@ class DefaultQqSdkSharer : QqSdkSharer {
             })
         } catch (e: Exception) {
             AppLogger.e(TAG, "qq share sync error", e)
+            onError(-1, e.message)
+        }
+    }
+
+    override fun shareToQzone(
+        activity: android.app.Activity,
+        params: Bundle,
+        onComplete: () -> Unit,
+        onCancel: () -> Unit,
+        onError: (errorCode: Int, message: String?) -> Unit
+    ) {
+        try {
+            val tencent = QqShare.obtainTencent(activity)
+            val qzoneShare = com.tencent.connect.share.QzoneShare(activity, tencent.qqToken)
+            qzoneShare.shareToQzone(activity, params, object : com.tencent.tauth.IUiListener {
+                override fun onComplete(response: Any?) {
+                    AppLogger.d(TAG, "qzone share complete: $response")
+                    onComplete()
+                }
+
+                override fun onError(e: com.tencent.tauth.UiError?) {
+                    AppLogger.e(
+                        TAG,
+                        "qzone share error: code=${e?.errorCode} msg=${e?.errorMessage} detail=${e?.errorDetail}"
+                    )
+                    onError(e?.errorCode ?: -1, e?.errorMessage)
+                }
+
+                override fun onCancel() {
+                    AppLogger.d(TAG, "qzone share cancelled")
+                    onCancel()
+                }
+
+                override fun onWarning(code: Int) {
+                    AppLogger.w(TAG, "qzone share warning: $code")
+                }
+            })
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "qzone share sync error", e)
             onError(-1, e.message)
         }
     }

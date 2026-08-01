@@ -2,6 +2,7 @@ package com.bilibili.livemonitor.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -88,5 +89,34 @@ class QqShareTest {
     @Test
     fun `兜底封面是有效https地址`() {
         assertTrue(QqShare.FALLBACK_COVER_URL.startsWith("https://"))
+    }
+
+    @Test
+    fun `Qzone说说参数 图文类型且字段齐全`() {
+        // 图文进 QQ 系的官方通道：TYPE_IMAGE_TEXT + 标题 + 文案 + 本地图 + 链接
+        val params = QqShare.buildQzoneShareParams("/data/cover.jpg", "失眠 无言", isLive = true)
+        assertEquals(
+            com.tencent.connect.share.QzoneShare.SHARE_TO_QZONE_TYPE_IMAGE_TEXT,
+            params.getInt(com.tencent.connect.share.QzoneShare.SHARE_TO_QZONE_KEY_TYPE)
+        )
+        assertEquals("「失眠 无言」", params.getString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_TITLE))
+        val summary = params.getString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_SUMMARY) ?: ""
+        assertTrue(summary.contains("正在直播"))
+        assertTrue(
+            params.getString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_TARGET_URL)!!
+                .contains("bbid=8945059")
+        )
+        assertEquals("/data/cover.jpg", params.getString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_IMAGE_LOCAL_URL))
+    }
+
+    @Test
+    fun `Qzone说说参数 未开播文案且可无本地图`() {
+        val params = QqShare.buildQzoneShareParams(null, null, isLive = false)
+        assertEquals("白绮还没开播", params.getString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_TITLE))
+        assertTrue(
+            (params.getString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_SUMMARY) ?: "")
+                .contains("蹲一个开播")
+        )
+        assertNull(params.getString(com.tencent.connect.share.QzoneShare.SHARE_TO_QQ_IMAGE_LOCAL_URL))
     }
 }

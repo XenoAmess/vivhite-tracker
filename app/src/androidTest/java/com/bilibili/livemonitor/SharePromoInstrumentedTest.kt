@@ -13,9 +13,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 长宣传图渲染的真机/模拟器端到端验证。
+ * 宣传图渲染的真机/模拟器端到端验证（三风格，1080×1350）。
  *
- * 单测（Robolectric）只能证明 QR 矩阵与尺寸——Canvas 文字/封面合成、
+ * 单测（Robolectric）只能证明 QR 矩阵、尺寸与非单色——Canvas 文字/封面合成、
  * PNG 编码、FileProvider 授权都依赖真 Android 图形栈，必须真机验证。
  */
 @RunWith(AndroidJUnit4::class)
@@ -24,52 +24,61 @@ class SharePromoInstrumentedTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
-    fun 长宣传图真机渲染落盘可读且FileProvider可授权() {
-        // 构造一张假封面（渐变块），走与生产完全相同的渲染+落盘路径
+    fun 三风格真机渲染落盘可读且FileProvider可授权() {
         val cover = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888).apply {
             eraseColor(0xFF6750A4.toInt())
         }
-        val promo = PromoImageRenderer.render(
-            cover,
-            headline = "白绮开播啦！「失眠 无言」",
-            body = "白绮正在直播 · 11258892 · 「失眠 无言」"
-        )
-        assertTrue(promo.width == PromoImageRenderer.WIDTH)
-        assertTrue(promo.height == PromoImageRenderer.HEIGHT)
-
         val loader = ShareImageLoader()
-        val file = loader.save(context, promo, "promo_test.png")
-        promo.recycle()
-        assertNotNull("长图必须落盘", file)
-        assertTrue("长图不能是空文件（PNG 编码真实发生）", file!!.length() > 10_000)
 
-        // 落盘的 PNG 必须可被解码且尺寸正确（证明渲染真实写入像素）
-        val decoded = BitmapFactory.decodeFile(file.absolutePath)
-        assertNotNull("落盘 PNG 必须可解码", decoded)
-        assertTrue(decoded!!.width == PromoImageRenderer.WIDTH)
-        assertTrue(decoded.height == PromoImageRenderer.HEIGHT)
+        for (style in PromoImageRenderer.Style.values()) {
+            val promo = PromoImageRenderer.render(
+                style, cover,
+                headline = "白绮开播啦！「失眠 无言」",
+                body = "白绮正在直播 · 11258892 · 「失眠 无言」"
+            )
+            assertTrue("$style 宽度", promo.width == PromoImageRenderer.WIDTH)
+            assertTrue("$style 高度", promo.height == PromoImageRenderer.HEIGHT)
 
-        // FileProvider 授权 uri（ACTION_SEND EXTRA_STREAM 的可读性前提）
-        val uri = loader.shareableUri(context, file)
-        assertTrue(
-            "必须经 FileProvider 授权: $uri",
-            uri.toString().startsWith("content://com.bilibili.livemonitor.fileprovider/")
+            val file = loader.save(context, promo, "promo_test_${style.name}.png")
+            promo.recycle()
+            assertNotNull("$style 必须落盘", file)
+            assertTrue("$style 不能是空文件（PNG 编码真实发生）", file!!.length() > 10_000)
+
+            val decoded = BitmapFactory.decodeFile(file.absolutePath)
+            assertNotNull("$style 落盘 PNG 必须可解码", decoded)
+            assertTrue(decoded!!.width == PromoImageRenderer.WIDTH)
+            assertTrue(decoded.height == PromoImageRenderer.HEIGHT)
+
+            val uri = loader.shareableUri(context, file)
+            assertTrue(
+                "必须经 FileProvider 授权: $uri",
+                uri.toString().startsWith("content://com.bilibili.livemonitor.fileprovider/")
+            )
+            file.delete()
+        }
+    }
+
+    @Test
+    fun 浅色卡片风二维码区域真实含黑色模块() {
+        // 新布局（1080×1350）：QR 卡在 topY=848 起，QR 位图在卡内 pad=28 处居中
+        val promo = PromoImageRenderer.render(
+            PromoImageRenderer.Style.LIGHT_CARD, null,
+            headline = "白绮还没开播",
+            body = "白绮还没开播，先来直播间蹲一个开播！"
         )
-
-        // 二维码区域必须含黑色模块（QR 真实合成进去了）。
-        // 注意：QR 带静区白边，采样整片区域而不是角点
         val qrLeft = (PromoImageRenderer.WIDTH - PromoImageRenderer.QR_SIZE) / 2
+        val qrTop = 848 + 28
         var hasBlack = false
         var x = qrLeft
         while (x < qrLeft + PromoImageRenderer.QR_SIZE && !hasBlack) {
-            var y = 980
-            while (y < 980 + PromoImageRenderer.QR_SIZE && !hasBlack) {
-                if (decoded.getPixel(x, y) == android.graphics.Color.BLACK) hasBlack = true
+            var y = qrTop
+            while (y < qrTop + PromoImageRenderer.QR_SIZE && !hasBlack) {
+                if (promo.getPixel(x, y) == android.graphics.Color.BLACK) hasBlack = true
                 y += 4
             }
             x += 4
         }
         assertTrue("二维码区域必须有黑色模块", hasBlack)
-        file.delete()
+        promo.recycle()
     }
 }

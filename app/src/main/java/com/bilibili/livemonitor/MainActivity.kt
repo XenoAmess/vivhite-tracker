@@ -766,6 +766,10 @@ class MainActivity : AppCompatActivity() {
             sheet.dismiss()
             shareLiveRoom()
         }
+        view.findViewById<android.view.View>(R.id.rowShareQzone).setOnClickListener {
+            sheet.dismiss()
+            shareAsQzone()
+        }
         view.findViewById<android.view.View>(R.id.rowShareImageText).setOnClickListener {
             sheet.dismiss()
             shareAsImageText()
@@ -810,8 +814,9 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * 图文分享：状态感知文案（EXTRA_TEXT）+ 直播间封面（EXTRA_STREAM）。
-     * 预研结论：QQ/微信收图片分享会丢 EXTRA_TEXT——对面板标题做了预期管理，
-     * 需要"文案绝不丢"的场景引导用户选长宣传图。
+     * 预研结论：QQ/微信/TIM 等聊天类应用收图片分享必丢 EXTRA_TEXT——
+     * 所以文案同时烙进封面底部（renderCaptionedCover），任何目标都丢不了；
+     * EXTRA_TEXT/EXTRA_SUBJECT/ClipData 保留给尊重它们的应用（微博/邮件，双保险）。
      */
     internal fun shareAsImageText() {
         Toast.makeText(this, "正在准备图文分享…", Toast.LENGTH_SHORT).show()
@@ -821,10 +826,20 @@ class MainActivity : AppCompatActivity() {
             val title = roomInfo?.title
             currentShareTitle = title
             currentShareLive = isLive
-            val coverUrl = roomInfo?.cover
-            val file = coverUrl?.let {
+            val decider = com.bilibili.livemonitor.domain.ShareTextDecider
+            val caption = decider.body(isLive, QqShare.ROOM_ID, title)
+            val coverBitmap = roomInfo?.cover?.let {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    coverDownloader(it)
+                    coverBitmapDownloader(it)
+                }
+            }
+            // 文案烙进封面底部半透明条带
+            val captioned = coverBitmap?.let {
+                com.bilibili.livemonitor.util.PromoImageRenderer.renderCaptionedCover(it, caption)
+            }
+            val file = captioned?.let {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    shareImageLoader.save(this@MainActivity, it, "cover_caption.png")
                 }
             }
             if (file == null) {
@@ -834,11 +849,13 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
             val uri = shareImageLoader.shareableUri(this@MainActivity, file)
-            val text = "${com.bilibili.livemonitor.domain.ShareTextDecider.body(isLive, QqShare.ROOM_ID, title)} ${QqShare.buildShareUrl()}"
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "image/*"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_TEXT, text)
+                putExtra(Intent.EXTRA_SUBJECT, decider.title(isLive, title))
+                putExtra(Intent.EXTRA_TEXT, "$caption ${QqShare.buildShareUrl()}")
+                // ClipData 授权：部分目标只认它（不认 intent flag）才读得到图片流
+                clipData = android.content.ClipData.newUri(contentResolver, "cover", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(Intent.createChooser(intent, "图文分享（部分应用可能只发图片）"))
@@ -846,11 +863,61 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 生成长宣传图：封面+状态文案+直播间二维码全部烙进图里，
+     * QQ空间图文说说：官方图文通道（TYPE_IMAGE_TEXT：文案+封面+链接俱全）。
+     * 授权流程与 QQ 卡片共用同一 Tencent session。
+     */
+    internal fun shareAsQzone() {
+        Toast.makeText(this, "正在准备说说…", Toast.LENGTH_SHORT).show()
+        (qqSdkSharer as? com.bilibili.livemonitor.util.DefaultQqSdkSharer)?.bind(applicationContext)
+        shareScope.launch {
+            val roomInfo = withTimeoutOrNull(3000) { roomInfoFetcher(QqShare.ROOM_ID) }
+            val isLive = resolveShareLiveState(roomInfo)
+            val title = roomInfo?.title
+            // QzoneShare 只收本地路径，封面先下载落盘
+            val coverFile = roomInfo?.cover?.let {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    coverDownloader(it)
+                }
+            }
+            val params = QqShare.buildQzoneShareParams(coverFile?.absolutePath, title, isLive)
+            AppLogger.d("MainActivity", "shareAsQzone isAuthorized=${qqSdkSharer.isAuthorized()}")
+            if (qqSdkSharer.isAuthorized()) {
+                doQzoneShareAfterAuthorized(params)
+            } else {
+                showQqAuthGuideDialog(params) { doQzoneShareAfterAuthorized(params) }
+            }
+        }
+    }
+
+    private fun doQzoneShareAfterAuthorized(params: android.os.Bundle) {
+        qqSdkSharer.shareToQzone(
+            activity = this,
+            params = params,
+            onComplete = {
+                Toast.makeText(this, "已分享到 QQ 空间", Toast.LENGTH_SHORT).show()
+            },
+            onCancel = {
+                AppLogger.d("MainActivity", "qzone share cancelled by user")
+            },
+            onError = { code, msg ->
+                AppLogger.e("MainActivity", "qzone share onError: code=$code msg=$msg")
+                if (code == com.bilibili.livemonitor.util.QQ_ERR_USER_NOT_AUTHORIZED) {
+                    // session 过期：重新弹授权引导
+                    showQqAuthGuideDialog(params) { doQzoneShareAfterAuthorized(params) }
+                } else {
+                    Toast.makeText(this, "说说分享失败：$msg", Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
+
+    /**
+     * 生成宣传图：封面+状态文案+直播间二维码全部烙进图里，
      * 任何分享目标都不丢文案（预研：QQ/微信会丢 EXTRA_TEXT）。
+     * 先弹预览对话框，三风格即时切换（选择持久化），点分享才落盘发出。
      */
     internal fun shareAsPromoImage() {
-        Toast.makeText(this, "正在生成长宣传图…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "正在生成宣传图…", Toast.LENGTH_SHORT).show()
         shareScope.launch {
             val roomInfo = withTimeoutOrNull(3000) { roomInfoFetcher(QqShare.ROOM_ID) }
             val isLive = resolveShareLiveState(roomInfo)
@@ -863,15 +930,62 @@ class MainActivity : AppCompatActivity() {
             val headline = if (isLive && !title.isNullOrBlank()) "白绮开播啦！「$title」"
                            else com.bilibili.livemonitor.domain.ShareTextDecider.title(isLive, title)
             val body = com.bilibili.livemonitor.domain.ShareTextDecider.body(isLive, QqShare.ROOM_ID, title)
-            val promo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                com.bilibili.livemonitor.util.PromoImageRenderer.render(coverBitmap, headline, body)
+            showPromoPreview(coverBitmap, headline, body)
+        }
+    }
+
+    /** 宣传图预览对话框：三风格即时切换并记住选择，点「分享」才落盘发出 */
+    internal fun showPromoPreview(cover: android.graphics.Bitmap?, headline: String, body: String) {
+        val view = layoutInflater.inflate(R.layout.dialog_promo_preview, null)
+        val iv = view.findViewById<android.widget.ImageView>(R.id.ivPromoPreview)
+        val dialog = AlertDialog.Builder(this).setView(view).create()
+
+        val renderer = com.bilibili.livemonitor.util.PromoImageRenderer
+        var style = runCatching {
+            com.bilibili.livemonitor.util.PromoImageRenderer.Style.valueOf(preferenceManager.getPromoStyle())
+        }.getOrDefault(com.bilibili.livemonitor.util.PromoImageRenderer.Style.LIGHT_CARD)
+        var current: android.graphics.Bitmap? = null
+
+        val radios = mapOf(
+            com.bilibili.livemonitor.util.PromoImageRenderer.Style.LIGHT_CARD to view.findViewById<android.widget.RadioButton>(R.id.rbStyleLightCard),
+            com.bilibili.livemonitor.util.PromoImageRenderer.Style.BLUR_BG to view.findViewById<android.widget.RadioButton>(R.id.rbStyleBlurBg),
+            com.bilibili.livemonitor.util.PromoImageRenderer.Style.DARK to view.findViewById<android.widget.RadioButton>(R.id.rbStyleDark)
+        )
+
+        fun rerender() {
+            current = renderer.render(style, cover, headline, body)
+            iv.setImageBitmap(current)
+            radios.forEach { (s, rb) -> rb.isChecked = s == style }
+        }
+        radios.forEach { (s, rb) ->
+            rb.setOnClickListener {
+                style = s
+                preferenceManager.setPromoStyle(s.name)
+                rerender()
             }
+        }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoShare)
+            .setOnClickListener {
+                val promo = current ?: return@setOnClickListener
+                dialog.dismiss()
+                sharePromoBitmap(promo, body)
+            }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoCancel)
+            .setOnClickListener { dialog.dismiss() }
+
+        rerender()
+        dialog.show()
+    }
+
+    private fun sharePromoBitmap(promo: android.graphics.Bitmap, body: String) {
+        Toast.makeText(this, "正在准备分享…", Toast.LENGTH_SHORT).show()
+        shareScope.launch {
             val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 shareImageLoader.save(this@MainActivity, promo, "promo.png")
             }
             promo.recycle()
             if (file == null) {
-                Toast.makeText(this@MainActivity, "长图生成失败", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "宣传图生成失败", Toast.LENGTH_LONG).show()
                 return@launch
             }
             val uri = shareImageLoader.shareableUri(this@MainActivity, file)
@@ -879,9 +993,10 @@ class MainActivity : AppCompatActivity() {
                 type = "image/png"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_TEXT, "$body ${QqShare.buildShareUrl()}")
+                clipData = android.content.ClipData.newUri(contentResolver, "promo", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "分享长宣传图"))
+            startActivity(Intent.createChooser(intent, "分享宣传图"))
         }
     }
 
@@ -896,7 +1011,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showQqAuthGuideDialog(params: android.os.Bundle) {
+    private fun showQqAuthGuideDialog(
+        params: android.os.Bundle,
+        onAuthorizedProceed: () -> Unit = { doQqShareAfterAuthorized(params) }
+    ) {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("QQ 分享需要先授权")
             .setMessage(
@@ -911,7 +1029,7 @@ class MainActivity : AppCompatActivity() {
                     onAuthorized = {
                         AppLogger.d("MainActivity", "qq auth completed, proceed to share")
                         Toast.makeText(this, "QQ 授权成功", Toast.LENGTH_SHORT).show()
-                        doQqShareAfterAuthorized(params)
+                        onAuthorizedProceed()
                     },
                     onCancelled = {
                         Toast.makeText(this, "已取消授权", Toast.LENGTH_SHORT).show()

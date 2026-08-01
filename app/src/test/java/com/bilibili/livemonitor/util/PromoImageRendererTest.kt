@@ -9,7 +9,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * 长宣传图渲染的纯逻辑部分（QR 位图与整图尺寸）。
+ * 宣传图渲染的纯逻辑部分（QR 位图、三风格整图、图文烙文案条）。
  * 真机解码可读性由 SharePromoInstrumentedTest 守护。
  */
 @RunWith(RobolectricTestRunner::class)
@@ -40,21 +40,51 @@ class PromoImageRendererTest {
     }
 
     @Test
-    fun `二维码含黑白模块即内容非空`() {
-        val qr = PromoImageRenderer.renderQr(100)
-        var black = 0
-        var white = 0
-        for (x in 0 until 100) for (y in 0 until 100) {
-            if (qr.getPixel(x, y) == Color.BLACK) black++ else white++
+    fun `三种风格都能渲染且尺寸为1080x1350`() {
+        // 美术重做（2026-08）：旧 1080x1680 太长，改 4:5 社交卡片比
+        for (style in PromoImageRenderer.Style.values()) {
+            val promo = PromoImageRenderer.render(style, null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
+            assertEquals("$style 宽度", PromoImageRenderer.WIDTH, promo.width)
+            assertEquals("$style 高度", PromoImageRenderer.HEIGHT, promo.height)
+            assertEquals("宣传图比例应为 4:5", 1350, promo.height)
         }
-        assertTrue("二维码必须有黑色模块", black > 500)
-        assertTrue("二维码必须有白色模块", white > 500)
     }
 
     @Test
-    fun `长图尺寸为1080x1680 无封面用占位块也能渲染`() {
-        val promo = PromoImageRenderer.render(null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
-        assertEquals(PromoImageRenderer.WIDTH, promo.width)
-        assertEquals(PromoImageRenderer.HEIGHT, promo.height)
+    fun `三种风格都不是单色废图`() {
+        // 渲染结果必须有视觉内容（防布局全画到画布外的回归）
+        for (style in PromoImageRenderer.Style.values()) {
+            val promo = PromoImageRenderer.render(style, null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
+            val first = promo.getPixel(0, 0)
+            var differs = false
+            var y = 0
+            while (y < promo.height && !differs) {
+                var x = 0
+                while (x < promo.width && !differs) {
+                    if (promo.getPixel(x, y) != first) differs = true
+                    x += 53
+                }
+                y += 53
+            }
+            assertTrue("$style 渲染结果不能是单色废图", differs)
+        }
+    }
+
+    @Test
+    fun `图文烙文案条 底部加半透明深色带`() {
+        // 图文修复核心：聊天类应用必丢 EXTRA_TEXT，文案烙进封面底部
+        val cover = Bitmap.createBitmap(400, 200, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(0xFF6750A4.toInt())
+        }
+        val captioned = PromoImageRenderer.renderCaptionedCover(cover, "白绮还没开播，先来直播间蹲一个开播！")
+
+        assertEquals("宽度不变", 400, captioned.width)
+        assertEquals("高度 = 原图 + 条带", 200 + 96, captioned.height)
+        // 底部条带区域必须是深色（半透明黑压在图上）
+        val bandPixel = captioned.getPixel(200, 200 + 48)
+        assertTrue(
+            "底部必须是深色条带: ${Integer.toHexString(bandPixel)}",
+            Color.red(bandPixel) < 120 && Color.green(bandPixel) < 120 && Color.blue(bandPixel) < 120
+        )
     }
 }
