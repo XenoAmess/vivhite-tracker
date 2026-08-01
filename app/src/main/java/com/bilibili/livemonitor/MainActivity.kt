@@ -124,6 +124,15 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // targetSdk 35+ 强制 edge-to-edge，头像会顶到状态栏下面被遮挡；
+        // 把系统栏高度加进顶部 padding（保留原有 24dp 内边距，与 LogActivity 同款处理）
+        val basePaddingTop = binding.root.paddingTop
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, basePaddingTop + bars.top, v.paddingRight, v.paddingBottom)
+            insets
+        }
+
         preferenceManager = PreferenceManager(this)
 
         // 如果之前用户在监控，但服务被系统杀掉了，重新打开App时自动恢复

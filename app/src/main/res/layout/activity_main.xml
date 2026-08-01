@@ -96,29 +96,29 @@
             android:textSize="15sp"
             android:textAlignment="textStart"
             android:textColor="@android:color/darker_gray"
-            app:layout_constraintBottom_toTopOf="@id/tvLastCheck"
+            app:layout_constraintBottom_toBottomOf="@id/cvStatus"
             app:layout_constraintStart_toEndOf="@id/cvStatus"
             app:layout_constraintTop_toBottomOf="@id/tvStatus" />
 
+        <!-- 上次检测单独整行：右侧列宽度被头像挤占，长文本显示不全（用户反馈） -->
         <TextView
             android:id="@+id/tvLastCheck"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="8dp"
             android:text="上次检测: 暂无记录"
             android:textSize="14sp"
             android:textAlignment="textStart"
             android:textColor="@android:color/darker_gray"
-            app:layout_constraintBottom_toBottomOf="@id/cvStatus"
-            app:layout_constraintStart_toEndOf="@id/cvStatus"
-            app:layout_constraintTop_toBottomOf="@id/tvRoomId" />
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/cvStatus" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenLive"
             android:layout_width="0dp"
             android:layout_height="46dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="8dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:text="打开直播间"
@@ -127,7 +127,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cvStatus" />
+            app:layout_constraintTop_toBottomOf="@id/tvLastCheck" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenSpace"
