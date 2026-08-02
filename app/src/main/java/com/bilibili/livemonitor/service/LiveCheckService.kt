@@ -470,10 +470,29 @@ class LiveCheckService : Service() {
         notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_VIDEO, notification)
     }
 
-    private fun sendDynamicNotification(dynamicId: String, displayText: String) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://dynamic/$dynamicId")).apply {
+    /**
+     * 动态通知的跳转 intent：bilibili://dynamic/detail/{id} 是动态详情正规 scheme
+     * （旧 bilibili://dynamic/{id} 无此路由，点击无反应——2026-08-02 用户反馈实锤）；
+     * 解析不到（未装/旧版客户端）回退官方短链 https://t.bilibili.com/{id}
+     * （API 返回的「复制动态地址」同格式，浏览器/applink 均可达）。
+     * internal：单测验证两分支。
+     */
+    internal fun buildDynamicIntent(dynamicId: String): Intent {
+        val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://dynamic/detail/$dynamicId")).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
+        val resolvable = packageManager.queryIntentActivities(appIntent, 0).isNotEmpty()
+        return if (resolvable) {
+            appIntent
+        } else {
+            Intent(Intent.ACTION_VIEW, Uri.parse("https://t.bilibili.com/$dynamicId")).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+        }
+    }
+
+    private fun sendDynamicNotification(dynamicId: String, displayText: String) {
+        val intent = buildDynamicIntent(dynamicId)
         val pendingIntent = PendingIntent.getActivity(
             this, dynamicId.hashCode(), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

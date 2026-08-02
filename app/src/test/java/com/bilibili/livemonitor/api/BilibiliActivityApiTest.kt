@@ -156,6 +156,23 @@ class BilibiliActivityApiTest {
     }
 
     @Test
+    fun `parseDynamicItem module_desc 直挂 text 的线上真实结构`() {
+        // 2026-08-02 线上实测：module_desc = {"rich_text_nodes":[...], "text":"分享图片"}
+        // text 直挂在 module_desc 上（不是嵌套 desc.text），旧代码取不到导致通知无缩略
+        val json = """{"code":0,"data":{"items":[
+            {"id_str":"1231957583013609473","type":"DYNAMIC_TYPE_DRAW",
+             "modules":[
+               {"module_author":{"is_top":false,"pub_ts":1785675877}},
+               {"module_desc":{"rich_text_nodes":[{"orig_text":"分享图片","text":"分享图片","type":"RICH_TEXT_NODE_TYPE_TEXT"}],"text":"分享图片"}},
+               {"module_dynamic":{"dyn_draw":{"id":404053490,"items":[]}}}
+             ]}
+        ]}}"""
+        val result = api.parseDynamicFeed(json)
+        assertTrue(result is BilibiliActivityApi.ActivityResult.Ok)
+        assertEquals("分享图片", (result as BilibiliActivityApi.ActivityResult.Ok).data.displayText)
+    }
+
+    @Test
     fun `parseDynamicItem JSONArray 形态的 AV 模块正确解析`() {
         val json = """{"code":0,"data":{"items":[
             {"id_str":"456","type":"DYNAMIC_TYPE_AV",

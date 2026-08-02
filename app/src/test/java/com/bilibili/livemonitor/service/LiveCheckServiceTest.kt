@@ -853,6 +853,39 @@ class LiveCheckServiceTest {
             "v2 channel 才能拿到 HIGH 重要性",
             LiveMonitorApp.CHANNEL_DYNAMIC_ALERT_ID.endsWith("_v2")
         )
+
+        // 跳转 intent：Robolectric 环境无 bilibili，应回退 https 短链
+        val contentIntent = shadowOf(notif.contentIntent).savedIntent
+        assertEquals(
+            "https://t.bilibili.com/new_id",
+            contentIntent?.dataString
+        )
+    }
+
+    @Test
+    fun `A4c 动态跳转intent bilibili可解析时用detail scheme 否则https回退`() {
+        // bilibili://dynamic/{id} 无路由（点击无反应实锤），detail 才是正规 scheme
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+
+        // 分支1：环境里有能解析 detail scheme 的 activity → 用 bilibili://dynamic/detail/
+        val resolveInfo = org.robolectric.shadows.ShadowResolveInfo.newResolveInfo(
+            "Bilibili", "tv.danmaku.bili", "MainActivity"
+        )
+        shadowOf(context.packageManager).addResolveInfoForIntent(
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("bilibili://dynamic/detail/123")),
+            resolveInfo
+        )
+        val appIntent = service.buildDynamicIntent("123")
+        assertEquals("bilibili://dynamic/detail/123", appIntent.dataString)
+
+        // 分支2：清掉解析器 → 回退 https 官方短链
+        shadowOf(context.packageManager).setResolveInfosForIntent(
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("bilibili://dynamic/detail/123")),
+            emptyList()
+        )
+        val webIntent = service.buildDynamicIntent("123")
+        assertEquals("https://t.bilibili.com/123", webIntent.dataString)
     }
 
     @Test

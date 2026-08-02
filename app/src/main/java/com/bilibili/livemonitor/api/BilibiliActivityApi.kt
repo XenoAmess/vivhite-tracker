@@ -157,14 +157,15 @@ open class BilibiliActivityApi {
     }
 
     /**
-     * 提取动态展示文本：
-     * - module_desc.text（DYNAMIC_TYPE_DRAW 等带 desc 的类型）
-     * - 空字符串（DYNAMIC_TYPE_AV 无 desc 时）
+     * 提取动态展示文本。线上真实结构（2026-08-02 实测）是
+     * module_desc.text 直挂 + rich_text_nodes；老 fixture/文档形态
+     * 是嵌套 module_desc.desc.text。先直挂后嵌套，两种都兼容。
      */
     private fun extractDisplayText(modules: Map<String, JSONObject>): String {
         val moduleDesc = modules["module_desc"] ?: return ""
-        val text = moduleDesc.optJSONObject("desc")?.optString("text")
-        return text?.takeIf { it.isNotBlank() } ?: ""
+        moduleDesc.optString("text").takeIf { it.isNotBlank() }?.let { return it }
+        return moduleDesc.optJSONObject("desc")
+            ?.optString("text")?.takeIf { it.isNotBlank() } ?: ""
     }
 
     /**
