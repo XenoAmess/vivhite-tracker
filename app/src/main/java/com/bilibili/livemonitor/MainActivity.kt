@@ -1537,6 +1537,7 @@ class MainActivity : AppCompatActivity() {
         // 仅在监控中且当前在播时才置静音；无论用户选 bilibili 还是浏览器都该静音
         if (LiveCheckService.isRunning && LiveCheckService.lastLiveStatus) {
             preferenceManager.setAlertSuppressed(true)
+            preferenceManager.setSuppressedLiveStart(preferenceManager.getLastLiveStartTime())
             val muteIntent = Intent(this, LiveCheckService::class.java).apply {
                 action = LiveCheckService.ACTION_WATCH_LIVE
             }

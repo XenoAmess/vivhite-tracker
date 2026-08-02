@@ -38,6 +38,22 @@ class PreferenceManagerTest {
     }
 
     @Test
+    fun `lastLiveStartTime 存取 round trip`() {
+        assertEquals("", prefs.getLastLiveStartTime())
+        prefs.setLastLiveStartTime("2026-08-02 12:00:00")
+        assertEquals("2026-08-02 12:00:00", prefs.getLastLiveStartTime())
+    }
+
+    @Test
+    fun `suppressedLiveStart 存取 round trip`() {
+        assertEquals("", prefs.getSuppressedLiveStart())
+        prefs.setSuppressedLiveStart("2026-08-02 12:00:00")
+        assertEquals("2026-08-02 12:00:00", prefs.getSuppressedLiveStart())
+        prefs.setSuppressedLiveStart("")
+        assertEquals("", prefs.getSuppressedLiveStart())
+    }
+
+    @Test
     fun `默认 roomId 是白绮直播间`() {
         // 新装应用未设置时，默认监控 11258892
         assertEquals(11258892L, PreferenceManager(ApplicationProvider.getApplicationContext()).getRoomId())

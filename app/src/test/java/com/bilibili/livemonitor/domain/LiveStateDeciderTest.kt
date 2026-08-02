@@ -65,6 +65,17 @@ class LiveStateDeciderTest {
         assertFalse(LiveStateDecider.shouldClearSuppression(isLive = true))
     }
 
+    @Test
+    fun `新一场直播时应解除静音 同一场保持`() {
+        // 场景（真机反馈）：置静音后服务在下播窗口期被杀，标记卡死；
+        // 绑定 live_start_time 后，检测到新一场（live_start_time 变了）应解除
+        assertTrue(LiveStateDecider.shouldClearSuppression(isLive = true, isNewSession = true))
+        assertFalse(LiveStateDecider.shouldClearSuppression(isLive = true, isNewSession = false))
+        // NotLive 恒解除（原有语义不受新参数影响）
+        assertTrue(LiveStateDecider.shouldClearSuppression(isLive = false, isNewSession = false))
+        assertTrue(LiveStateDecider.shouldClearSuppression(isLive = false, isNewSession = true))
+    }
+
     // ---------- restoreLastStatus（真机事件：2026-07-23 实测发现重复提醒 bug） ----------
 
     @Test
@@ -156,7 +167,7 @@ class LiveStateDeciderTest {
 
     @Test
     fun `确定的在播结果 不重试`() {
-        assertFalse(LiveStateDecider.shouldRetry(BilibiliApi.LiveStatus.Live))
+        assertFalse(LiveStateDecider.shouldRetry(BilibiliApi.LiveStatus.Live()))
     }
 
     @Test

@@ -10,7 +10,30 @@ class BilibiliApiTest {
     @Test
     fun `parseApiResponse live returns Live`() {
         val json = """{"code":0,"data":{"room_id":11258892,"live_status":1}}"""
-        assertEquals(BilibiliApi.LiveStatus.Live, BilibiliApi.parseApiResponse(json))
+        assertEquals(BilibiliApi.LiveStatus.Live(), BilibiliApi.parseApiResponse(json))
+    }
+
+    @Test
+    fun `parseApiResponse live parses live_start_time`() {
+        // 观播静音绑定依赖该字段：新一场开播时 live_start_time 变化
+        val json = """{"code":0,"data":{"room_id":11258892,"live_status":1,"live_start_time":"2026-08-02 19:00:00"}}"""
+        assertEquals(
+            BilibiliApi.LiveStatus.Live("2026-08-02 19:00:00"),
+            BilibiliApi.parseApiResponse(json)
+        )
+    }
+
+    @Test
+    fun `parseApiResponse live without live_start_time returns null field`() {
+        // 兼容旧响应/异常响应：字段缺失或空白时 liveStartTime=null，不影响状态判定
+        val noField = """{"code":0,"data":{"room_id":11258892,"live_status":1}}"""
+        assertNull(
+            (BilibiliApi.parseApiResponse(noField) as BilibiliApi.LiveStatus.Live).liveStartTime
+        )
+        val blank = """{"code":0,"data":{"room_id":11258892,"live_status":1,"live_start_time":""}}"""
+        assertNull(
+            (BilibiliApi.parseApiResponse(blank) as BilibiliApi.LiveStatus.Live).liveStartTime
+        )
     }
 
     @Test
@@ -48,7 +71,7 @@ class BilibiliApiTest {
     @Test
     fun `parseScriptContent live_status 1 returns Live`() {
         val script = """window.__NEPTUNE_IS_MY_WAIFU__={"roomInfoRes":{"live_status":1}}"""
-        assertEquals(BilibiliApi.LiveStatus.Live, BilibiliApi.parseScriptContent(script))
+        assertEquals(BilibiliApi.LiveStatus.Live(), BilibiliApi.parseScriptContent(script))
     }
 
     @Test
@@ -60,13 +83,13 @@ class BilibiliApiTest {
     @Test
     fun `parseScriptContent status LIVE returns Live`() {
         val script = """{"status":"LIVE","room_id":11258892}"""
-        assertEquals(BilibiliApi.LiveStatus.Live, BilibiliApi.parseScriptContent(script))
+        assertEquals(BilibiliApi.LiveStatus.Live(), BilibiliApi.parseScriptContent(script))
     }
 
     @Test
     fun `parseScriptContent status 1 returns Live`() {
         val script = """{"status":1}"""
-        assertEquals(BilibiliApi.LiveStatus.Live, BilibiliApi.parseScriptContent(script))
+        assertEquals(BilibiliApi.LiveStatus.Live(), BilibiliApi.parseScriptContent(script))
     }
 
     @Test

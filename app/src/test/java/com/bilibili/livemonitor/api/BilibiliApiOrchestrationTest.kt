@@ -29,11 +29,11 @@ class BilibiliApiOrchestrationTest {
 
     @Test
     fun `API成功直接返回 不走网页兜底`() = runBlocking {
-        val api = FakeApi(LiveStatus.Live, LiveStatus.NotLive)
+        val api = FakeApi(LiveStatus.Live(), LiveStatus.NotLive)
 
         val result = api.checkLiveStatus(11258892L)
 
-        assertEquals(LiveStatus.Live, result)
+        assertEquals(LiveStatus.Live(), result)
         assertEquals(false, api.webCalled)
     }
 
@@ -42,12 +42,12 @@ class BilibiliApiOrchestrationTest {
         // 场景：API 临时 502/限流，网页解析兜底仍给出正确状态
         val api = FakeApi(
             LiveStatus.Error("api 502"),
-            LiveStatus.Live
+            LiveStatus.Live()
         )
 
         val result = api.checkLiveStatus(11258892L)
 
-        assertEquals(LiveStatus.Live, result)
+        assertEquals(LiveStatus.Live(), result)
         assertEquals(true, api.webCalled)
     }
 
@@ -71,7 +71,7 @@ class BilibiliApiOrchestrationTest {
 
     @Test
     fun `API未开播 直接返回不兜底`() = runBlocking {
-        val api = FakeApi(LiveStatus.NotLive, LiveStatus.Live)
+        val api = FakeApi(LiveStatus.NotLive, LiveStatus.Live())
 
         val result = api.checkLiveStatus(11258892L)
 

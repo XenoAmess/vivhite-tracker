@@ -63,6 +63,25 @@ class PreferenceManager(context: Context) {
         return prefs.getBoolean(KEY_ALERT_SUPPRESSED, false)
     }
 
+    // 最近一次检测到的本场直播 live_start_time（服务每次 Live 时写入，置静音时以此为绑定参照）
+    fun setLastLiveStartTime(startTime: String) {
+        prefs.edit().putString(KEY_LAST_LIVE_START_TIME, startTime).apply()
+    }
+
+    fun getLastLiveStartTime(): String {
+        return prefs.getString(KEY_LAST_LIVE_START_TIME, "") ?: ""
+    }
+
+    // 观播静音绑定的本场直播 live_start_time；与当前不一致 = 新一场 = 自动解除静音
+    // 空串 = 老标记（无绑定信息），不参与新会话比对
+    fun setSuppressedLiveStart(startTime: String) {
+        prefs.edit().putString(KEY_SUPPRESSED_LIVE_START, startTime).apply()
+    }
+
+    fun getSuppressedLiveStart(): String {
+        return prefs.getString(KEY_SUPPRESSED_LIVE_START, "") ?: ""
+    }
+
     // 首次启动标记：控制邓煜名言首启必出
     fun setFirstLaunchDone(done: Boolean) {
         prefs.edit().putBoolean(KEY_FIRST_LAUNCH_DONE, done).apply()
@@ -230,6 +249,8 @@ class PreferenceManager(context: Context) {
         private const val KEY_OEM_GUIDE_PROMPTED = "oem_guide_prompted"
         private const val KEY_FIRST_LAUNCH_DONE = "first_launch_done"
         private const val KEY_ALERT_SUPPRESSED = "alert_suppressed"
+        private const val KEY_LAST_LIVE_START_TIME = "last_live_start_time"
+        private const val KEY_SUPPRESSED_LIVE_START = "suppressed_live_start"
         private const val KEY_AUTO_CHECK_UPDATE = "auto_check_update"
         private const val KEY_AUTO_DOWNLOAD_UPDATE = "auto_download_update"
         private const val KEY_LAST_UPDATE_CHECK_TIME = "last_update_check_time"

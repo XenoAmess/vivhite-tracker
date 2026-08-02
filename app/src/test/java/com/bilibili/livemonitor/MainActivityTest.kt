@@ -338,6 +338,29 @@ class MainActivityTest {
     }
 
     @Test
+    fun `监控中点打开直播间 观播静音绑定当前场次live_start_time`() {
+        // B 方案：置静音时绑定本场 live_start_time，新一场开播时服务据此自动解除
+        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
+        prefs.setServiceRunning(true)
+        prefs.setLastLiveStartTime("2026-08-02 12:00:00")
+        LiveCheckService.isRunning = true
+        LiveCheckService.lastLiveStatus = true
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        shadowOf(context).peekNextStartedService()
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnOpenLive
+        ).performClick()
+
+        assertTrue("应置观播静音", prefs.isAlertSuppressed())
+        assertEquals(
+            "静音应绑定当前场次",
+            "2026-08-02 12:00:00",
+            prefs.getSuppressedLiveStart()
+        )
+    }
+
+    @Test
     fun `底部显示功能说明文案`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 

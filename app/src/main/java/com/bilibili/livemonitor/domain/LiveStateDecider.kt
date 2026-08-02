@@ -27,11 +27,13 @@ object LiveStateDecider {
     }
 
     /**
-     * 观播静音何时解除：下播（NotLive）即解除，
-     * 之后下次开播恢复正常提醒
+     * 观播静音何时解除：
+     * - 下播（NotLive）即解除，之后下次开播恢复正常提醒
+     * - 检测到【新一场直播】（live_start_time 与置静音时绑定的不一致）即解除——
+     *   旧场景：置静音后服务在下播窗口期被杀，标记卡死，之后所有开播都被短路不响铃
      */
-    fun shouldClearSuppression(isLive: Boolean): Boolean {
-        return !isLive
+    fun shouldClearSuppression(isLive: Boolean, isNewSession: Boolean = false): Boolean {
+        return !isLive || isNewSession
     }
 
     /**

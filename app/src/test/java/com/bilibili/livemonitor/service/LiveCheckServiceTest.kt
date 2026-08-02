@@ -221,7 +221,7 @@ class LiveCheckServiceTest {
     fun `S9 未开播到开播跳变 触发提醒`() {
         // 核心功能：监控中发现开播，响铃+震动+全屏+通知
         prefs.setServiceRunning(true)
-        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         controller.startCommand(0, 1)
         waitFor("first check done") { fakeApi.callCount >= 1 && prefs.getLastCheckTime() > 0 }
@@ -249,7 +249,7 @@ class LiveCheckServiceTest {
         prefs.setServiceRunning(true)
         prefs.setAlertSoundUri("builtin:alert_6")
         prefs.setAlertSoundTitle("遊園施設")
-        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         // 注入 fake 播放器（Robolectric 无法构造真 ExoPlayer），记录实际加载的 uri
         val fakes = mutableListOf<FakeExoPlayer>()
@@ -277,7 +277,7 @@ class LiveCheckServiceTest {
         // 协程体在 alertScopeJob.cancel() 之后才有机会跑 → 永远跑不到，
         // 播放器无限循环直到进程死亡
         prefs.setServiceRunning(true)
-        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val fakes = mutableListOf<FakeExoPlayer>()
         controller.get().playerFactory = {
@@ -302,7 +302,7 @@ class LiveCheckServiceTest {
         prefs.setServiceRunning(true)
         // 预置 10 分钟内的"在播"状态，服务启动时会恢复 lastStatus=true
         prefs.setLastCheck(System.currentTimeMillis() - 60_000, isLive = true, success = true)
-        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         controller.startCommand(0, 1)
 
@@ -339,9 +339,9 @@ class LiveCheckServiceTest {
         // Live（保持静音不提醒）→ NotLive（下播自动解除）→ Live（恢复提醒）
         prefs.setServiceRunning(true)
         fakeApi.enqueue(
-            BilibiliApi.LiveStatus.Live,    // 在播（静音中，不应提醒）
+            BilibiliApi.LiveStatus.Live(),    // 在播（静音中，不应提醒）
             BilibiliApi.LiveStatus.NotLive, // 下播（解除静音）
-            BilibiliApi.LiveStatus.Live     // 再开播（恢复，应提醒）
+            BilibiliApi.LiveStatus.Live()     // 再开播（恢复，应提醒）
         )
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -379,6 +379,137 @@ class LiveCheckServiceTest {
         waitFor("alert after unmute", 10_000) {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT) != null
         }
+    }
+
+    @Test
+    fun `S14 启动时静音标记过期 自动清除`() {
+        // A 兜底（真机反馈）：置静音后服务在下播窗口期被杀，lastCheck 过期，
+        // 标记已失真，启动必须清除，否则之后开播被 suppressed 永久吞掉提醒
+        prefs.setServiceRunning(true)
+        prefs.setAlertSuppressed(true)
+        prefs.setSuppressedLiveStart("2026-08-02 12:00:00")
+        // 20 分钟前的在播记录（已过 10min 新鲜度窗口）
+        prefs.setLastCheck(System.currentTimeMillis() - 1_200_000, isLive = true, success = true)
+
+        buildService(Intent(context, LiveCheckService::class.java)).create()
+
+        assertFalse("过期静音标记应被清除", prefs.isAlertSuppressed())
+        assertEquals("绑定应一并清空", "", prefs.getSuppressedLiveStart())
+    }
+
+    @Test
+    fun `S15 启动时静音标记新鲜且在播 保留`() {
+        // 正常路径：置静音后服务被秒杀重启（监控一直在跑、在播），不得误清
+        prefs.setServiceRunning(true)
+        prefs.setAlertSuppressed(true)
+        prefs.setSuppressedLiveStart("2026-08-02 12:00:00")
+        prefs.setLastCheck(System.currentTimeMillis() - 60_000, isLive = true, success = true)
+
+        buildService(Intent(context, LiveCheckService::class.java)).create()
+
+        assertTrue("新鲜在播的静音标记应保留", prefs.isAlertSuppressed())
+    }
+
+    @Test
+    fun `S16 启动时lastCheck已知下播 清除静音`() {
+        prefs.setServiceRunning(true)
+        prefs.setAlertSuppressed(true)
+        prefs.setLastCheck(System.currentTimeMillis() - 60_000, isLive = false, success = true)
+
+        buildService(Intent(context, LiveCheckService::class.java)).create()
+
+        assertFalse("已知下播的静音标记应清除", prefs.isAlertSuppressed())
+    }
+
+    @Test
+    fun `S17 静音绑定同场次保持 新一场自动解除并提醒`() {
+        // B 方案：服务一直在跑但错过 NotLive 跳变（如 Doze 节流跳过整个下播窗口），
+        // 靠 live_start_time 变化识别新一场并恢复提醒
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(
+            BilibiliApi.LiveStatus.Live("2026-08-02 12:00:00"), // 第1场开播
+            BilibiliApi.LiveStatus.Live("2026-08-02 12:00:00"), // 同场次（静音中，不提醒）
+            BilibiliApi.LiveStatus.Live("2026-08-02 19:00:00")  // 新一场（解除+提醒）
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        fun driveOneCheck(startId: Int) {
+            val before = prefs.getLastCheckTime()
+            waitFor("check advances", 15_000) {
+                controller.startCommand(0, startId)
+                prefs.getLastCheckTime() != before
+            }
+        }
+
+        // 1: 第1场开播（应提醒，并写入 lastLiveStartTime）
+        driveOneCheck(1)
+        assertEquals("应记录本场 live_start_time", "2026-08-02 12:00:00", prefs.getLastLiveStartTime())
+
+        // 置静音（绑定第1场）
+        controller.withIntent(Intent(LiveCheckService.ACTION_WATCH_LIVE)).startCommand(0, 2)
+        assertTrue(prefs.isAlertSuppressed())
+        assertEquals("应绑定第1场", "2026-08-02 12:00:00", prefs.getSuppressedLiveStart())
+        controller.withIntent(Intent(context, LiveCheckService::class.java))
+
+        // 2: 同场次在播，保持静音不提醒
+        nm.cancel(LiveMonitorApp.NOTIFICATION_ID_ALERT)
+        driveOneCheck(3)
+        assertTrue("同场次应保持静音", prefs.isAlertSuppressed())
+        assertNull(
+            "同场次不得提醒",
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT)
+        )
+
+        // 3: 新一场（live_start_time 变了）→ 自动解除 + 触发提醒
+        driveOneCheck(4)
+        assertFalse("新一场应解除静音", prefs.isAlertSuppressed())
+        assertEquals("绑定应清空", "", prefs.getSuppressedLiveStart())
+        waitFor("alert for new session", 10_000) {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT) != null
+        }
+    }
+
+    @Test
+    fun `S18 老版无绑定静音标记 下播解除不崩`() {
+        // 兼容性：升级前留下的静音标记无 suppressed_live_start（空串），
+        // 不参与新会话比对，但仍应在 NotLive 时正常解除。
+        // 预置新鲜在播记录：模拟监控一直在跑，A 启动兜底不清，走 B/NotLive 路径
+        prefs.setServiceRunning(true)
+        prefs.setAlertSuppressed(true)
+        prefs.setLastCheck(System.currentTimeMillis() - 60_000, isLive = true, success = true)
+        // 不写 suppressed_live_start（模拟老标记）
+        fakeApi.enqueue(
+            BilibiliApi.LiveStatus.Live("2026-08-02 12:00:00"), // 在播（老标记无绑定，保持静音）
+            BilibiliApi.LiveStatus.NotLive                      // 下播（解除）
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+
+        fun driveOneCheck(startId: Int) {
+            val before = prefs.getLastCheckTime()
+            waitFor("check advances", 15_000) {
+                controller.startCommand(0, startId)
+                prefs.getLastCheckTime() != before
+            }
+        }
+
+        driveOneCheck(1)
+        assertTrue("无绑定的老标记不得被新会话逻辑误清", prefs.isAlertSuppressed())
+
+        driveOneCheck(2)
+        assertFalse("下播后老标记应正常解除", prefs.isAlertSuppressed())
+    }
+
+    @Test
+    fun `S19 WATCH_LIVE命令 绑定当前lastLiveStartTime`() {
+        prefs.setServiceRunning(true)
+        prefs.setLastLiveStartTime("2026-08-02 12:00:00")
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+
+        controller.withIntent(Intent(LiveCheckService.ACTION_WATCH_LIVE)).startCommand(0, 1)
+
+        assertTrue(prefs.isAlertSuppressed())
+        assertEquals("应绑定当前场次", "2026-08-02 12:00:00", prefs.getSuppressedLiveStart())
     }
 
     @Test
@@ -447,7 +578,7 @@ class LiveCheckServiceTest {
         // wrong-thread 异常被 catch 静默吞掉 → 感知到开播但完全无声。
         // 修复后必须走 mainDispatcher（测试用 Unconfined 顶替并同步执行）。
         prefs.setServiceRunning(true)
-        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val fakes = mutableListOf<FakeExoPlayer>()
         val service = wireFakePlayer(controller, fakes)
@@ -468,7 +599,7 @@ class LiveCheckServiceTest {
         // 守护修复核心：若有人把 playAlertSound 改回直接在调用线程建播放器，
         // RecordingDispatcher.dispatch 不会被走到，此测试变红
         prefs.setServiceRunning(true)
-        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val service = controller.get()
         val recorder = RecordingDispatcher()
@@ -487,7 +618,7 @@ class LiveCheckServiceTest {
         // 异常安全：就算工厂炸了（如真机 wrong-thread），也只能损失铃声，
         // 不能阻断 vibrate/通知等后续提醒动作，服务不能崩
         prefs.setServiceRunning(true)
-        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val service = controller.get()
         service.mainDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
@@ -508,7 +639,7 @@ class LiveCheckServiceTest {
     fun `P4 铃声源全部失败 播放器释放且引用清空`() {
         // 兜底链返回 false 时：已创建的播放器必须 release，不能泄漏
         prefs.setServiceRunning(true)
-        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val fakes = mutableListOf<FakeExoPlayer>()
         val service = wireFakePlayer(controller, fakes)
@@ -527,9 +658,9 @@ class LiveCheckServiceTest {
         // 旧播放器若不停下释放，会双音轨循环直到进程死亡
         prefs.setServiceRunning(true)
         fakeApi.enqueue(
-            BilibiliApi.LiveStatus.Live,    // 第1次开播 → 提醒#1
+            BilibiliApi.LiveStatus.Live(),    // 第1次开播 → 提醒#1
             BilibiliApi.LiveStatus.NotLive, // 下播
-            BilibiliApi.LiveStatus.Live     // 第2次开播 → 提醒#2
+            BilibiliApi.LiveStatus.Live()     // 第2次开播 → 提醒#2
         )
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val fakes = mutableListOf<FakeExoPlayer>()
@@ -550,7 +681,7 @@ class LiveCheckServiceTest {
     @Test
     fun `P6 响铃中停止监控 播放器停止释放且stopAlertSound幂等`() {
         prefs.setServiceRunning(true)
-        fakeApi.enqueue(BilibiliApi.LiveStatus.Live)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val fakes = mutableListOf<FakeExoPlayer>()
         val service = wireFakePlayer(controller, fakes)

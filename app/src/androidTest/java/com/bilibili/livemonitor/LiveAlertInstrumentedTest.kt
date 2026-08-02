@@ -39,7 +39,7 @@ class LiveAlertInstrumentedTest {
     /** 恒在播的 fake 检测源：驱动 handleResult(true) → triggerAlert */
     class AlwaysLiveApi : LiveStatusChecker {
         override suspend fun checkLiveStatus(roomId: Long): BilibiliApi.LiveStatus =
-            BilibiliApi.LiveStatus.Live
+            BilibiliApi.LiveStatus.Live()
     }
 
     @Before

@@ -97,6 +97,24 @@ class LiveCheckService : Service() {
             now = System.currentTimeMillis(),
             maxAgeMillis = STATUS_RESTORE_MAX_AGE
         )
+
+        // 观播静音新鲜度清除（A 兜底）：静音标记只在"监控持续在跑"时有意义。
+        // 服务若在下播窗口期被杀（lastCheck 过期/失败/已知下播），标记已失真，
+        // 不清除则之后开播会被 shouldAlert 的 suppressed 分支永久吞掉提醒。
+        if (preferenceManager.isAlertSuppressed()) {
+            val checkTime = preferenceManager.getLastCheckTime()
+            val checkSuccess = preferenceManager.isLastCheckSuccess()
+            val checkLive = preferenceManager.isLastCheckLive()
+            val stale = !checkSuccess ||
+                System.currentTimeMillis() - checkTime > STATUS_RESTORE_MAX_AGE ||
+                !checkLive
+            if (stale) {
+                AppLogger.w(TAG, "clearing stale watch-live mute on startup: success=$checkSuccess live=$checkLive age=${System.currentTimeMillis() - checkTime}ms")
+                preferenceManager.setAlertSuppressed(false)
+                preferenceManager.setSuppressedLiveStart("")
+            }
+        }
+
         isRunning = true
 
         // 确保WorkManager兜底任务已注册
@@ -120,6 +138,8 @@ class LiveCheckService : Service() {
         if (intent?.action == ACTION_WATCH_LIVE) {
             AppLogger.d(TAG, "enter watch-live muted mode")
             preferenceManager.setAlertSuppressed(true)
+            preferenceManager.setSuppressedLiveStart(preferenceManager.getLastLiveStartTime())
+            AppLogger.d(TAG, "watch-live mute set: bound=${preferenceManager.getSuppressedLiveStart()}")
             stopAlertSound()
             updateNotification(lastLiveStatus)
             return START_STICKY
@@ -216,7 +236,7 @@ class LiveCheckService : Service() {
             AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
 
             when (status) {
-                is BilibiliApi.LiveStatus.Live -> handleResult(true)
+                is BilibiliApi.LiveStatus.Live -> handleResult(true, status.liveStartTime)
                 is BilibiliApi.LiveStatus.NotLive -> handleResult(false)
                 is BilibiliApi.LiveStatus.Error -> {
                     // 错误不更新状态，由调用方决定是否重试
@@ -231,13 +251,34 @@ class LiveCheckService : Service() {
         }
     }
 
-    private fun handleResult(isLive: Boolean) {
-        // 观播静音：下播（NotLive）自动解除，之后下次开播恢复提醒
+    private fun handleResult(isLive: Boolean, liveStartTime: String? = null) {
+        // 记录本场直播的 live_start_time（供置静音时绑定参照）
+        if (isLive && liveStartTime != null) {
+            preferenceManager.setLastLiveStartTime(liveStartTime)
+        }
+
+        // 观播静音解除判定：下播即解除；检测到新一场直播（live_start_time 与
+        // 置静音时绑定的不一致）也解除——修复"置静音后服务在下播窗口期被杀，
+        // 标记卡死导致之后所有开播都不响铃"的真机 bug
         var suppressed = preferenceManager.isAlertSuppressed()
-        if (suppressed && LiveStateDecider.shouldClearSuppression(isLive)) {
-            suppressed = false
-            preferenceManager.setAlertSuppressed(false)
-            AppLogger.d(TAG, "stream ended, watch-live mute cleared")
+        if (suppressed) {
+            val bound = preferenceManager.getSuppressedLiveStart()
+            val isNewSession = isLive &&
+                bound.isNotBlank() &&
+                liveStartTime != null &&
+                liveStartTime != bound
+            if (LiveStateDecider.shouldClearSuppression(isLive, isNewSession)) {
+                val reason = if (!isLive) "notlive" else "new-session"
+                AppLogger.d(TAG, "watch-live mute cleared: reason=$reason bound=$bound current=$liveStartTime")
+                suppressed = false
+                preferenceManager.setAlertSuppressed(false)
+                preferenceManager.setSuppressedLiveStart("")
+                if (isNewSession) {
+                    // 新一场 = 新的开播跳变：重置 lastStatus 让 shouldAlert 按
+                    // null→Live 触发提醒，否则内存中 lastStatus=true 会吞掉本次提醒
+                    lastStatus = null
+                }
+            }
         }
 
         lastLiveStatus = isLive

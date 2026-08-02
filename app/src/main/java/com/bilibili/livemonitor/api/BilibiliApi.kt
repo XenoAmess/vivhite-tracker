@@ -11,7 +11,7 @@ import javax.net.ssl.HttpsURLConnection
 open class BilibiliApi : LiveStatusChecker {
 
     sealed class LiveStatus {
-        object Live : LiveStatus()
+        data class Live(val liveStartTime: String? = null) : LiveStatus()
         object NotLive : LiveStatus()
         data class Error(val reason: String) : LiveStatus()
     }
@@ -70,7 +70,7 @@ open class BilibiliApi : LiveStatusChecker {
 
             // 备用方法：检查页面上的开播标识
             val liveBadge = doc.select(".live-status, .living-icon, [class*='live'], [class*='living']")
-            if (liveBadge.isNotEmpty()) LiveStatus.Live else LiveStatus.NotLive
+            if (liveBadge.isNotEmpty()) LiveStatus.Live() else LiveStatus.NotLive
         } catch (e: IOException) {
             LiveStatus.Error("webpage network error: ${e.message}")
         } catch (e: Exception) {
@@ -180,7 +180,12 @@ open class BilibiliApi : LiveStatusChecker {
                 val data = json.optJSONObject("data")
                     ?: return LiveStatus.Error("api response missing data field")
                 val liveStatus = data.optInt("live_status", 0)
-                if (liveStatus == 1) LiveStatus.Live else LiveStatus.NotLive
+                if (liveStatus == 1) {
+                    // live_start_time 用于"观播静音绑定本场直播"：新一场开播时自动解除静音
+                    LiveStatus.Live(data.optString("live_start_time").takeIf { it.isNotBlank() })
+                } else {
+                    LiveStatus.NotLive
+                }
             } catch (e: Exception) {
                 LiveStatus.Error("api parse error: ${e.javaClass.simpleName}: ${e.message}")
             }
@@ -193,14 +198,14 @@ open class BilibiliApi : LiveStatusChecker {
             val statusMatch = Regex("\"live_status\"\\s*:\\s*(\\d)").find(text)
             if (statusMatch != null) {
                 val status = statusMatch.groupValues[1].toIntOrNull() ?: 0
-                return if (status == 1) LiveStatus.Live else LiveStatus.NotLive
+                return if (status == 1) LiveStatus.Live() else LiveStatus.NotLive
             }
 
             val statusMatch2 = Regex("\"status\"\\s*:\\s*\"?([^\"\\s,}]+)\"?").find(text)
             if (statusMatch2 != null) {
                 val status = statusMatch2.groupValues[1]
                 return if (status == "LIVE" || status == "1" || status == "true") {
-                    LiveStatus.Live
+                    LiveStatus.Live()
                 } else {
                     LiveStatus.NotLive
                 }
