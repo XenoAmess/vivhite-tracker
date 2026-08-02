@@ -11,17 +11,18 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 魔法期分享图渲染（1080×1350，专用简洁版式）。
+ * 魔法期分享图渲染（1080×800，专用简洁矮版式）。
  *
  * 版式：紫粉渐变底 + 大文案（死了啦，都怪你~ / 复活吧，我的爱人！）
- * + 魔法期日期区间 + 二维码 + 落款「白绮魔法期记录 · 来自牢白播了吗」。
+ * + 魔法期日期区间 + 落款「白绮魔法期记录 · 来自牢白播了吗」。
+ * 不展示直播间二维码（用户反馈 2026-08-02）。
  *
  * 文案逻辑见 domain/MagicPeriodDecider.imageText（最新一条未结束 → 死了啦）。
  */
 object MagicImageRenderer {
 
     const val WIDTH = 1080
-    const val HEIGHT = 1350
+    const val HEIGHT = 800
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
@@ -45,15 +46,15 @@ object MagicImageRenderer {
         })
 
         // 光斑装饰
-        renderer.drawGlow(c, 220f, 260f, 360f, 0xFFFF80AB.toInt(), 90)
-        renderer.drawGlow(c, 860f, 300f, 320f, 0xFFB388FF.toInt(), 80)
-        renderer.drawGlow(c, 540f, 1000f, 400f, 0xFFEA80FC.toInt(), 70)
+        renderer.drawGlow(c, 220f, 180f, 320f, 0xFFFF80AB.toInt(), 90)
+        renderer.drawGlow(c, 860f, 220f, 280f, 0xFFB388FF.toInt(), 80)
+        renderer.drawGlow(c, 540f, 640f, 340f, 0xFFEA80FC.toInt(), 70)
 
         // 顶部小标签
         val label = if (isOngoing) "⚰ 魔法期进行中" else "✨ 魔法期已结束"
         renderer.drawCenter(
             c, renderer.paintText(30f, 0xCCFFFFFF.toInt(), bold = true),
-            label, WIDTH / 2f, 220f
+            label, WIDTH / 2f, 150f
         )
 
         // 主文案（大字）
@@ -62,36 +63,33 @@ object MagicImageRenderer {
             if (mainText.length > 8) 66f else 84f,
             Color.WHITE, bold = true
         )
-        renderer.drawCenter(c, titlePaint, mainText, WIDTH / 2f, 560f)
+        renderer.drawCenter(c, titlePaint, mainText, WIDTH / 2f, 380f)
 
         // 副标题（白绮的魔法期）
         renderer.drawCenter(
-            c, renderer.paintText(34f, 0xE6FFFFFF.toInt()),
-            "——  白绮的魔法期记录  ——", WIDTH / 2f, 650f
+            c, renderer.paintText(32f, 0xE6FFFFFF.toInt()),
+            "——  白绮的魔法期记录  ——", WIDTH / 2f, 460f
         )
 
         // 日期区间卡片
         c.drawRoundRect(
-            android.graphics.RectF(100f, 740f, (WIDTH - 100).toFloat(), 900f),
+            android.graphics.RectF(100f, 530f, (WIDTH - 100).toFloat(), 690f),
             24f, 24f,
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33FFFFFF.toInt() }
         )
         renderer.drawCenter(
-            c, renderer.paintText(28f, 0xFFFFFFFF.toInt(), bold = true),
-            "魔法期区间", WIDTH / 2f, 800f
+            c, renderer.paintText(26f, 0xFFFFFFFF.toInt(), bold = true),
+            "魔法期区间", WIDTH / 2f, 590f
         )
         renderer.drawCenterClipped(
-            c, renderer.paintText(30f, 0xFFFFFFFF.toInt()),
-            rangeText, WIDTH / 2f, 866f, 920f
+            c, renderer.paintText(28f, 0xFFFFFFFF.toInt()),
+            rangeText, WIDTH / 2f, 650f, 920f
         )
-
-        // QR
-        renderer.drawQrCard(c, WIDTH / 2f, 940f, qrSize = 220f)
 
         // 落款
         renderer.drawCenter(
             c, renderer.paintText(24f, 0xB3FFFFFF.toInt()),
-            "白绮魔法期记录 · 来自「牢白播了吗」", WIDTH / 2f, HEIGHT - 40f
+            "白绮魔法期记录 · 来自「牢白播了吗」", WIDTH / 2f, HEIGHT - 34f
         )
         return bmp
     }
