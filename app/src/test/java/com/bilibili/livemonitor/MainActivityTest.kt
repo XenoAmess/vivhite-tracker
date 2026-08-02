@@ -206,6 +206,17 @@ class MainActivityTest {
     }
 
     @Test
+    fun `点版本号跳转关于页`() {
+        // 版本号即「关于+更新日志」入口（不新增按钮）
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.findViewById<android.widget.TextView>(R.id.tvVersion).performClick()
+
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals(AboutActivity::class.java.name, started?.component?.className)
+    }
+
+    @Test
     fun `点GitHub按钮 打开项目地址`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 

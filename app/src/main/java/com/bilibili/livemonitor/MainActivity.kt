@@ -236,6 +236,10 @@ class MainActivity : AppCompatActivity() {
         setupQqGroups()
         updateOpenLiveButton()
         binding.tvVersion.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})"
+        // 版本号即「关于 + 更新日志」入口（替代新增按钮，versionRow 不加第 4 个元素）
+        binding.tvVersion.setOnClickListener {
+            startActivity(Intent(this, AboutActivity::class.java))
+        }
     }
 
     // 应用内更新：检查源为 GitHub Releases（version.json 优先，APK 文件名兜底）

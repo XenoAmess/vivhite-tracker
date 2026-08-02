@@ -96,6 +96,10 @@
             android:name=".LogActivity"
             android:exported="false"
             android:label="运行日志" />
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false"
+            android:label="关于" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

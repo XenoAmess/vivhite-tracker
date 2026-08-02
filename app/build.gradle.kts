@@ -135,6 +135,40 @@ tasks.withType<Test>().configureEach {
     }
 }
 
+// 更新日志打包：遍历 v* tag 生成每版更新说明进 assets/CHANGELOG.txt（关于页展示）。
+// 输出随构建目录清理，不污染源码树。无 tag/无 git（浅克隆）写兜底文案，构建不挂。
+val changelogDir = layout.buildDirectory.dir("generated/changelog/assets")
+val generateChangelog = tasks.register("generateChangelog") {
+    val outFile = changelogDir.get().file("CHANGELOG.txt").asFile
+    outputs.file(outFile)
+    outputs.upToDateWhen { false } // git 历史每次构建都可能变
+    doLast {
+        outFile.parentFile.mkdirs()
+        fun git(vararg args: String): String = runCatching {
+            providers.exec { commandLine("git", *args) }.standardOutput.asText.get().trim()
+        }.getOrDefault("")
+        val tags = git("tag", "-l", "v*", "--sort=-creatordate")
+            .lines().filter { it.isNotBlank() }
+        if (tags.isEmpty()) {
+            outFile.writeText("暂无历史版本日志\n", Charsets.UTF_8)
+            return@doLast
+        }
+        val sb = StringBuilder()
+        tags.forEachIndexed { index, tag ->
+            val date = git("log", "-1", "--format=%cs", tag)
+            sb.append("## $tag ($date)\n")
+            val range = if (index + 1 < tags.size) "${tags[index + 1]}..$tag" else tag
+            git("log", "--oneline", "--no-decorate", range)
+                .lines().filter { it.isNotBlank() }.take(20)
+                .forEach { sb.append("$it\n") }
+            sb.append("\n")
+        }
+        outFile.writeText(sb.toString(), Charsets.UTF_8)
+    }
+}
+android.sourceSets.getByName("main").assets.srcDir(changelogDir.get())
+tasks.named("preBuild").configure { dependsOn(generateChangelog) }
+
 tasks.register<JacocoReport>("jacocoUnitTestReport") {
     dependsOn("testDebugUnitTest")
     reports {
