@@ -87,18 +87,56 @@ open class BilibiliActivityApi {
             val data = obj.optJSONObject("data") ?: return ActivityResult.Err("missing data")
             val items = data.optJSONArray("items") ?: return ActivityResult.NoData
             if (items.length() == 0) return ActivityResult.NoData
-            val first = items.optJSONObject(0) ?: return ActivityResult.NoData
-            val info = parseDynamicItem(first)
-            if (info == null) {
-                AppLogger.w(TAG, "parseDynamicItem returned null")
-                ActivityResult.Err("parse failed: missing id")
+            // 跳过置顶：置顶动态恒居 items[0]，只取第 0 条会让 last_dynamic_id
+            // 永远是置顶那条，新动态全部漏检（2026-08-02 线上实锤：
+            // 置顶 id=896036023158439940 占位，当日新动态在 items[1] 不可见）
+            var firstErr: ActivityResult.Err? = null
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val info = parseDynamicItem(item)
+                if (info == null) {
+                    if (firstErr == null) firstErr = ActivityResult.Err("parse failed: missing id")
+                    continue
+                }
+                if (info.isTop) continue
+                return ActivityResult.Ok(info)
+            }
+            // 全是置顶（用户只置顶不发新内容）：回退用第 0 条，保证 baseline 能落
+            val fallback = items.optJSONObject(0)?.let { parseDynamicItem(it) }
+            if (fallback != null) {
+                ActivityResult.Ok(fallback)
             } else {
-                ActivityResult.Ok(info)
+                firstErr ?: ActivityResult.Err("parse failed: missing id")
             }
         } catch (e: Exception) {
             AppLogger.w(TAG, "parseDynamicFeed failed: ${e.message}")
             ActivityResult.Err("parse error: ${e.javaClass.simpleName}")
         }
+    }
+
+    /**
+     * modules 字段兼容层：线上 desktop 端点实际返回 JSONArray
+     * （单键对象列表 [{"module_author":{...}},{"module_dynamic":{...}}]），
+     * 老 fixture/文档形态是 JSONObject。统一合并为 key -> JSONObject 视图。
+     */
+    private fun flattenModules(item: JSONObject): Map<String, JSONObject> {
+        val result = mutableMapOf<String, JSONObject>()
+        when (val modules = item.opt("modules")) {
+            is JSONObject -> {
+                for (key in modules.keys()) {
+                    (modules.optJSONObject(key))?.let { result[key] = it }
+                }
+            }
+            is org.json.JSONArray -> {
+                for (i in 0 until modules.length()) {
+                    val entry = modules.optJSONObject(i) ?: continue
+                    for (key in entry.keys()) {
+                        (entry.optJSONObject(key))?.let { result[key] = it }
+                    }
+                }
+            }
+        }
+        return result
     }
 
     /**
@@ -109,47 +147,33 @@ open class BilibiliActivityApi {
             ?: item.optString("id").takeIf { it.isNotBlank() }
             ?: return null
         val type = item.optString("type")
-        val modules = item.optJSONObject("modules")
-        val moduleAuthor = modules?.optJSONObject("module_author")
+        val modules = flattenModules(item)
+        val moduleAuthor = modules["module_author"]
         val isTop = moduleAuthor?.optBoolean("is_top", false) ?: false
         val pubTs = moduleAuthor?.optLong("pub_ts", 0L) ?: 0L
-        val displayText = extractDisplayText(item)
-        val avItem = extractAvItem(item)
+        val displayText = extractDisplayText(modules)
+        val avItem = extractAvItem(modules)
         return DynamicInfo(id, type, displayText, avItem, isTop, pubTs)
     }
 
     /**
      * 提取动态展示文本：
      * - module_desc.text（DYNAMIC_TYPE_DRAW 等带 desc 的类型）
-     * - module_dynamic.dyn_archive.title（DYNAMIC_TYPE_AV，由 extractAvItem 同步覆盖）
      * - 空字符串（DYNAMIC_TYPE_AV 无 desc 时）
      */
-    private fun extractDisplayText(item: JSONObject): String {
-        return try {
-            val modules = item.optJSONObject("modules") ?: return ""
-            // 优先用 module_desc.text（图文动态有 desc）
-            val moduleDesc = modules.optJSONObject("module_desc")
-            if (moduleDesc != null) {
-                val desc = moduleDesc.optJSONObject("desc")
-                if (desc != null) {
-                    val text = desc.optString("text")
-                    if (text.isNotBlank()) return text
-                }
-            }
-            ""
-        } catch (_: Exception) {
-            ""
-        }
+    private fun extractDisplayText(modules: Map<String, JSONObject>): String {
+        val moduleDesc = modules["module_desc"] ?: return ""
+        val text = moduleDesc.optJSONObject("desc")?.optString("text")
+        return text?.takeIf { it.isNotBlank() } ?: ""
     }
 
     /**
      * 提取 DYNAMIC_TYPE_AV / DYNAMIC_TYPE_ARCHIVE 的视频条目。
      * 其他类型返回 null。
      */
-    private fun extractAvItem(item: JSONObject): AvItem? {
+    private fun extractAvItem(modules: Map<String, JSONObject>): AvItem? {
         return try {
-            val modules = item.optJSONObject("modules") ?: return null
-            val moduleDynamic = modules.optJSONObject("module_dynamic") ?: return null
+            val moduleDynamic = modules["module_dynamic"] ?: return null
             val archive = moduleDynamic.optJSONObject("dyn_archive")
                 ?: moduleDynamic.optJSONObject("archive")
                 ?: return null

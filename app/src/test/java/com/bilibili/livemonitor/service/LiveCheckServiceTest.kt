@@ -88,6 +88,8 @@ class LiveCheckServiceTest {
         if (intent != null) controller.withIntent(intent)
         val service = controller.get()
         service.api = fakeApi
+        // 动态检测 15s 重试在生产防端点抽风，测试里置 0 避免阻塞 isChecking 闸门
+        service.dynamicRetryDelayMillis = 0
         controllers.add(controller)
         return controller
     }
@@ -840,6 +842,41 @@ class LiveCheckServiceTest {
         }
 
         assertEquals("new_id", prefs.getLastDynamicId())
+
+        // 通知升级（2026-08）：动态通知必须 HIGH 优先级 + v2 channel（横幅+提示音）
+        val notif = shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC)!!
+        assertEquals(
+            android.app.Notification.PRIORITY_HIGH, notif.priority
+        )
+        assertEquals(LiveMonitorApp.CHANNEL_DYNAMIC_ALERT_ID, notif.channelId)
+        assertTrue(
+            "v2 channel 才能拿到 HIGH 重要性",
+            LiveMonitorApp.CHANNEL_DYNAMIC_ALERT_ID.endsWith("_v2")
+        )
+    }
+
+    @Test
+    fun `A4b 动态检测NoData后重试一次 成功则正常提醒`() {
+        // desktop 端点约 1/6 概率返回 code=0 但 items=[]，必须 15s 后重试一次
+        // （测试里 dynamicRetryDelayMillis=0 不阻塞）
+        prefs.setServiceRunning(true)
+        prefs.setLastDynamicId("old_id")
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData,
+            textDynamic("retry_id", "重试拿到的动态")
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveCheckUntil(controller, "dynamic notification after retry") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC) != null
+        }
+
+        assertTrue("必须发生重试", activityApi.callCount >= 2)
+        assertEquals("retry_id", prefs.getLastDynamicId())
     }
 
     @Test

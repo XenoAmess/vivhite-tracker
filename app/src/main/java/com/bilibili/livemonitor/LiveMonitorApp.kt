@@ -25,6 +25,12 @@ class LiveMonitorApp : Application() {
 
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            // channel 重要性一旦被系统记住就改不了（老用户升级不生效），
+            // video/dynamic 从 DEFAULT/LOW 升 HIGH 必须换新 channel id（v2），旧 id 删除。
+            // （2026-08 用户反馈：动态通知无横幅无提示音，实为 LOW 被系统折叠）
+            nm.deleteNotificationChannel("video_alert")
+            nm.deleteNotificationChannel("dynamic_alert")
             val channels = listOf(
                 NotificationChannel(
                     CHANNEL_SERVICE_ID,
@@ -46,16 +52,20 @@ class LiveMonitorApp : Application() {
                 NotificationChannel(
                     CHANNEL_VIDEO_ALERT_ID,
                     "新视频提醒",
-                    NotificationManager.IMPORTANCE_DEFAULT
+                    NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "监控的 UP 主发布新视频/置顶变化时提醒"
+                    enableVibration(true)
+                    enableLights(true)
                 },
                 NotificationChannel(
                     CHANNEL_DYNAMIC_ALERT_ID,
                     "新动态提醒",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = "监控的 UP 主发布新动态时提醒（实验功能）"
+                    description = "监控的 UP 主发布新动态时提醒"
+                    enableVibration(true)
+                    enableLights(true)
                 },
                 NotificationChannel(
                     CHANNEL_MAGIC_ID,
@@ -68,16 +78,16 @@ class LiveMonitorApp : Application() {
                 }
             )
 
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannels(channels)
+            nm.createNotificationChannels(channels)
         }
     }
 
     companion object {
         const val CHANNEL_SERVICE_ID = "live_monitor_service"
         const val CHANNEL_ALERT_ID = "live_alert"
-        const val CHANNEL_VIDEO_ALERT_ID = "video_alert"
-        const val CHANNEL_DYNAMIC_ALERT_ID = "dynamic_alert"
+        // v2：channel 重要性被系统记忆，升 HIGH 必须换 id（旧 video_alert/dynamic_alert 已删除）
+        const val CHANNEL_VIDEO_ALERT_ID = "video_alert_v2"
+        const val CHANNEL_DYNAMIC_ALERT_ID = "dynamic_alert_v2"
         const val CHANNEL_MAGIC_ID = "magic_alert"
         const val NOTIFICATION_ID_SERVICE = 1001
         const val NOTIFICATION_ID_ALERT = 1002

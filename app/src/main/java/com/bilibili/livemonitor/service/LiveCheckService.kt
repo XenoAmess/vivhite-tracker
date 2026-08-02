@@ -321,22 +321,33 @@ class LiveCheckService : Service() {
     }
 
     private suspend fun checkDynamicFeed() {
-        val result = activityApi.fetchLatestDynamic(
-            com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID
-        )
-        when (result) {
+        // desktop 端点间歇性返回 code=0 但 items=[]（2026-08-02 实测约 1/6 抽风率），
+        // Err/NoData 统一等 15s 重试一次（对齐直播检测策略），避免偶发漏检
+        when (val result = fetchDynamicOnce()) {
             is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
-                val dynamic = result.data
-                handleDynamicResult(dynamic)
+                handleDynamicResult(result.data)
             }
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.NoData -> {
-                AppLogger.d(TAG, "dynamic feed empty, skip")
-            }
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Err -> {
-                // 失败静默不扰
-                AppLogger.w(TAG, "fetchLatestDynamic failed: ${result.reason}")
+            else -> {
+                AppLogger.w(TAG, "dynamic check failed ($result), retry in ${dynamicRetryDelayMillis / 1000}s")
+                kotlinx.coroutines.delay(dynamicRetryDelayMillis)
+                when (val retry = fetchDynamicOnce()) {
+                    is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
+                        AppLogger.d(TAG, "dynamic retry succeeded")
+                        handleDynamicResult(retry.data)
+                    }
+                    else -> AppLogger.w(TAG, "dynamic retry also failed ($retry)")
+                }
             }
         }
+    }
+
+    // internal 注入位：单测置 0 避免 15s 重试阻塞 isChecking 闸门
+    internal var dynamicRetryDelayMillis: Long = ERROR_RETRY_DELAY
+
+    private suspend fun fetchDynamicOnce(): com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult<com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo> {
+        return activityApi.fetchLatestDynamic(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID
+        )
     }
 
     private fun handleDynamicResult(dynamic: com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo) {
@@ -451,7 +462,7 @@ class LiveCheckService : Service() {
             .setSmallIcon(R.drawable.img_on)
             .setContentTitle("白绮 $prefix")
             .setContentText(title.take(50))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
@@ -472,7 +483,7 @@ class LiveCheckService : Service() {
             .setSmallIcon(R.drawable.img_on)
             .setContentTitle("白绮新动态")
             .setContentText(text.take(50))
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()

@@ -131,4 +131,80 @@ class BilibiliActivityApiTest {
         // 守护硬编码值不被意外修改
         assertEquals(251990176L, BilibiliActivityApi.MONITOR_MID)
     }
+
+    // ---------- 2026-08-02 线上实锤修复：modules 为 JSONArray + 置顶占位 ----------
+
+    @Test
+    fun `parseDynamicItem modules 为 JSONArray 时正确解析`() {
+        // 线上 desktop 端点实际返回 modules 为 JSONArray（单键对象列表），
+        // 旧代码 optJSONObject("modules") 得 null → is_top/文案/avItem 全丢
+        val json = """{"code":0,"data":{"items":[
+            {"id_str":"1231913654110126086","type":"DYNAMIC_TYPE_DRAW",
+             "modules":[
+               {"module_author":{"is_top":false,"pub_ts":1785699240}},
+               {"module_desc":{"desc":{"text":"今天的新动态"}}},
+               {"module_dynamic":{"dyn_draw":{"id":1,"items":[]}}}
+             ]}
+        ]}}"""
+        val result = api.parseDynamicFeed(json)
+        assertTrue(result is BilibiliActivityApi.ActivityResult.Ok)
+        val info = (result as BilibiliActivityApi.ActivityResult.Ok).data
+        assertEquals("1231913654110126086", info.id)
+        assertEquals("今天的新动态", info.displayText)
+        assertFalse(info.isTop)
+        assertEquals(1785699240L, info.pubTs)
+    }
+
+    @Test
+    fun `parseDynamicItem JSONArray 形态的 AV 模块正确解析`() {
+        val json = """{"code":0,"data":{"items":[
+            {"id_str":"456","type":"DYNAMIC_TYPE_AV",
+             "modules":[
+               {"module_author":{"is_top":false,"pub_ts":100}},
+               {"module_dynamic":{"dyn_archive":{
+                 "aid":"116853292667144","bvid":"BV1FiTW6HE8k",
+                 "title":"数组形态视频","duration_text":"04:18",
+                 "cover":"http://i0.hdslb.com/cover.jpg",
+                 "stat":{"play":3546,"like":222}}}}
+             ]}
+        ]}}"""
+        val result = api.parseDynamicFeed(json)
+        assertTrue(result is BilibiliActivityApi.ActivityResult.Ok)
+        val av = (result as BilibiliActivityApi.ActivityResult.Ok).data.avItem
+        assertNotNull("JSONArray 形态 avItem 不得丢失", av)
+        assertEquals("数组形态视频", av!!.title)
+        assertEquals(116853292667144L, av.aid)
+        assertEquals(3546L, av.playCount)
+    }
+
+    @Test
+    fun `parseDynamicFeed 置顶在首位时取第一条非置顶`() {
+        // 2026-08-02 线上实锤：置顶动态（2月旧内容）恒居 items[0]，
+        // 旧代码只取 items[0] → last_dynamic_id 永远是置顶 → 新动态全漏
+        val json = """{"code":0,"data":{"items":[
+            {"id_str":"896036023158439940","type":"DYNAMIC_TYPE_DRAW",
+             "modules":[{"module_author":{"is_top":true,"pub_ts":1770273420}}]},
+            {"id_str":"1231913654110126086","type":"DYNAMIC_TYPE_DRAW",
+             "modules":[{"module_author":{"is_top":false,"pub_ts":1785699240}},
+                        {"module_desc":{"desc":{"text":"今天的新动态"}}}]}
+        ]}}"""
+        val result = api.parseDynamicFeed(json)
+        assertTrue(result is BilibiliActivityApi.ActivityResult.Ok)
+        val info = (result as BilibiliActivityApi.ActivityResult.Ok).data
+        assertEquals("必须跳过置顶取到新动态", "1231913654110126086", info.id)
+        assertEquals("今天的新动态", info.displayText)
+        assertFalse(info.isTop)
+    }
+
+    @Test
+    fun `parseDynamicFeed 全是置顶时回退第0条保证基线可落`() {
+        // 边界：用户只置顶不发新内容，仍要返回数据（否则永远 Err 重试空转）
+        val json = """{"code":0,"data":{"items":[
+            {"id_str":"111","type":"DYNAMIC_TYPE_DRAW",
+             "modules":[{"module_author":{"is_top":true,"pub_ts":100}}]}
+        ]}}"""
+        val result = api.parseDynamicFeed(json)
+        assertTrue(result is BilibiliActivityApi.ActivityResult.Ok)
+        assertTrue((result as BilibiliActivityApi.ActivityResult.Ok).data.isTop)
+    }
 }
