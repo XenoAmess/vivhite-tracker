@@ -69,11 +69,25 @@ jobs:
         PY
         cat version.json
 
+    # 增量更新（bsdiff）：对历史第 1,2,4,8... 个 release 生成直达补丁并回打自验；
+    # 其余历史版本按二进制分解组成多跳链，全部拍平写进 version.json 的 chains 字段。
+    # 补丁/链任一环节失败只丢该条目（客户端自然回退全量），绝不阻塞发布。
+    - name: Install bsdiff
+      run: sudo apt-get update && sudo apt-get install -y bsdiff
+
+    - name: Generate delta patches and build upgrade chains
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python3 .github/workflows/build_delta_chains.py
+        cat version.json
+
     - name: Create Release
       uses: softprops/action-gh-release@v3
       with:
         files: |
           vivhite-tracker-*.apk
+          patch-*.bspatch
           version.json
         generate_release_notes: true
       env:
