@@ -233,35 +233,56 @@ object PromoImageRenderer {
     }
 
     private fun drawRoundedCover(canvas: Canvas, dst: Rect, cover: Bitmap?, radius: Float, placeholderColor: Int) {
-        canvas.save()
-        canvas.clipPath(Path().apply { addRoundRect(RectF(dst), radius, radius, Path.Direction.CW) })
-        if (cover != null) canvas.drawBitmap(cover, null, dst, null)
-        else canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = placeholderColor })
-        canvas.restore()
+        drawRoundedCover(canvas, RectF(dst), cover, radius, placeholderColor)
+    }
+
+    // centerCrop 目标矩形计算（纯函数，可单测宽高比保持）：保比例放大并居中裁边
+    internal fun centerCropRect(coverW: Int, coverH: Int, dst: RectF): RectF {
+        val scale = maxOf(dst.width() / coverW, dst.height() / coverH)
+        val w = coverW * scale
+        val h = coverH * scale
+        val left = dst.left + (dst.width() - w) / 2f
+        val top = dst.top + (dst.height() - h) / 2f
+        return RectF(left, top, left + w, top + h)
     }
 
     private fun drawRoundedCover(canvas: Canvas, dst: RectF, cover: Bitmap?, radius: Float, placeholderColor: Int) {
         canvas.save()
         canvas.clipPath(Path().apply { addRoundRect(dst, radius, radius, Path.Direction.CW) })
-        if (cover != null) canvas.drawBitmap(cover, null, dst, null)
-        else canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = placeholderColor })
+        if (cover != null) {
+            // centerCrop：保比例放大裁边，防止封面被拉伸变形（B站封面 16:9，直接
+            // drawBitmap(cover, null, dst) 会按 dst 比例硬拉，人脸变形）
+            canvas.drawBitmap(cover, null, centerCropRect(cover.width, cover.height, dst), null)
+        } else {
+            canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = placeholderColor })
+        }
         canvas.restore()
     }
 
+    /**
+     * 贴码小白块：QR + 静区（24px）即全部，无 caption 带。
+     * 统一纯白底——静区是扫码可靠性要求；深色风格传深色卡的旧策略会让
+     * QR 黑模块压深底扫不出，已废弃。浅色背景上 shadow=true 加柔和投影防"白上白消失"。
+     */
     internal fun drawQrCard(
-        canvas: Canvas, cx: Float, topY: Float, cardColor: Int = Color.WHITE,
-        captionColor: Int = 0xFF1B1B1F.toInt(), pad: Float = 28f, qrSize: Float = QR_SIZE.toFloat()
+        canvas: Canvas, cx: Float, topY: Float,
+        qrSize: Float = QR_SIZE.toFloat(), shadow: Boolean = false
     ) {
-        val captionH = 64f
+        val pad = 24f
         val cardW = qrSize + pad * 2
-        val cardH = qrSize + pad * 2 + captionH
-        val rect = RectF(cx - cardW / 2, topY, cx + cardW / 2, topY + cardH)
-        canvas.drawRoundRect(rect, 28f, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = cardColor })
+        val rect = RectF(cx - cardW / 2, topY, cx + cardW / 2, topY + cardW)
+        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            if (shadow) setShadowLayer(16f, 0f, 6f, 0x33000000)
+        }
+        canvas.drawRoundRect(rect, 20f, 20f, cardPaint)
         val qr = renderQr(qrSize.toInt())
         canvas.drawBitmap(qr, cx - qrSize / 2, topY + pad, null)
         qr.recycle()
-        drawCenter(canvas, paintText(28f, captionColor), "扫码打开 B 站直播间", cx, topY + pad + qrSize + 46f)
     }
+
+    // 白块高度（供样式排版计算 QR 区底部边界）
+    internal fun qrCardHeight(qrSize: Float = QR_SIZE.toFloat()): Float = qrSize + 48f
 
     private fun drawTextOnPathCenter(canvas: Canvas, paint: Paint, text: String, path: Path, baselineOffset: Float) {
         paint.textAlign = Paint.Align.CENTER
@@ -364,10 +385,10 @@ object PromoImageRenderer {
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFF7F4EC.toInt() })
         c.drawRect(0f, 0f, WIDTH.toFloat(), 220f, Paint().apply { color = 0xFF1A1A1A.toInt() })
         c.drawText("VOL.11258892", 56f, 200f, paintText(46f, 0xFFEFE7DA.toInt()).setMono())
-        drawRoundedCover(c, Rect(64, 260, WIDTH - 64, 260 + 760), cover, 12f, 0xFF6750A4.toInt())
-        drawCenter(c, paintText(54f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 1110f)
-        drawCenterClipped(c, paintText(30f, 0xFF555555.toInt()).setSerif(), body, WIDTH / 2f, 1156f, 980f)
-        drawQrCard(c, WIDTH / 2f, 1196f)
+        drawRoundedCover(c, Rect(64, 260, WIDTH - 64, 260 + 620), cover, 12f, 0xFF6750A4.toInt())
+        drawCenter(c, paintText(54f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 960f)
+        drawCenterClipped(c, paintText(30f, 0xFF555555.toInt()).setSerif(), body, WIDTH / 2f, 1010f, 980f)
+        drawQrCard(c, WIDTH / 2f, 1044f, qrSize = 220f, shadow = true)
         return b
     }
 
@@ -383,7 +404,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(38f, 0xFF1A1A1A.toInt(), bold = true).setSerif(), headline.take(24), WIDTH / 2f + 240f, 360f, 480f)
         drawCenterClipped(c, paintText(22f, 0xFF424242.toInt()).setSerif(), body, WIDTH / 2f + 240f, 410f, 480f)
         drawCenterClipped(c, paintText(20f, 0xFF424242.toInt()).setSerif(), "——  记者 牢白  报道", WIDTH / 2f + 240f, 460f, 480f)
-        drawQrCard(c, WIDTH / 2f, 740f, cardColor = 0xFFFAFAFA.toInt(), qrSize = 280f)
+        drawQrCard(c, WIDTH / 2f, 740f, qrSize = 280f)
         return b
     }
 
@@ -401,7 +422,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(22f, 0xFF424242.toInt()).setMono(), "Released: 11258892", WIDTH / 2f, 760f, 900f)
         c.drawLine(140f, 1130f, WIDTH - 140f, 1130f, Paint().apply { color = 0xFF1A1A1A.toInt(); strokeWidth = 1f })
         drawCenter(c, paintText(18f, 0xFF616161.toInt()).setMono(), "[ 来自「牢白播了吗」  ·  监控类应用  ·  v1.0 ]", WIDTH / 2f, 1170f)
-        drawQrCard(c, WIDTH / 2f, 820f, cardColor = 0xFFFFFDF6.toInt(), qrSize = 240f, captionColor = 0xFF1A1A1A.toInt())
+        drawQrCard(c, WIDTH / 2f, 820f, qrSize = 240f)
         return b
     }
 
@@ -438,7 +459,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(22f, 0xFF333333.toInt()).setSerif(), body, WIDTH / 2f, 880f, 920f)
         drawCenterClipped(c, paintText(20f, 0xFF555555.toInt()).setSerif(), "—— 摄影·报道 ·  牢白", WIDTH / 2f, 930f, 920f)
         drawCenterClipped(c, paintText(16f, 0xFF888888.toInt()).setSerif(), "  white-room.live / 11258892  ", WIDTH / 2f, 970f, 920f)
-        drawQrCard(c, WIDTH / 2f, 1000f, qrSize = 280f)
+        drawQrCard(c, WIDTH / 2f, 980f, qrSize = 280f, shadow = true)
         return b
     }
 
@@ -457,7 +478,7 @@ object PromoImageRenderer {
         }
         c.drawLine(140f, 1050f, WIDTH - 140f, 1050f, Paint().apply { color = 0xFFBDBDBD.toInt(); strokeWidth = 1f })
         drawTextLeft(c, paintText(16f, 0xFF888888.toInt()), "  ·  牢白  ·  ", 140f, 1080f)
-        drawQrCard(c, WIDTH - 200f, 1110f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH - 200f, 1042f, qrSize = 220f, shadow = true)
         return b
     }
 
@@ -473,7 +494,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(48f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 840f)
         drawCenterClipped(c, paintText(24f, 0xFF424242.toInt()), body, WIDTH / 2f, 896f, 900f)
         c.drawLine(80f, 970f, WIDTH - 80f, 970f, Paint().apply { color = 0xFF1A1A1A.toInt(); strokeWidth = 3f })
-        drawQrCard(c, WIDTH / 2f, 990f, cardColor = 0xFFFFFFFF.toInt())
+        drawQrCard(c, WIDTH / 2f, 940f, shadow = true)
         return b
     }
     // ===F2===
@@ -486,7 +507,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(54f, 0xFF1A1A1A.toInt()), headline.take(14), WIDTH / 2f, 880f)
         c.drawLine(WIDTH / 2f - 60, 920f, WIDTH / 2f + 60, 920f, Paint().apply { color = 0xFF1A1A1A.toInt(); strokeWidth = 1.5f })
         drawCenterClipped(c, paintText(24f, 0xFF666666.toInt()), body, WIDTH / 2f, 970f, 900f)
-        drawQrCard(c, WIDTH / 2f, 1020f, qrSize = 240f, captionColor = 0xFF1A1A1A.toInt())
+        drawQrCard(c, WIDTH / 2f, 1020f, qrSize = 240f)
         return b
     }
 
@@ -499,7 +520,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(32f, 0xFFFAFAFA.toInt()), headline.take(20), WIDTH / 2f, 720f, 900f)
         drawCenterClipped(c, paintText(20f, 0xFFBDBDBD.toInt()), body, WIDTH / 2f, 780f, 900f)
         c.drawLine(80f, HEIGHT - 200f, WIDTH - 80f, HEIGHT - 200f, Paint().apply { color = 0xFFFAFAFA.toInt(); strokeWidth = 1f })
-        drawQrCard(c, WIDTH / 2f, HEIGHT - 470f, cardColor = 0xFF1A1A1A.toInt(), captionColor = 0xFFFAFAFA.toInt(), qrSize = 240f)
+        drawQrCard(c, WIDTH / 2f, HEIGHT - 470f, qrSize = 240f)
         return b
     }
 
@@ -517,7 +538,7 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(18f, 0xFF888888.toInt()).setMono(), "  \u6765\u81ea\u300c\u7262\u767d\u64ad\u4e86\u5417\u300d", 110f, 510f)
         c.drawLine(80f, 600f, WIDTH - 80f, 600f, Paint().apply { color = 0xFFBDBDBD.toInt() })
         drawTextLeft(c, paintText(20f, 0xFF424242.toInt()).setMono(), "\u4eca\u5929 \u00b7 11258892", 80f, 660f)
-        drawQrCard(c, WIDTH / 2f, 760f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 280f)
+        drawQrCard(c, WIDTH / 2f, 760f, qrSize = 280f)
         return b
     }
 
@@ -552,7 +573,7 @@ object PromoImageRenderer {
         c.drawLine(80f, 700f, WIDTH - 80f, 700f, Paint().apply { color = 0xFFBDBDBD.toInt() })
         c.drawLine(80f, 706f, WIDTH - 80f, 706f, Paint().apply { color = 0xFFBDBDBD.toInt() })
         drawCenter(c, paintText(18f, 0xFF888888.toInt()).setMono(), "  \u611f\u8c22\u60e0\u987e  THANK YOU  ", WIDTH / 2f, 760f)
-        drawQrCard(c, WIDTH / 2f, 820f, cardColor = 0xFFFAFAFA.toInt(), qrSize = 280f, pad = 24f)
+        drawQrCard(c, WIDTH / 2f, 820f, qrSize = 280f)
         return b
     }
 
@@ -571,7 +592,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(20f, 0xFF424242.toInt()).setSerif(), "\u2014 waiting \u2014", cx, cy)
         drawCenter(c, paintText(28f, 0xFF1A1A1A.toInt()).setSerif(), headline.take(16), cx, 820f)
         drawCenterClipped(c, paintText(20f, 0xFF555555.toInt()).setSerif(), body, cx, 870f, 800f)
-        drawQrCard(c, cx, 920f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 280f)
+        drawQrCard(c, cx, 920f, qrSize = 280f)
         return b
     }
 
@@ -587,7 +608,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(38f, 0xFFFFFFFF.toInt(), bold = true), headline.take(16), WIDTH / 2f, 900f, 900f)
         c.drawLine(WIDTH / 2f - 80, 940f, WIDTH / 2f + 80, 940f, Paint().apply { color = 0xFFFFFFFF.toInt() })
         drawCenterClipped(c, paintText(22f, 0xFFFFFFFF.toInt()), body, WIDTH / 2f, 990f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1050f, cardColor = 0xB3FFFFFF.toInt(), captionColor = 0xFFFFFFFF.toInt(), qrSize = 240f)
+        drawQrCard(c, WIDTH / 2f, 1030f, qrSize = 220f)
         return b
     }
     // ===F3===
@@ -604,7 +625,7 @@ object PromoImageRenderer {
         c.drawCircle(0f, 0f, 60f, Paint().apply { color = 0xFFD32F2F.toInt() })
         c.drawText("  \u7262  \u767d  ", 0f, 12f, paintText(28f, 0xFFFFFFFF.toInt(), bold = true).apply { textAlign = Paint.Align.CENTER })
         c.restore()
-        drawQrCard(c, WIDTH / 2f, 1010f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 200f)
+        drawQrCard(c, WIDTH / 2f, 1010f, qrSize = 200f)
         return b
     }
 
@@ -628,10 +649,9 @@ object PromoImageRenderer {
         drawCenter(c, paintText(34f, 0xFF1A1A1A.toInt()), headline.take(22), WIDTH / 2f, 900f)
         drawCenterClipped(c, paintText(20f, 0xFF3A3A2F.toInt()), body, WIDTH / 2f, 960f, 880f)
         drawCenterClipped(c, paintText(16f, 0xFF6E4A28.toInt()), "\u2014\u2014  \u5c71 \u8fdc  \u2014\u2014", WIDTH / 2f, 1010f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1060f, cardColor = 0xFFFAFBF2.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH / 2f, 1020f, qrSize = 220f, shadow = true)
         return b
     }
-
     private fun renderPaperCut(cover: Bitmap?, headline: String, body: String): Bitmap {
         val b = newBitmap(); val c = Canvas(b)
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFD32F2F.toInt() })
@@ -652,7 +672,7 @@ object PromoImageRenderer {
         drawRoundedCover(c, RectF(cx - 240, cy - 180, cx + 240, cy + 160), cover, 0f, 0xFF6F4A2E.toInt())
         drawCenter(c, paintText(36f, 0xFF1A1A1A.toInt(), bold = true), headline.take(18), WIDTH / 2f, 700f)
         drawCenterClipped(c, paintText(20f, 0xFF424242.toInt()), body, WIDTH / 2f, 760f, 880f)
-        drawQrCard(c, WIDTH / 2f, 880f, cardColor = 0xFFFFFFFF.toInt())
+        drawQrCard(c, WIDTH / 2f, 880f)
         return b
     }
 
@@ -668,7 +688,7 @@ object PromoImageRenderer {
         c.save(); c.rotate(-6f, 900f, 260f)
         c.drawText("  \u7262  \u767d  ", 900f, 280f, paintText(46f, 0xFFFFFFFF.toInt(), bold = true).apply { textAlign = Paint.Align.CENTER })
         c.restore()
-        drawQrCard(c, WIDTH / 2f, 800f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 260f)
+        drawQrCard(c, WIDTH / 2f, 800f, qrSize = 260f)
         return b
     }
 
@@ -697,7 +717,7 @@ object PromoImageRenderer {
         }
         drawCenter(c, paintText(36f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 1010f)
         drawCenterClipped(c, paintText(20f, 0xFF424242.toInt()), body, WIDTH / 2f, 1070f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1130f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 180f)
+        drawQrCard(c, WIDTH / 2f, 1090f, qrSize = 160f, shadow = true)
         return b
     }
     // ===F4===
@@ -714,7 +734,7 @@ object PromoImageRenderer {
         drawTextOnPathCenter(c, paintText(28f, 0xFFE0E0E0.toInt()), "\u767d  \u7eda  11258  LIVE  OR  DIE", labelPath, 16f)
         drawCenter(c, paintText(34f, 0xFFFAFAFA.toInt(), bold = true), headline.take(20), cx, 940f)
         drawCenterClipped(c, paintText(20f, 0xFFBDBDBD.toInt()), body, cx, 1000f, 880f)
-        drawQrCard(c, cx, 1060f, cardColor = 0xFF1A1A1A.toInt(), captionColor = 0xFFFAFAFA.toInt(), qrSize = 220f)
+        drawQrCard(c, cx, 1040f, qrSize = 220f)
         return b
     }
 
@@ -733,7 +753,7 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(16f, 0xFF9E9E9E.toInt()).setMono(), "INSTAX  SQ", cx + 240, 906f)
         drawCenter(c, paintText(40f, 0xFF1A1A1A.toInt(), bold = true), headline.take(14), WIDTH / 2f, 1000f)
         drawCenterClipped(c, paintText(20f, 0xFF424242.toInt()), body, WIDTH / 2f, 1050f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1100f, cardColor = 0xFFFFFDF6.toInt(), qrSize = 200f)
+        drawQrCard(c, WIDTH / 2f, 1070f, qrSize = 180f, shadow = true)
         return b
     }
 
@@ -758,9 +778,9 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(18f, 0xFF1A1A1A.toInt()).setMono(), "CH  11", 660f, 470f)
         drawTextLeft(c, paintText(20f, 0xFF1A1A1A.toInt()).setMono(), "BTQ", 660f, 500f)
         drawTextLeft(c, paintText(18f, 0xFF1A1A1A.toInt()).setMono(), "MADE  IN  X", 660f, 540f)
-        drawCenter(c, paintText(28f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 1100f)
-        drawCenterClipped(c, paintText(18f, 0xFF424242.toInt()), body, WIDTH / 2f, 1150f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1190f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 140f)
+        drawCenter(c, paintText(28f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 1060f)
+        drawCenterClipped(c, paintText(18f, 0xFF424242.toInt()), body, WIDTH / 2f, 1110f, 880f)
+        drawQrCard(c, WIDTH / 2f, 1130f, qrSize = 140f, shadow = true)
         return b
     }
 
@@ -782,13 +802,14 @@ object PromoImageRenderer {
         c.drawLine(80f, 900f, 200f, 900f, glow)
         c.drawText("CH 11258", 100f, 950f, paintText(28f, 0xFF8BC34A.toInt(), bold = true).setMono())
         drawCenter(c, paintText(20f, 0xFF757575.toInt()).setMono(), "\u25c0  \u25b6  \u2630  \u25c0  \u25b6", WIDTH / 2f, 1020f)
-        c.drawText("VOL", 140f, 1100f, paintText(20f, 0xFFBDBDBD.toInt()).setMono())
-        c.drawText("CH", 240f, 1100f, paintText(20f, 0xFFBDBDBD.toInt()).setMono())
-        c.drawText("OK", 340f, 1100f, paintText(20f, 0xFFBDBDBD.toInt()).setMono())
-        c.drawText("12:34", WIDTH - 240f, 1100f, paintText(20f, 0xFFBDBDBD.toInt()).setMono())
-        drawCenter(c, paintText(30f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 1180f)
-        drawCenterClipped(c, paintText(18f, 0xFF555555.toInt()), body, WIDTH / 2f, 1230f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1080f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 200f)
+        // 标题/正文放在电视边框下方的深色区（浅色字），控件行其下，QR 压底
+        drawCenter(c, paintText(30f, 0xFFFAFAFA.toInt(), bold = true), headline.take(20), WIDTH / 2f, 890f)
+        drawCenterClipped(c, paintText(18f, 0xFFBDBDBD.toInt()), body, WIDTH / 2f, 940f, 880f)
+        c.drawText("VOL", 140f, 1050f, paintText(20f, 0xFFBDBDBD.toInt()).setMono())
+        c.drawText("CH", 240f, 1050f, paintText(20f, 0xFFBDBDBD.toInt()).setMono())
+        c.drawText("OK", 340f, 1050f, paintText(20f, 0xFFBDBDBD.toInt()).setMono())
+        c.drawText("12:34", WIDTH - 240f, 1050f, paintText(20f, 0xFFBDBDBD.toInt()).setMono())
+        drawQrCard(c, WIDTH / 2f, 1090f, qrSize = 160f)
         return b
     }
 
@@ -808,7 +829,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(54f, 0xFF1A1A1A.toInt(), bold = true).setSerifBold(), headline.take(18), WIDTH / 2f, 880f)
         drawCenterClipped(c, paintText(24f, 0xFF424242.toInt()).setSerif(), body, WIDTH / 2f, 940f, 880f)
         drawCenterClipped(c, paintText(20f, 0xFF6B4423.toInt()).setSerif(), "\u2014\u2014  starring  \u7262\u767d  \u2014\u2014", WIDTH / 2f, 990f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1040f, cardColor = 0xFFFFFDF6.toInt(), qrSize = 240f)
+        drawQrCard(c, WIDTH / 2f, 1040f, qrSize = 240f)
         return b
     }
     // ===F5===
@@ -826,7 +847,7 @@ object PromoImageRenderer {
         c.drawPath(path, Paint().apply { style = Paint.Style.STROKE; strokeWidth = 2f; color = 0x33FFFFFF.toInt() })
         drawCenter(c, paintText(42f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 420f)
         drawCenterClipped(c, paintText(22f, 0xFF444444.toInt()), body, WIDTH / 2f, 490f, 920f)
-        drawQrCard(c, WIDTH / 2f, 1020f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 280f)
+        drawQrCard(c, WIDTH / 2f, 970f, qrSize = 280f, shadow = true)
         return b
     }
 
@@ -838,7 +859,7 @@ object PromoImageRenderer {
         for (i in 0..60) c.drawLine(0f, (i * (HEIGHT / 60f)), WIDTH.toFloat(), (i * (HEIGHT / 60f) + 8f), scan)
         drawCenter(c, paintText(48f, 0xFFFFFFFF.toInt(), bold = true), headline.take(18), WIDTH / 2f, 480f)
         drawCenterClipped(c, paintText(22f, 0xFFFFFFFF.toInt()), body, WIDTH / 2f, 540f, 880f)
-        drawQrCard(c, WIDTH / 2f, 620f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 240f)
+        drawQrCard(c, WIDTH / 2f, 620f, qrSize = 240f)
         return b
     }
 
@@ -862,7 +883,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(40f, 0xFFFFFFFF.toInt(), bold = true), headline.take(18), WIDTH / 2f, 900f)
         drawCenterClipped(c, paintText(20f, 0xFFFFFFFF.toInt()), body, WIDTH / 2f, 960f, 880f)
         drawCenterClipped(c, paintText(18f, 0xFFFFFFFF.toInt(), bold = true), "CYBER  11258", WIDTH / 2f, 1000f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1060f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH / 2f, 1060f, qrSize = 220f)
         return b
     }
 
@@ -873,13 +894,12 @@ object PromoImageRenderer {
         drawRoundedCover(c, Rect(80, 140, WIDTH - 80, 700), cover, 0f, 0xFF000000.toInt())
         drawCenter(c, paintText(48f, 0xFF000000.toInt(), bold = true), headline.take(18), WIDTH / 2f, 820f)
         drawCenterClipped(c, paintText(22f, 0xFF000000.toInt()), body, WIDTH / 2f, 880f, 880f)
-        val r = RectF(WIDTH / 2f - 160, 940f, WIDTH / 2f + 160, 1280f)
+        val r = RectF(WIDTH / 2f - 160, 940f, WIDTH / 2f + 160, 1260f)
         c.drawRect(r, Paint().apply { color = 0xFF000000.toInt() })
         c.drawRect(r.left + 12, r.top + 12, r.right - 12, r.bottom - 12, Paint().apply { color = 0xFFFFFFFF.toInt() })
         val qr = renderQr(280)
-        c.drawBitmap(qr, r.left + 12, r.top + 12, null)
+        c.drawBitmap(qr, r.left + 20, r.top + 20, null)
         qr.recycle()
-        drawCenter(c, paintText(18f, 0xFF000000.toInt(), bold = true), "SCAN  ME", WIDTH / 2f, 1250f)
         return b
     }
 
@@ -895,9 +915,9 @@ object PromoImageRenderer {
             c.drawRoundRect(RectF(cx - 280 - off, baseY - 240 - off, cx + 280 - off, baseY + 240 - off), 36f, 36f, Paint().apply { color = (alpha shl 24) or 0xFFFFFF })
         }
         drawRoundedCover(c, RectF(cx - 280, baseY - 280, cx + 280, baseY + 200), cover, 24f, 0xFF7E57C2.toInt())
-        drawCenter(c, paintText(46f, 0xFFFFFFFF.toInt(), bold = true), headline.take(20), cx, 1040f)
-        drawCenterClipped(c, paintText(22f, 0xFFEDE7F6.toInt()), body, cx, 1110f, 880f)
-        drawQrCard(c, cx, 1170f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 220f)
+        drawCenter(c, paintText(46f, 0xFFFFFFFF.toInt(), bold = true), headline.take(20), cx, 1020f)
+        drawCenterClipped(c, paintText(22f, 0xFFEDE7F6.toInt()), body, cx, 1080f, 880f)
+        drawQrCard(c, cx, 1110f, qrSize = 170f)
         return b
     }
 
@@ -912,7 +932,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(48f, 0xFF1A1A1A.toInt(), bold = true), headline.take(18), WIDTH / 2f, 880f)
         drawCenterClipped(c, paintText(22f, 0xFF424242.toInt()), body, WIDTH / 2f, 940f, 880f)
         drawCenterClipped(c, paintText(18f, 0xFF6F4A2E.toInt()), "\u2014\u2014  GRADIENT  MESH  \u2014\u2014", WIDTH / 2f, 1000f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1050f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 240f)
+        drawQrCard(c, WIDTH / 2f, 1020f, qrSize = 240f, shadow = true)
         return b
     }
     // ===F6===
@@ -938,7 +958,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(30f, 0xFF00E676.toInt()).setMono(), headline.take(20), WIDTH / 2f, 830f, 880f)
         drawCenterClipped(c, paintText(18f, 0xFF8BC34A.toInt()).setMono(), body, WIDTH / 2f, 880f, 880f)
         drawCenterClipped(c, paintText(16f, 0xFF00E676.toInt()).setMono(), "> SCAN QR TO JOIN LIVE", WIDTH / 2f, 940f, 880f)
-        drawQrCard(c, WIDTH / 2f, 1000f, cardColor = 0xFF0A0E1A.toInt(), captionColor = 0xFF00E676.toInt(), qrSize = 240f)
+        drawQrCard(c, WIDTH / 2f, 1000f, qrSize = 240f)
         return b
     }
 
@@ -959,8 +979,7 @@ object PromoImageRenderer {
         drawCenter(c, mono, headline.take(20), WIDTH / 2f, 920f)
         drawCenterClipped(c, paintText(20f, 0xFF1A1A1A.toInt()).setMono(), body, WIDTH / 2f, 980f, 880f)
         drawCenter(c, paintText(28f, 0xFFFFEB3B.toInt(), bold = true).setMono(), "\u25ae\u25ae\u25ae PRESS START \u25ae\u25ae\u25ae", WIDTH / 2f, 1060f)
-        drawCenter(c, paintText(22f, 0xFFFAFAFA.toInt()).setMono(), "> SCAN  TO  JOIN", WIDTH / 2f, 1110f)
-        drawQrCard(c, WIDTH / 2f, 1140f, cardColor = 0xFFFAFAFA.toInt(), qrSize = 180f)
+        drawQrCard(c, WIDTH / 2f, 1100f, qrSize = 180f)
         return b
     }
 
@@ -984,7 +1003,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(28f, 0xFF00FF66.toInt(), bold = true).setMono(), "\u258e SUBJECT  " + headline.take(20), WIDTH / 2f, 760f)
         drawCenterClipped(c, paintText(18f, 0xFF00AA55.toInt()).setMono(), body, WIDTH / 2f, 820f, 880f)
         drawCenter(c, paintText(16f, 0xFF00FF66.toInt()).setMono(), "// SCAN  TO  ENTER  LIVE  //", WIDTH / 2f, 880f)
-        drawQrCard(c, WIDTH / 2f, 920f, cardColor = 0xFF001A0A.toInt(), captionColor = 0xFF00FF66.toInt(), qrSize = 240f)
+        drawQrCard(c, WIDTH / 2f, 920f, qrSize = 240f)
         return b
     }
 
@@ -999,7 +1018,6 @@ object PromoImageRenderer {
         qr.recycle()
         drawCenter(c, paintText(40f, 0xFF1A1A1A.toInt(), bold = true), headline.take(18), cx, cy + qrSize / 2 + 80f)
         drawCenterClipped(c, paintText(22f, 0xFF424242.toInt()), body, cx, cy + qrSize / 2 + 130f, 880f)
-        drawCenter(c, paintText(16f, 0xFF888888.toInt()), "\u626b\u7801\u4e8c\u7ef4\u7801\u8fdb\u5165\u76f4\u64ad\u95f4", cx, cy + qrSize / 2 + 180f)
         return b
     }
 
@@ -1102,7 +1120,7 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(14f, 0xFF90A4AE.toInt()), body, 560f, 670f)
         drawTextLeft(c, paintText(12f, 0xFF00B0FF.toInt()).setMono(), "> scan to join  /  open  in  browser", 560f, 860f)
         drawTextLeft(c, paintText(14f, 0xFF90A4AE.toInt()).setMono(), "  ALERT  100%  \u00b7  LATENCY  0.3s  \u00b7  SRC  BILIBILI  \u00b7  v1.5.1", 40f, HEIGHT - 80f)
-        drawQrCard(c, WIDTH / 2f, 920f, cardColor = 0xFF0D1B2A.toInt(), captionColor = 0xFF00E676.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH / 2f, 920f, qrSize = 220f)
         return b
     }
 
@@ -1127,7 +1145,7 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(14f, 0xFF1A1A1A.toInt()), "  ROW: A   SEAT: 1", 540f, 490f)
         drawTextLeft(c, paintText(14f, 0xFF1A1A1A.toInt()), "  DOOR  21:00", 540f, 520f)
         drawCenter(c, paintText(14f, 0xFF1A1A1A.toInt()).setMono(), "\u2605  \u767d  \u7eda  L I V E  \u2605", WIDTH / 2f, 620f)
-        drawQrCard(c, WIDTH / 2f, 660f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 280f)
+        drawQrCard(c, WIDTH / 2f, 660f, qrSize = 280f)
         return b
     }
 
@@ -1146,7 +1164,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(18f, 0xFF555555.toInt()), body, cx, 850f, 880f)
         drawCenterClipped(c, paintText(16f, 0xFF1A237E.toInt()), "UMI  /  white-room.live", cx, 900f, 880f)
         drawCenter(c, paintText(18f, 0xFF1A1A1A.toInt()), "\u2193 \u626b\u7801\u67e5\u770b\u5b9e\u65f6\u76f4\u64ad", cx, 1000f)
-        drawQrCard(c, cx, 1050f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 220f)
+        drawQrCard(c, cx, 1050f, qrSize = 220f)
         return b
     }
 
@@ -1168,7 +1186,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(18f, 0xFFE1BEE7.toInt()), body, WIDTH / 2f, 840f, 880f)
         drawCenter(c, paintText(14f, 0xFFB39DDB.toInt()).setMono(), "OWNED  BY  LUREN  \u00b7  EDITION  1/1", WIDTH / 2f, 900f)
         drawCenter(c, paintText(11f, 0xFF9E9E9E.toInt()).setMono(), "0xba1c1n0ur4n920f11258...".take(38), WIDTH / 2f, 950f)
-        drawQrCard(c, WIDTH / 2f, 1000f, cardColor = 0xFF1A0033.toInt(), captionColor = 0xFFE1BEE7.toInt(), qrSize = 240f)
+        drawQrCard(c, WIDTH / 2f, 1000f, qrSize = 240f)
         return b
     }
 
@@ -1199,7 +1217,6 @@ object PromoImageRenderer {
         val qr = renderQr(200)
         c.drawBitmap(qr, WIDTH - 290f, 420f, null)
         qr.recycle()
-        drawCenter(c, paintText(11f, 0xFF1A1A1A.toInt()).setMono(), "scan  to  enter  live  room", WIDTH - 190f, 640f)
         c.drawLine(WIDTH - 290f, 700f, WIDTH - 60f, 700f, Paint().apply { color = 0xFF6F4A2E.toInt(); strokeWidth = 1.5f; pathEffect = android.graphics.DashPathEffect(floatArrayOf(8f, 6f), 0f) })
         drawTextLeft(c, paintText(11f, 0xFF6F4A2E.toInt()).setMono(), "\u2605  STUB  \u2605", WIDTH - 290f, 720f)
         drawTextLeft(c, paintText(11f, 0xFF6F4A2E.toInt()).setMono(), "white-room.live", WIDTH - 290f, 740f)
@@ -1233,7 +1250,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(28f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 900f)
         drawCenterClipped(c, paintText(20f, 0xFF6F4A2E.toInt()), body, WIDTH / 2f, 950f, 880f)
         drawCenter(c, paintText(16f, 0xFFAD1457.toInt()), "\ud83c\udf81  \u626b\u7801\u8bb8\u4e2a\u613f\u5427  \ud83c\udf81", WIDTH / 2f, 1010f)
-        drawQrCard(c, WIDTH / 2f, 1040f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 200f)
+        drawQrCard(c, WIDTH / 2f, 1040f, qrSize = 200f)
         return b
     }
 
@@ -1261,7 +1278,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(46f, 0xFFFF6F00.toInt(), bold = true), "\ud83c\udf83 " + headline.take(20), WIDTH / 2f, 840f)
         drawCenterClipped(c, paintText(20f, 0xFFFFAB40.toInt()), body, WIDTH / 2f, 900f, 880f)
         drawCenter(c, paintText(16f, 0xFFFFCC80.toInt()), "\ud83e\udd87  \u626b\u7801\u6293\u767d\u7eda  \ud83e\udd87", WIDTH / 2f, 970f)
-        drawQrCard(c, WIDTH / 2f, 1010f, cardColor = 0xFF1A0033.toInt(), captionColor = 0xFFFFCC80.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH / 2f, 1010f, qrSize = 220f)
         return b
     }
 
@@ -1297,7 +1314,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(28f, 0xFFFFD54F.toInt(), bold = true), "\ud83c\udf84 " + headline.take(20), WIDTH / 2f, 850f)
         drawCenterClipped(c, paintText(20f, 0xFFFFCC80.toInt()), body, WIDTH / 2f, 900f, 880f)
         drawCenter(c, paintText(16f, 0xFFFFFFFF.toInt()), "\ud83c\udf81  \u626b\u7801\u9001\u793c  \ud83c\udf81", WIDTH / 2f, 970f)
-        drawQrCard(c, WIDTH / 2f, 1010f, cardColor = 0xFFB71C1C.toInt(), captionColor = 0xFFFFFFFF.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH / 2f, 1010f, qrSize = 220f)
         return b
     }
 
@@ -1318,7 +1335,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(30f, 0xFFAD1457.toInt(), bold = true), headline.take(18), WIDTH / 2f, 900f, 880f)
         drawCenterClipped(c, paintText(18f, 0xFFEC407A.toInt()), body, WIDTH / 2f, 950f, 880f)
         drawCenter(c, paintText(16f, 0xFFFFFFFF.toInt()), "\u2661  \u626b\u7801\u4e00\u8d77\u770b\u767d\u7eda  \u2661", WIDTH / 2f, 1010f)
-        drawQrCard(c, WIDTH / 2f, 1050f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 200f)
+        drawQrCard(c, WIDTH / 2f, 1050f, qrSize = 200f)
         return b
     }
 
@@ -1340,7 +1357,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(28f, 0xFFFFFFFF.toInt(), bold = true), headline.take(20), WIDTH / 2f, 840f)
         drawCenterClipped(c, paintText(18f, 0xFFFFFFFF.toInt()), body, WIDTH / 2f, 900f, 880f)
         drawCenter(c, paintText(16f, 0xFFFFD54F.toInt()), "\u2728  \u626b\u7801\u9001\u51fa\u53e4\u591c\u7684\u613f\u671b  \u2728", WIDTH / 2f, 970f)
-        drawQrCard(c, WIDTH / 2f, 1010f, cardColor = 0xFF0D1B4A.toInt(), captionColor = 0xFFFFD54F.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH / 2f, 1010f, qrSize = 220f)
         return b
     }
     // ===F9===
@@ -1356,7 +1373,7 @@ object PromoImageRenderer {
         drawCenterClipped(c, paintText(20f, 0xFF424242.toInt()), body, WIDTH / 2f, 800f, 880f)
         c.drawLine(80f, 850f, WIDTH - 80f, 850f, Paint().apply { color = 0x33FFFFFF.toInt() })
         drawCenterClipped(c, paintText(16f, 0xFF6F4A2E.toInt()), "\u2014  watercolor  study  \u2014", WIDTH / 2f, 900f, 880f)
-        drawQrCard(c, WIDTH / 2f, 940f, cardColor = 0xCCFFFFFF.toInt(), qrSize = 240f, captionColor = 0xFF424242.toInt())
+        drawQrCard(c, WIDTH / 2f, 940f, qrSize = 240f)
         return b
     }
 
@@ -1387,7 +1404,7 @@ object PromoImageRenderer {
         c.drawLine(120f, 780f, 200f, 820f, pp)
         c.drawLine(360f, 740f, 280f, 800f, pp)
         drawCenterClipped(c, paintText(20f, 0xFF1A1A1A.toInt()), "~  ~  ~  \u626b\u7801\u770b  LIVE  ~  ~  ~", WIDTH / 2f, 880f, 880f)
-        drawQrCard(c, WIDTH / 2f, 920f, cardColor = 0xFFFFFDF5.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH / 2f, 920f, qrSize = 220f)
         return b
     }
 
@@ -1407,8 +1424,8 @@ object PromoImageRenderer {
         drawCenter(c, paintText(40f, 0xFFFFFFFF.toInt(), bold = true), headline.take(20), WIDTH / 2f, 180f)
         drawCenterClipped(c, paintText(18f, 0xFFFFFFFF.toInt()), body, WIDTH / 2f, 240f, 880f)
         drawCenter(c, paintText(14f, 0xFFFFD54F.toInt()).setMono(), "LENS  f/1.4   ISO 400   1/60s", WIDTH / 2f, 280f)
-        drawCenter(c, paintText(12f, 0xFFBDBDBD.toInt()).setMono(), "SHUTTER  \u2022  APERTURE  \u2022  FILM GRAIN", WIDTH / 2f, 1080f)
-        drawQrCard(c, WIDTH / 2f, 1110f, cardColor = 0xFF1A1A1A.toInt(), captionColor = 0xFFFFFFFF.toInt(), qrSize = 200f)
+        drawCenter(c, paintText(12f, 0xFFBDBDBD.toInt()).setMono(), "SHUTTER  \u2022  APERTURE  \u2022  FILM GRAIN", WIDTH / 2f, 1050f)
+        drawQrCard(c, WIDTH / 2f, 1080f, qrSize = 200f)
         return b
     }
 
@@ -1428,7 +1445,7 @@ object PromoImageRenderer {
         drawCenter(c, paintText(36f, 0xFF1A1A1A.toInt(), bold = true), headline.take(20), WIDTH / 2f, 840f)
         drawCenterClipped(c, paintText(20f, 0xFF424242.toInt()), body, WIDTH / 2f, 900f, 880f)
         drawCenter(c, paintText(14f, 0xFF00695C.toInt()).setMono(), "\u00d7  cell  \u00d7  mitosis  \u00d7  \u767d\u7eda  \u00d7", WIDTH / 2f, 960f)
-        drawQrCard(c, WIDTH / 2f, 1000f, cardColor = 0xFFFFFFFF.toInt(), qrSize = 220f)
+        drawQrCard(c, WIDTH / 2f, 1000f, qrSize = 220f)
         return b
     }
 
@@ -1457,7 +1474,7 @@ object PromoImageRenderer {
         c.drawText("EMULSION \u00b7 35mm \u00b7 TRI-X 400", WIDTH / 2f, 910f, paintText(16f, 0xFFBDBDBD.toInt()).setMono().apply { textAlign = Paint.Align.CENTER })
         drawCenter(c, paintText(12f, 0xFFBDBDBD.toInt()).setMono(), "\u2014  \u767d  \u7eda  photo studio  \u2014", WIDTH / 2f, 960f)
         drawCenter(c, paintText(11f, 0xFFBDBDBD.toInt()).setMono(), "WHITE  ROOM  \u00b7  TOKYO  \u00b7  EST  2026", WIDTH / 2f, 990f)
-        drawQrCard(c, WIDTH / 2f, 1040f, cardColor = 0xFF1A1A1A.toInt(), captionColor = 0xFFFFFFFF.toInt(), qrSize = 200f)
+        drawQrCard(c, WIDTH / 2f, 1040f, qrSize = 200f)
         return b
     }
 
@@ -1475,7 +1492,8 @@ object PromoImageRenderer {
         drawBadge(canvas, WIDTH / 2f, 628f, isLive, darkText = false)
         drawCenter(canvas, paintText(52f, 0xFF1B1B1F.toInt(), bold = true), headline.take(24), WIDTH / 2f, 740f)
         drawCenter(canvas, paintText(34f, 0xFF44464F.toInt()), body.take(40), WIDTH / 2f, 812f)
-        drawQrCard(canvas, WIDTH / 2f, 848f, cardColor = Color.WHITE, captionColor = 0xFF1B1B1F.toInt())
+        // QR 块高 368：上距 body 68px，下距页脚 66px，视觉居中
+        drawQrCard(canvas, WIDTH / 2f, 880f, shadow = true)
         drawCenter(canvas, paintText(26f, 0xFF77777F.toInt()), "来自「牢白播了吗」· 白绮开播监控", WIDTH / 2f, HEIGHT - 36f)
         return bitmap
     }
@@ -1501,7 +1519,7 @@ object PromoImageRenderer {
         drawBadge(canvas, WIDTH / 2f, 300f, isLive, darkText = false)
         drawCenter(canvas, paintText(50f, 0xFF1B1B1F.toInt(), bold = true), headline.take(24), WIDTH / 2f, 430f)
         drawCenter(canvas, paintText(32f, 0xFF44464F.toInt()), body.take(40), WIDTH / 2f, 506f)
-        drawQrCard(canvas, WIDTH / 2f, 556f, cardColor = 0xFFF6F3FA.toInt(), captionColor = 0xFF1B1B1F.toInt())
+        drawQrCard(canvas, WIDTH / 2f, 660f, shadow = true)
         drawCenter(canvas, paintText(26f, 0xEEFFFFFF.toInt()), "来自「牢白播了吗」· 白绮开播监控", WIDTH / 2f, HEIGHT - 48f)
         return bitmap
     }
@@ -1520,7 +1538,7 @@ object PromoImageRenderer {
         drawBadge(canvas, WIDTH / 2f, 628f, isLive, darkText = false)
         drawCenter(canvas, paintText(52f, 0xFFF2EFF7.toInt(), bold = true), headline.take(24), WIDTH / 2f, 740f)
         drawCenter(canvas, paintText(34f, 0xFFC9C5D0.toInt()), body.take(40), WIDTH / 2f, 812f)
-        drawQrCard(canvas, WIDTH / 2f, 848f, cardColor = Color.WHITE, captionColor = 0xFF1B1B1F.toInt())
+        drawQrCard(canvas, WIDTH / 2f, 880f)
         drawCenter(canvas, paintText(26f, 0xFF8A8694.toInt()), "来自「牢白播了吗」· 白绮开播监控", WIDTH / 2f, HEIGHT - 36f)
         return bitmap
     }

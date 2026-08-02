@@ -1321,7 +1321,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 宣传图预览对话框：50 种风格 chip 列表，点切换即时重渲染，选择持久化，点「分享」才落盘发出。
+     * 宣传图预览对话框：53 种风格 chip 列表，点切换即时重渲染，选择持久化，点「分享」才落盘发出。
      * chip 用色点 + 名字 3 列网格（RecyclerView + GridLayoutManager）。
      */
     internal fun showPromoPreview(cover: android.graphics.Bitmap?, headline: String, body: String) {

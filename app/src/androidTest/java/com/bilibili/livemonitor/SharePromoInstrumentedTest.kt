@@ -29,6 +29,8 @@ class SharePromoInstrumentedTest {
             eraseColor(0xFF6750A4.toInt())
         }
         val loader = ShareImageLoader()
+        // 视觉走查模式：am instrument -e promoDump 1 时不删文件，adb pull 出 53 张人工看
+        val dump = InstrumentationRegistry.getArguments().getString("promoDump") == "1"
 
         for (style in PromoImageRenderer.Style.values()) {
             val promo = PromoImageRenderer.render(
@@ -54,20 +56,20 @@ class SharePromoInstrumentedTest {
                 "必须经 FileProvider 授权: $uri",
                 uri.toString().startsWith("content://com.bilibili.livemonitor.fileprovider/")
             )
-            file.delete()
+            if (!dump) file.delete()
         }
     }
 
     @Test
     fun 浅色卡片风二维码区域真实含黑色模块() {
-        // 新布局（1080×1350）：QR 卡在 topY=848 起，QR 位图在卡内 pad=28 处居中
+        // QR 贴码小白块（2026-08 美术统一修）：topY=880 起，QR 位图在块内 pad=24 处居中
         val promo = PromoImageRenderer.render(
             PromoImageRenderer.Style.LIGHT_CARD, null,
             headline = "白绮还没开播",
             body = "白绮还没开播，先来直播间蹲一个开播！"
         )
         val qrLeft = (PromoImageRenderer.WIDTH - PromoImageRenderer.QR_SIZE) / 2
-        val qrTop = 848 + 28
+        val qrTop = 880 + 24
         var hasBlack = false
         var x = qrLeft
         while (x < qrLeft + PromoImageRenderer.QR_SIZE && !hasBlack) {

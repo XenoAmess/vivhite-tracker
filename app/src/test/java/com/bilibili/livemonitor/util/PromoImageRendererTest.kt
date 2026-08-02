@@ -87,4 +87,79 @@ class PromoImageRendererTest {
             Color.red(bandPixel) < 120 && Color.green(bandPixel) < 120 && Color.blue(bandPixel) < 120
         )
     }
+
+    // ---------- 美术统一修（2026-08）：QR 大白卡 → 贴码小白块 ----------
+
+    private fun whiteRatio(promo: Bitmap, y0: Int, y1: Int): Float {
+        var white = 0
+        var total = 0
+        for (y in y0 until y1) for (x in 0 until promo.width step 4) {
+            val p = promo.getPixel(x, y)
+            if (Color.red(p) > 235 && Color.green(p) > 235 && Color.blue(p) > 235) white++
+            total++
+        }
+        return white.toFloat() / total
+    }
+
+    @Test
+    fun `深色风格 QR 下方不得出现大白块`() {
+        // 旧版 QR 卡 = 白底大卡 + 卡内 caption，QR 下方一整条白带（主诉丑点）。
+        // 重构后白块紧贴 QR（静区 24px），QR 下方 60px 条带白色占比必须 <40%
+        for (style in listOf(
+            PromoImageRenderer.Style.DARK,
+            PromoImageRenderer.Style.BLACK_SQUARE,
+            PromoImageRenderer.Style.VINYL_RECORD,
+            PromoImageRenderer.Style.CYBERPUNK_TERMINAL,
+            PromoImageRenderer.Style.DASHBOARD,
+            PromoImageRenderer.Style.HALLOWEEN,
+            PromoImageRenderer.Style.NEW_YEAR_COUNTDOWN,
+            PromoImageRenderer.Style.LENS_FLARE
+        )) {
+            val promo = PromoImageRenderer.render(style, null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
+            val ratio = whiteRatio(promo, promo.height - 160, promo.height - 100)
+            assertTrue("$style QR 下方白色占比 $ratio 应 <0.40", ratio < 0.40f)
+        }
+    }
+
+    @Test
+    fun `深色风格 QR 静区必须是白底`() {
+        // 扫码可靠性：深色风格曾传深色 cardColor 导致 QR 黑模块压深底扫不出。
+        // 统一白块后，QR 区中心行必须存在纯白静区像素
+        for (style in listOf(
+            PromoImageRenderer.Style.DARK,
+            PromoImageRenderer.Style.BLACK_SQUARE,
+            PromoImageRenderer.Style.CYBERPUNK_TERMINAL
+        )) {
+            val promo = PromoImageRenderer.render(style, null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
+            var foundWhite = false
+            val midY = promo.height * 3 / 4
+            for (x in promo.width / 4 until promo.width * 3 / 4 step 4) {
+                val p = promo.getPixel(x, midY)
+                if (Color.red(p) > 245 && Color.green(p) > 245 && Color.blue(p) > 245) {
+                    foundWhite = true; break
+                }
+            }
+            assertTrue("$style QR 区必须存在白色静区", foundWhite)
+        }
+    }
+
+    @Test
+    fun `centerCropRect 保比例放大且居中裁边`() {
+        // Robolectric 的 Canvas 对 shader/clipPath/drawBitmap 是 no-op，像素级测不了，
+        // 改为验证裁剪矩形的数学性质（防拉伸的核心）
+        val dst = android.graphics.RectF(0f, 0f, 952f, 512f) // LIGHT_CARD 封面区，约 1.86:1
+        // dst 宽高比(1.86) > 封面(1.78)：按宽缩放、高度溢出居中裁
+        val r = PromoImageRenderer.centerCropRect(1600, 900, dst)
+        val ratio = r.width() / r.height()
+        assertEquals("宽高比必须保持 16:9", 1600f / 900f, ratio, 0.001f)
+        assertEquals("宽度必须填满", dst.width(), r.width(), 0.001f)
+        assertTrue("高度必须 >= 目标高（裁上下）", r.height() >= dst.height())
+        assertEquals("水平居中", dst.centerX(), r.centerX(), 0.001f)
+        assertEquals("垂直居中", dst.centerY(), r.centerY(), 0.001f)
+
+        // 反向：竖长封面进宽扁框：宽度填满、高度裁
+        val r2 = PromoImageRenderer.centerCropRect(900, 1600, dst)
+        assertEquals("宽高比保持", 900f / 1600f, r2.width() / r2.height(), 0.001f)
+        assertEquals("宽度必须填满", dst.width(), r2.width(), 0.001f)
+    }
 }

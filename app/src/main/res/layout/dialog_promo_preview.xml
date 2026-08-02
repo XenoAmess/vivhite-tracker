@@ -27,7 +27,7 @@
         android:layout_marginTop="10dp"
         android:paddingStart="4dp"
         android:paddingBottom="6dp"
-        android:text="选择风格（50 种）"
+        android:text="选择风格（53 种）"
         android:textSize="12sp"
         android:textColor="@android:color/darker_gray" />
 
