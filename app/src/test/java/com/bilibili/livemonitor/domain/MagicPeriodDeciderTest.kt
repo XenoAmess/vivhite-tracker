@@ -80,6 +80,37 @@ class MagicPeriodDeciderTest {
     }
 
     @Test
+    fun `samePeriodCovers 同段相邻为真 跨段相邻为假`() {
+        val one = MagicPeriod(t0, t0 + 3 * dayMs)
+        val other = MagicPeriod(t0 + 3 * dayMs, t0 + 4 * dayMs)
+        val periods = listOf(one, other)
+        // 同段内相邻两天
+        assertTrue(MagicPeriodDecider.samePeriodCovers(periods, t0, t0 + dayMs))
+        // 跨段相邻（t0+2d 属第一段，t0+3d 属第二段——不同段，应留缝）
+        assertFalse(MagicPeriodDecider.samePeriodCovers(periods, t0 + 2 * dayMs, t0 + 3 * dayMs))
+        // 未标记
+        assertFalse(MagicPeriodDecider.samePeriodCovers(periods, t0 + 10 * dayMs, t0 + 11 * dayMs))
+    }
+
+    @Test
+    fun `segmentPositionOf 不同段相邻时各自成段 不粘连`() {
+        // 两段紧贴：A=[t0, t0+2d)，B=[t0+2d, t0+4d) —— 相邻但不同段
+        val periods = listOf(
+            MagicPeriod(t0, t0 + 2 * dayMs),
+            MagicPeriod(t0 + 2 * dayMs, t0 + 4 * dayMs)
+        )
+        // A 的末日在 B 开始处交界 → A 末日应为 LAST（不与 B 粘连）
+        assertEquals(MagicPeriodDecider.SegmentPosition.LAST,
+            MagicPeriodDecider.segmentPositionOf(periods, t0 + dayMs))
+        // B 的第二天 → FIRST
+        assertEquals(MagicPeriodDecider.SegmentPosition.FIRST,
+            MagicPeriodDecider.segmentPositionOf(periods, t0 + 2 * dayMs))
+        // B 末日 → LAST
+        assertEquals(MagicPeriodDecider.SegmentPosition.LAST,
+            MagicPeriodDecider.segmentPositionOf(periods, t0 + 3 * dayMs))
+    }
+
+    @Test
     fun `updateStart 保持时长 updateDuration 保持开始 updateEnd 重算时长`() {
         val periods = listOf(MagicPeriod(t0, t0 + 3 * dayMs))
         val moved = MagicPeriodDecider.updateStart(periods, 0, t0 + dayMs)

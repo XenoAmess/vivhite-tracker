@@ -355,6 +355,10 @@ class MainActivity : AppCompatActivity() {
 
     // ==================== 魔法期记录 ====================
 
+    /** 日历单元格宽度：给外边距留量，保证 7×(cell+2m) ≤ gridWidth（周六列不被切出屏幕） */
+    internal fun calendarCellSizePx(gridWidthPx: Int, marginPx: Int): Int =
+        gridWidthPx / 7 - 2 * marginPx
+
     private val magicDateFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
     private val magicTimeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
     private val magicRangeFmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
@@ -483,8 +487,11 @@ class MainActivity : AppCompatActivity() {
             }
             val firstWeekday = first.get(java.util.Calendar.DAY_OF_WEEK) // 1=周日
             val daysInMonth = first.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
-            val cellSize = grid.width.takeIf { it > 0 }?.div(7) ?: 120
             val margin = (2 * resources.displayMetrics.density).toInt()
+            // 单元格宽度必须给外边距留量，否则 7×(cell+2m) 超出网格把周六列切出屏幕
+            val cellSize = calendarCellSizePx(
+                grid.width.takeIf { it > 0 } ?: (120 + 2 * margin) * 7, margin
+            )
             repeat(firstWeekday - 1) {
                 val blank = android.widget.TextView(this)
                 blank.layoutParams = android.widget.GridLayout.LayoutParams().apply {
@@ -500,13 +507,21 @@ class MainActivity : AppCompatActivity() {
                 val dayStart = dayStartOf(dayCal)
                 val pos = com.bilibili.livemonitor.domain.MagicPeriodDecider.segmentPositionOf(periods, dayStart)
                 val marked = pos != com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.NONE
+                // 同段相邻 → 该侧边距 0（无缝长条）；不同段相邻 → 留缝（不粘连）
+                val samePrev = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                    .samePeriodCovers(periods, dayStart - 86_400_000L, dayStart)
+                val sameNext = com.bilibili.livemonitor.domain.MagicPeriodDecider
+                    .samePeriodCovers(periods, dayStart, dayStart + 86_400_000L)
                 val cell = android.widget.TextView(this).apply {
                     text = day.toString()
                     gravity = android.view.Gravity.CENTER
                     textSize = 13f
                     layoutParams = android.widget.GridLayout.LayoutParams().apply {
                         width = cellSize; height = cellSize
-                        setMargins(margin, margin, margin, margin)
+                        setMargins(
+                            if (samePrev) 0 else margin, margin,
+                            if (sameNext) 0 else margin, margin
+                        )
                     }
                     if (marked) {
                         val prev = pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.MIDDLE ||

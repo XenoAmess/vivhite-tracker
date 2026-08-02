@@ -1119,6 +1119,20 @@ class MainActivityTest {
     }
 
     @Test
+    fun `魔法期日历 单元格宽度给边距留量不溢出`() {
+        // 回归：cellSize=gridWidth/7 时外边距让总宽超出网格，周六列被切出屏幕
+        val gridWidth = 966
+        val margin = 3
+        val cell = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+            .calendarCellSizePx(gridWidth, margin)
+        assertTrue(
+            "7×(cell+2m) 必须 ≤ gridWidth: cell=$cell",
+            7 * (cell + 2 * margin) <= gridWidth
+        )
+        assertTrue("cell 必须为正", cell > 0)
+    }
+
+    @Test
     fun `魔法期日历 孤立日背景为全圆角GradientDrawable`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         val t0 = java.util.Calendar.getInstance().apply {

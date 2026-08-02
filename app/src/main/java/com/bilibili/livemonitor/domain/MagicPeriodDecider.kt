@@ -49,21 +49,25 @@ object MagicPeriodDecider {
     fun isDayMarked(periods: List<MagicPeriod>, dayStartMs: Long): Boolean =
         periods.any { coversDay(it, dayStartMs) }
 
+    /** 相邻两天是否被【同一段】覆盖（同段长条无缝连接用；不同段相邻要留缝） */
+    fun samePeriodCovers(periods: List<MagicPeriod>, dayStartMs: Long, otherDayStartMs: Long): Boolean =
+        periods.any { coversDay(it, dayStartMs) && coversDay(it, otherDayStartMs) }
+
     /** 连续天长条的分段位置（日历圆角背景用）：孤日/段首/段中/段尾/未标记 */
     enum class SegmentPosition { ISOLATED, FIRST, MIDDLE, LAST, NONE }
 
     /**
-     * 某天在连续长条中的位置：
+     * 某天在连续长条中的位置（连续性按【同一段覆盖】判定——不同段相邻视为各自独立段，不粘连）：
      * - NONE：未被标记
-     * - ISOLATED：前后一天都未被标记（单日段）
-     * - FIRST：前一天未标记、后一天被标记（段首，左圆角）
-     * - LAST：前一天被标记、后一天未标记（段尾，右圆角）
-     * - MIDDLE：前后一天都被标记（段中，直角连接）
+     * - ISOLATED：前后都无同段邻接（单日段）
+     * - FIRST：前一天无同段邻接、后一天有（段首，左圆角）
+     * - LAST：前一天有同段邻接、后一天无（段尾，右圆角）
+     * - MIDDLE：前后都有同段邻接（段中，直角连接）
      */
     fun segmentPositionOf(periods: List<MagicPeriod>, dayStartMs: Long): SegmentPosition {
         if (!isDayMarked(periods, dayStartMs)) return SegmentPosition.NONE
-        val prev = isDayMarked(periods, dayStartMs - DAY_MS)
-        val next = isDayMarked(periods, dayStartMs + DAY_MS)
+        val prev = samePeriodCovers(periods, dayStartMs - DAY_MS, dayStartMs)
+        val next = samePeriodCovers(periods, dayStartMs, dayStartMs + DAY_MS)
         return when {
             !prev && !next -> SegmentPosition.ISOLATED
             !prev && next -> SegmentPosition.FIRST
