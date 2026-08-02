@@ -4,6 +4,7 @@ import com.bilibili.livemonitor.domain.UpdateDecider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,6 +46,59 @@ class UpdateCheckerTest {
         assertEquals("1.1.95", info.versionName)
         assertEquals("https://example.com/vivhite-tracker-1.1.92.apk", info.apkUrl)
         assertEquals("更新日志内容", info.changelog)
+    }
+
+    @Test
+    fun `增量元数据按本地versionCode透传到ReleaseInfo`() = runBlocking {
+        // 本地 vc=91 有链 → info.chain 非空；vc=90 无链 → null（回退全量）
+        val versionJson = """{
+            "versionCode": 95, "versionName": "1.1.95",
+            "apkSha256": "newsha", "apkSize": 41000000,
+            "chains": {
+                "91": {
+                    "fromApkSha256": "sha91", "totalSize": 5000000,
+                    "hops": [{"toVersionCode": 95, "url": "https://x/p.bspatch", "size": 5000000, "patchSha256": "p", "resultSha256": "r"}]
+                }
+            }
+        }"""
+        val checker = FakeUpdateChecker(mapOf(apiUrl to releaseJson(fullAssets), versionJsonUrl to versionJson))
+
+        val withChain = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
+        assertTrue(withChain is UpdateDecider.UpdateState.UpdateAvailable)
+        val info91 = (withChain as UpdateDecider.UpdateState.UpdateAvailable).info
+        assertEquals("newsha", info91.apkSha256)
+        assertEquals(41000000L, info91.apkSize)
+        assertEquals("sha91", info91.chain!!.fromApkSha256)
+        assertEquals(1, info91.chain!!.hops.size)
+
+        val noChain = checker.checkLatestRelease(localVersionCode = 90, localVersionName = "1.1.90")
+        val info90 = (noChain as UpdateDecider.UpdateState.UpdateAvailable).info
+        assertEquals("newsha", info90.apkSha256)
+        assertNull(info90.chain)
+    }
+
+    @Test
+    fun `beta通道同样透传增量元数据`() = runBlocking {
+        val betaJson = """{
+            "versionCode": 96, "versionName": "1.1.96",
+            "apkSha256": "betasha", "apkSize": 42000000,
+            "chains": {
+                "91": {
+                    "fromApkSha256": "sha91", "totalSize": 3000000,
+                    "hops": [{"toVersionCode": 96, "url": "https://x/bp.bspatch", "size": 3000000, "patchSha256": "p", "resultSha256": "r"}]
+                }
+            }
+        }"""
+        val checker = object : UpdateChecker() {
+            override suspend fun httpGet(url: String): String? =
+                if (url == betaVersionJsonUrl) betaJson else null
+        }
+        val state = checker.checkBetaChannel(localVersionCode = 91, localVersionName = "1.1.91")
+        assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
+        val info = (state as UpdateDecider.UpdateState.UpdateAvailable).info
+        assertEquals("betasha", info.apkSha256)
+        assertEquals("sha91", info.chain!!.fromApkSha256)
+        assertEquals("https://x/bp.bspatch", info.chain!!.hops[0].url)
     }
 
     @Test

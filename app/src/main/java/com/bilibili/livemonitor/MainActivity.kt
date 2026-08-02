@@ -42,6 +42,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -894,22 +895,68 @@ class MainActivity : AppCompatActivity() {
             .show()
         val dest = AppUpdater.apkFile(this, info.versionName)
         updateScope.launch {
-            val ok = updateChecker.downloadApk(info.apkUrl, dest) { percent ->
-                bar.post {
-                    bar.progress = percent
-                    label.text = "$percent%"
+            // 增量优先：有链且底包 sha256 匹配且比全量小才走补丁，任一失败回退全量
+            val localApkSha = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.bilibili.livemonitor.util.ApkPatcher.installedApkFile(this@MainActivity)
+                    ?.let { com.bilibili.livemonitor.util.ApkPatcher.sha256(it) }
+            }
+            val plan = com.bilibili.livemonitor.domain.ChainPlanner.choosePlan(
+                info.chain, localApkSha, info.apkSize
+            )
+            var installed = false
+            if (plan is com.bilibili.livemonitor.domain.ChainPlanner.UpdatePlan.Incremental) {
+                AppLogger.d("MainActivity", "incremental update: ${plan.chain.hops.size} hop(s), total ${plan.chain.totalSize} bytes")
+                val updater = com.bilibili.livemonitor.util.IncrementalUpdater(this@MainActivity)
+                updater.downloader = { url, d, cb -> updateChecker.downloadApk(url, d, cb) }
+                val result = updater.executeChain(plan.chain, info.versionName) { percent ->
+                    bar.post {
+                        bar.progress = percent
+                        label.text = "增量更新 $percent%"
+                    }
+                }
+                if (result != null) {
+                    installed = true
+                    dialog.dismiss()
+                    try {
+                        startActivity(AppUpdater.buildInstallIntent(this@MainActivity, result))
+                    } catch (e: Exception) {
+                        AppLogger.e("MainActivity", "launch apk installer failed", e)
+                        Toast.makeText(this@MainActivity, "无法打开安装器", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    AppLogger.w("MainActivity", "incremental update failed, fallback to full apk")
+                    label.text = "增量更新失败，转全量下载…"
                 }
             }
-            dialog.dismiss()
-            if (ok) {
-                try {
-                    startActivity(AppUpdater.buildInstallIntent(this@MainActivity, dest))
-                } catch (e: Exception) {
-                    AppLogger.e("MainActivity", "launch apk installer failed", e)
-                    Toast.makeText(this@MainActivity, "无法打开安装器", Toast.LENGTH_SHORT).show()
+            if (!installed) {
+                val ok = updateChecker.downloadApk(info.apkUrl, dest) { percent ->
+                    bar.post {
+                        bar.progress = percent
+                        label.text = "$percent%"
+                    }
                 }
-            } else {
-                Toast.makeText(this@MainActivity, "更新包下载失败，请稍后再试", Toast.LENGTH_SHORT).show()
+                // 全量包完整性校验（version.json 带 apkSha256 时）
+                val verified = ok && info.apkSha256?.let { expect ->
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.bilibili.livemonitor.util.ApkPatcher.sha256(dest)
+                    }.equals(expect, ignoreCase = true).also { match ->
+                        if (!match) {
+                            AppLogger.w("MainActivity", "full apk sha256 mismatch, deleted")
+                            dest.delete()
+                        }
+                    }
+                } ?: ok
+                dialog.dismiss()
+                if (verified) {
+                    try {
+                        startActivity(AppUpdater.buildInstallIntent(this@MainActivity, dest))
+                    } catch (e: Exception) {
+                        AppLogger.e("MainActivity", "launch apk installer failed", e)
+                        Toast.makeText(this@MainActivity, "无法打开安装器", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(this@MainActivity, "更新包下载失败，请稍后再试", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

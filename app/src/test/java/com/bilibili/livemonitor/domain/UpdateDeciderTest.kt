@@ -48,26 +48,91 @@ class UpdateDeciderTest {
     }
 
     @Test
-    fun `parseVersionJson 有效与无效输入`() {
-        assertEquals(92 to "1.1.92", UpdateDecider.parseVersionJson("""{"versionCode":92,"versionName":"1.1.92"}"""))
-        assertNull(UpdateDecider.parseVersionJson("""{"versionName":"1.1.92"}"""))
-        assertNull(UpdateDecider.parseVersionJson("""{"versionCode":92}"""))
-        assertNull(UpdateDecider.parseVersionJson("not json"))
+    fun `parseVersionMeta 核心字段与非法输入`() {
+        val meta = UpdateDecider.parseVersionMeta("""{"versionCode":92,"versionName":"1.1.92"}""")
+        assertEquals(92, meta!!.versionCode)
+        assertEquals("1.1.92", meta.versionName)
+        assertNull(meta.changelog)
+        assertNull(meta.apkSha256)
+        assertEquals(0L, meta.apkSize)
+        assertTrue(meta.chains.isEmpty())
+        assertNull(UpdateDecider.parseVersionMeta("""{"versionName":"1.1.92"}"""))
+        assertNull(UpdateDecider.parseVersionMeta("""{"versionCode":92}"""))
+        assertNull(UpdateDecider.parseVersionMeta("not json"))
     }
 
     @Test
-    fun `parseVersionChangelog 有效 缺失 空白 非法`() {
+    fun `parseVersionMeta changelog 有效 缺失 空白`() {
         // 内测版尝鲜：两通道的更新说明统一来自 version.json 的 changelog 字段
         assertEquals(
             "abc1234 feat: xxx",
-            UpdateDecider.parseVersionChangelog(
+            UpdateDecider.parseVersionMeta(
                 """{"versionCode":92,"versionName":"1.1.92","changelog":"abc1234 feat: xxx"}"""
-            )
+            )!!.changelog
         )
         // 老格式 version.json（无 changelog 字段）→ null，调用方回退
-        assertNull(UpdateDecider.parseVersionChangelog("""{"versionCode":92,"versionName":"1.1.92"}"""))
-        assertNull(UpdateDecider.parseVersionChangelog("""{"changelog":"  "}"""))
-        assertNull(UpdateDecider.parseVersionChangelog("not json"))
+        assertNull(UpdateDecider.parseVersionMeta("""{"versionCode":92,"versionName":"1.1.92"}""")!!.changelog)
+        assertNull(UpdateDecider.parseVersionMeta("""{"versionCode":92,"versionName":"x","changelog":"  "}""")!!.changelog)
+    }
+
+    @Test
+    fun `parseVersionMeta 解析增量更新元数据`() {
+        val json = """{
+            "versionCode": 155, "versionName": "1.7.0",
+            "apkSha256": "newsha", "apkSize": 41000000,
+            "chains": {
+                "137": {
+                    "fromApkSha256": "oldsha137",
+                    "totalSize": 5000000,
+                    "hops": [{
+                        "toVersionCode": 155,
+                        "url": "https://github.com/x/patch-137-to-155.bspatch",
+                        "size": 5000000,
+                        "patchSha256": "psha",
+                        "resultSha256": "rsha"
+                    }]
+                },
+                "132": {
+                    "fromApkSha256": "oldsha132",
+                    "totalSize": 9000000,
+                    "hops": [
+                        {"toVersionCode": 137, "url": "https://u1", "size": 4000000, "patchSha256": "p1", "resultSha256": "r1"},
+                        {"toVersionCode": 155, "url": "https://u2", "size": 5000000, "patchSha256": "p2", "resultSha256": "r2"}
+                    ]
+                }
+            }
+        }"""
+        val meta = UpdateDecider.parseVersionMeta(json)!!
+        assertEquals("newsha", meta.apkSha256)
+        assertEquals(41000000L, meta.apkSize)
+        assertEquals(2, meta.chains.size)
+
+        val c137 = meta.chains.getValue(137)
+        assertEquals("oldsha137", c137.fromApkSha256)
+        assertEquals(1, c137.hops.size)
+        assertEquals(155, c137.hops[0].toVersionCode)
+        assertEquals("psha", c137.hops[0].patchSha256)
+
+        val c132 = meta.chains.getValue(132)
+        assertEquals(2, c132.hops.size)
+        assertEquals(137, c132.hops[0].toVersionCode)
+        assertEquals(155, c132.hops[1].toVersionCode)
+    }
+
+    @Test
+    fun `parseVersionMeta 断链剔除 不完整跳整条作废`() {
+        // 某跳缺 patchSha256 → 整条链不可信，剔除（调用方回退全量）
+        val json = """{
+            "versionCode": 155, "versionName": "1.7.0",
+            "chains": {
+                "137": {
+                    "fromApkSha256": "oldsha",
+                    "totalSize": 100,
+                    "hops": [{"toVersionCode": 155, "url": "https://u", "size": 100, "resultSha256": "r"}]
+                }
+            }
+        }"""
+        assertTrue(UpdateDecider.parseVersionMeta(json)!!.chains.isEmpty())
     }
 
     private fun raw(

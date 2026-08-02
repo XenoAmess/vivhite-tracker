@@ -28,15 +28,20 @@ open class UpdateChecker {
             val raw = UpdateDecider.parseLatestRelease(releaseJson)
                 ?: return@withContext UpdateDecider.UpdateState.Error("release parse error")
             val versionJsonText = raw.versionJsonUrl?.let { httpGet(it) }
-            val remoteVersion = versionJsonText?.let { UpdateDecider.parseVersionJson(it) }
+            val meta = versionJsonText?.let { UpdateDecider.parseVersionMeta(it) }
+            val remoteVersion = meta?.let { it.versionCode to it.versionName }
             val state = UpdateDecider.decide(localVersionCode, localVersionName, remoteVersion, raw)
-            // version.json 里的提交摘要优先于 release body（两通道更新说明统一来源）
-            val versionChangelog = versionJsonText?.let { UpdateDecider.parseVersionChangelog(it) }
-            if (state is UpdateDecider.UpdateState.UpdateAvailable && versionChangelog != null) {
-                UpdateDecider.UpdateState.UpdateAvailable(state.info.copy(changelog = versionChangelog))
-            } else {
-                state
+            if (state is UpdateDecider.UpdateState.UpdateAvailable && meta != null) {
+                // version.json 里的提交摘要优先于 release body（两通道更新说明统一来源）；
+                // 附带增量更新元数据（当前 versionCode 的升级链，无则 null → 全量）
+                state.info.copy(
+                    changelog = meta.changelog ?: state.info.changelog,
+                    apkSha256 = meta.apkSha256,
+                    apkSize = meta.apkSize,
+                    chain = meta.chains[localVersionCode]
+                ).let { return@withContext UpdateDecider.UpdateState.UpdateAvailable(it) }
             }
+            state
         }
 
     // 检查内测版尝鲜通道（GitHub Pages 上的 master 最新构建）：
@@ -48,17 +53,26 @@ open class UpdateChecker {
         withContext(Dispatchers.IO) {
             val versionJsonText = httpGet(betaVersionJsonUrl)
                 ?: return@withContext UpdateDecider.UpdateState.Error("network error")
-            val remoteVersion = UpdateDecider.parseVersionJson(versionJsonText)
+            val meta = UpdateDecider.parseVersionMeta(versionJsonText)
                 ?: return@withContext UpdateDecider.UpdateState.Error("release parse error")
             val raw = UpdateDecider.RawRelease(
                 tagName = BETA_TAG_NAME,
-                changelog = UpdateDecider.parseVersionChangelog(versionJsonText)
-                    ?: "主分支最新内测构建",
+                changelog = meta.changelog ?: "主分支最新内测构建",
                 apkUrl = BETA_APK_URL,
                 apkFileName = BETA_APK_NAME,
                 versionJsonUrl = betaVersionJsonUrl
             )
-            UpdateDecider.decide(localVersionCode, localVersionName, remoteVersion, raw)
+            val state = UpdateDecider.decide(
+                localVersionCode, localVersionName, meta.versionCode to meta.versionName, raw
+            )
+            if (state is UpdateDecider.UpdateState.UpdateAvailable) {
+                state.info.copy(
+                    apkSha256 = meta.apkSha256,
+                    apkSize = meta.apkSize,
+                    chain = meta.chains[localVersionCode]
+                ).let { return@withContext UpdateDecider.UpdateState.UpdateAvailable(it) }
+            }
+            state
         }
 
     // internal open：测试可注入 fake 响应

@@ -19,7 +19,37 @@ object UpdateDecider {
         val versionName: String,
         val apkUrl: String,
         val changelog: String,
-        val tagName: String
+        val tagName: String,
+        // 增量更新元数据（version.json chains 字段，无则全量下载）
+        val apkSha256: String? = null,
+        val apkSize: Long = 0,
+        val chain: UpdateChain? = null
+    )
+
+    // 链中的一跳：一个 bsdiff 补丁及其校验信息
+    data class PatchHop(
+        val toVersionCode: Int,
+        val url: String,
+        val size: Long,
+        val patchSha256: String,
+        val resultSha256: String
+    )
+
+    // 从本地版本到目标版本的完整升级链（可能多跳）
+    data class UpdateChain(
+        val fromApkSha256: String,
+        val totalSize: Long,
+        val hops: List<PatchHop>
+    )
+
+    // version.json 的完整解析结果（chains/patches 为增量更新字段，老格式没有 → 空）
+    data class VersionMeta(
+        val versionCode: Int,
+        val versionName: String,
+        val changelog: String?,
+        val apkSha256: String?,
+        val apkSize: Long,
+        val chains: Map<Int, UpdateChain>
     )
 
     sealed class UpdateState {
@@ -59,24 +89,41 @@ object UpdateDecider {
         }
     }
 
-    // version.json: {"versionCode":92,"versionName":"1.1.92"}
-    fun parseVersionJson(json: String): Pair<Int, String>? {
+    // 解析 version.json 完整元数据（含增量更新 chains）。老格式无新字段 → 对应字段为空，
+    // 调用方自然走全量下载。核心字段缺失/JSON 非法 → null
+    fun parseVersionMeta(json: String): VersionMeta? {
         return try {
             val obj = JSONObject(json)
             val code = obj.optInt("versionCode", -1)
             val name = obj.optString("versionName")
-            if (code > 0 && name.isNotBlank()) code to name else null
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    // version.json 的可选 changelog 字段（CI 生成的最近提交摘要）。
-    // 两个通道共用：beta 的更新说明只能来自这里；stable 优先于 release body。
-    // 字段缺失/空白/JSON 非法 → null（调用方回退 release body 或固定文案）
-    fun parseVersionChangelog(json: String): String? {
-        return try {
-            JSONObject(json).optString("changelog").takeIf { it.isNotBlank() }
+            if (code <= 0 || name.isBlank()) return null
+            val changelog = obj.optString("changelog").takeIf { it.isNotBlank() }
+            val apkSha = obj.optString("apkSha256").takeIf { it.isNotBlank() }
+            val apkSize = obj.optLong("apkSize", 0)
+            val chains = mutableMapOf<Int, UpdateChain>()
+            val chainsObj = obj.optJSONObject("chains")
+            if (chainsObj != null) {
+                for (key in chainsObj.keys()) {
+                    val fromVc = key.toIntOrNull() ?: continue
+                    val c = chainsObj.optJSONObject(key) ?: continue
+                    val fromSha = c.optString("fromApkSha256").takeIf { it.isNotBlank() } ?: continue
+                    val total = c.optLong("totalSize", 0)
+                    val hopsArr = c.optJSONArray("hops") ?: continue
+                    val hops = mutableListOf<PatchHop>()
+                    for (i in 0 until hopsArr.length()) {
+                        val h = hopsArr.optJSONObject(i) ?: continue
+                        val url = h.optString("url").takeIf { it.isNotBlank() } ?: continue
+                        val pSha = h.optString("patchSha256").takeIf { it.isNotBlank() } ?: continue
+                        val rSha = h.optString("resultSha256").takeIf { it.isNotBlank() } ?: continue
+                        hops.add(PatchHop(h.optInt("toVersionCode"), url, h.optLong("size"), pSha, rSha))
+                    }
+                    // 任何一跳不完整则整条链作废（打补丁链断一环结果就不对）
+                    if (hops.isNotEmpty() && hops.size == hopsArr.length()) {
+                        chains[fromVc] = UpdateChain(fromSha, total, hops)
+                    }
+                }
+            }
+            VersionMeta(code, name, changelog, apkSha, apkSize, chains)
         } catch (e: Exception) {
             null
         }
