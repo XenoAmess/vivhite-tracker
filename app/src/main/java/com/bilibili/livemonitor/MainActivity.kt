@@ -394,7 +394,7 @@ class MainActivity : AppCompatActivity() {
                 com.bilibili.livemonitor.util.MagicImageRenderer.formatRange(it.start, it.end)
             } ?: "还没有记录魔法期"
             val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                com.bilibili.livemonitor.util.MagicImageRenderer.render(isOngoing, rangeText)
+                com.bilibili.livemonitor.util.MagicImageRenderer.render(this@MainActivity, isOngoing, rangeText)
             }
             val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 shareImageLoader.save(this@MainActivity, bmp, "magic.png")
