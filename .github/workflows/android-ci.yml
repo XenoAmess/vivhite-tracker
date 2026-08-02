@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      # beta-archive 滚动 release 的资产上传/裁剪（build_beta_chains.py）
+      contents: write
 
     steps:
     - name: Checkout code
@@ -104,6 +107,18 @@ jobs:
             json.dump({"versionCode": int(sys.argv[1]), "versionName": sys.argv[2], "changelog": changelog}, f, ensure_ascii=False)
         PY
         cat version.json
+
+    # beta 增量更新：滚动存档 beta-archive（最近 8 个内测包）+ 指数回退补丁
+    # + 多跳链元数据写进 version.json（失败只丢条目，不阻断发布）
+    - name: Install bsdiff
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      run: sudo apt-get update && sudo apt-get install -y bsdiff
+
+    - name: Build beta delta patches and update beta-archive
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python3 .github/workflows/build_beta_chains.py
 
     - name: Upload beta channel artifact
       if: github.ref == 'refs/heads/master' && github.event_name == 'push'
