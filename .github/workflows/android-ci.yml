@@ -85,7 +85,7 @@ jobs:
         # 复刻 app/build.gradle.kts 的版本推导：
         # versionCode = commit 数；versionName = describe（tag 后 N commit → base+N）
         VERSION_CODE=$(git rev-list --count HEAD)
-        DESCRIBE=$(git describe --tags --long 2>/dev/null || echo "")
+        DESCRIBE=$(git describe --tags --long --match 'v*' 2>/dev/null || echo "")
         if [[ "$DESCRIBE" =~ ^v(.+)-([0-9]+)-g[0-9a-f]+$ ]]; then
           BASE="${BASH_REMATCH[1]}"
           AHEAD="${BASH_REMATCH[2]}"
@@ -95,7 +95,7 @@ jobs:
           VERSION_NAME="0.0.0+$VERSION_CODE"
         fi
         # 更新说明：最近 tag 以来的提交摘要（无 tag 则全部历史，取前 20 条）
-        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
         if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..HEAD"; else RANGE="HEAD"; fi
         git log --oneline --no-decorate "$RANGE" | head -20 > changelog.txt
         # release 构建与 debug 共用 keystore，内测包可覆盖安装

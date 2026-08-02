@@ -54,11 +54,11 @@ jobs:
       run: |
         VERSION_CODE=$(git rev-list --count HEAD)
         # versionName 从 tag 取，和 build.gradle.kts 逻辑一致
-        TAG=$(git describe --tags --abbrev=0)
+        TAG=$(git describe --tags --abbrev=0 --match 'v*')
         VERSION_NAME="${TAG#v}"
         cp app/build/outputs/apk/release/app-release.apk "vivhite-tracker-${VERSION_NAME}.apk"
         # 更新说明：上一个 tag 到本 tag 的提交摘要（首个 tag 则全部历史，取前 20 条）
-        PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+        PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' "${TAG}^" 2>/dev/null || echo "")
         if [ -n "$PREV_TAG" ]; then RANGE="$PREV_TAG..$TAG"; else RANGE="$TAG"; fi
         git log --oneline --no-decorate "$RANGE" | head -20 > changelog.txt
         python3 - "$VERSION_CODE" "$VERSION_NAME" <<'PY'

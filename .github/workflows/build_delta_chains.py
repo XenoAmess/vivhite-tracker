@@ -47,7 +47,7 @@ def gh_download(release_tag, pattern, dest):
 
 def main():
     new_apk = sorted(glob.glob("vivhite-tracker-*.apk"))[0]
-    cur_tag = git("describe", "--tags", "--abbrev=0")
+    cur_tag = git("describe", "--tags", "--abbrev=0", "--match", "v*")
     new_vc = int(git("rev-list", "--count", "HEAD"))
     new_sha = sha256(new_apk)
     new_size = os.path.getsize(new_apk)

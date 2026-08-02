@@ -45,7 +45,10 @@ def gh(*args, check=True):
 def ensure_archive():
     r = gh("release", "view", ARCHIVE_TAG, check=False)
     if r.returncode != 0:
-        gh("release", "create", ARCHIVE_TAG, "--title", "beta-archive",
+        # tag 必须钉在根 commit：若钉在近期 commit 上，git describe --tags 会
+        # 把 beta-archive 当成最近 tag，版本号推导塌成 0.0.0+N（2026-08-02 实发）
+        root = run(["git", "rev-list", "--max-parents=0", "HEAD"]).stdout.splitlines()[0]
+        gh("release", "create", ARCHIVE_TAG, "--target", root, "--title", "beta-archive",
            "--notes", "内测包滚动存档（增量更新底包与补丁，由 CI 自动维护）")
         print("created beta-archive release")
 

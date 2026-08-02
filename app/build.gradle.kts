@@ -23,7 +23,7 @@ android {
         // 无 tag → "0.0.0+${commit数}"（首次构建前边界）
         versionName = run {
             val describe = providers.exec {
-                commandLine("git", "describe", "--tags", "--long")
+                commandLine("git", "describe", "--tags", "--long", "--match", "v*")
             }.standardOutput.asText.get().trim()
             val match = Regex("v(.+)-(\\d+)-g[0-9a-f]+").matchEntire(describe)
             if (match != null) {
