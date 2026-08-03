@@ -13,6 +13,36 @@
         android:textSize="17sp"
         android:textStyle="bold" />
 
+    <!-- 精确闹钟权限警示条：未授权时显示，授权后隐藏（含设置返回自动刷新） -->
+    <LinearLayout
+        android:id="@+id/magicAlarmBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:background="#FFF8E1"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="10dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="无精确闹钟权限：魔法期结束提醒可能不准点响铃"
+            android:textColor="#8D6E00"
+            android:textSize="13sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnMagicAlarmPerm"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="36dp"
+            android:text="去开启"
+            android:textSize="12sp" />
+    </LinearLayout>
+
     <!-- 月份导航 -->
     <LinearLayout
         android:layout_width="match_parent"

@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.service.LiveCheckService
 import com.bilibili.livemonitor.util.PreferenceManager
@@ -1060,6 +1061,73 @@ class MainActivityTest {
             stream.toString().startsWith("content://com.bilibili.livemonitor.fileprovider/"))
         val text = inner?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
         assertTrue("开播文案: $text", text.contains("正在直播"))
+    }
+
+    @Test
+    fun `魔法期对话框 未授权精确闹钟时显示警示条`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.exactAlarmGranted = { false }
+
+        activity.showMagicPeriodDialog()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        val banner = dialog.findViewById<android.widget.LinearLayout>(R.id.magicAlarmBanner)
+
+        assertEquals(android.view.View.VISIBLE, banner.visibility)
+        val bannerText = (0 until banner.childCount)
+            .map { banner.getChildAt(it) }
+            .filterIsInstance<android.widget.TextView>()
+            .joinToString(" ") { it.text }
+        assertTrue("应说明不准点风险: $bannerText", bannerText.contains("不准点"))
+    }
+
+    @Test
+    fun `魔法期对话框 已授权精确闹钟时警示条隐藏`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.exactAlarmGranted = { true }
+
+        activity.showMagicPeriodDialog()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+
+        assertEquals(
+            android.view.View.GONE,
+            dialog.findViewById<android.widget.LinearLayout>(R.id.magicAlarmBanner).visibility
+        )
+    }
+
+    @Test
+    fun `魔法期警示条 点去开启跳转精确闹钟设置`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.exactAlarmGranted = { false }
+        shadowOf(context).peekNextStartedActivity() // 消费冷启动可能触发的跳转
+
+        activity.showMagicPeriodDialog()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        dialog.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnMagicAlarmPerm
+        ).performClick()
+
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, started?.action)
+        assertEquals("package:${context.packageName}", started?.dataString)
+    }
+
+    @Test
+    fun `魔法期警示条 设置返回授权后onResume自动隐藏`() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java)
+        val activity = controller.setup().get()
+        var granted = false
+        activity.exactAlarmGranted = { granted }
+
+        activity.showMagicPeriodDialog()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        val banner = dialog.findViewById<android.widget.LinearLayout>(R.id.magicAlarmBanner)
+        assertEquals(android.view.View.VISIBLE, banner.visibility)
+
+        // 用户在设置页授予权限后返回 → 同一实例 onResume 驱动刷新
+        granted = true
+        controller.pause().resume()
+
+        assertEquals("授权返回后警示条应自动隐藏", android.view.View.GONE, banner.visibility)
     }
 
     @Test

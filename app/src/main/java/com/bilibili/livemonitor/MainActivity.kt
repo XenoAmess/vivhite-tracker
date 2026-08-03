@@ -58,6 +58,8 @@ class MainActivity : AppCompatActivity() {
 
     // 标记本次会话是否已弹过权限引导，避免重复打扰
     private var hasPromptedExactAlarm = false
+    // 魔法期警示条的刷新 lambda（dialog 打开时赋值，dismiss 置 null；onResume 调用）
+    private var magicAlarmBannerRefresh: (() -> Unit)? = null
     private var hasPromptedOem = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -162,6 +164,8 @@ class MainActivity : AppCompatActivity() {
         if (!hasPromptedExactAlarm) {
             checkExactAlarmPermission()
         }
+        // 魔法期警示条：从闹钟设置页返回后自动刷新可见性
+        magicAlarmBannerRefresh?.invoke()
     }
 
     override fun onPause() {
@@ -443,8 +447,20 @@ class MainActivity : AppCompatActivity() {
         val btnEndDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditEndDate)
         val btnEndTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditEndTime)
         val tvDuration = view.findViewById<android.widget.TextView>(R.id.tvEditDuration)
+        val magicAlarmBanner = view.findViewById<android.widget.LinearLayout>(R.id.magicAlarmBanner)
+        val btnMagicAlarmPerm = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnMagicAlarmPerm)
 
         val dialog = AlertDialog.Builder(this).setView(view).create()
+
+        // 精确闹钟警示条：未授权显示（结束提醒降级不准点），授权/设置返回后隐藏
+        fun refreshMagicAlarmBanner() {
+            magicAlarmBanner.visibility =
+                if (exactAlarmGranted()) android.view.View.GONE else android.view.View.VISIBLE
+        }
+        refreshMagicAlarmBanner()
+        btnMagicAlarmPerm.setOnClickListener { openExactAlarmSettings() }
+        magicAlarmBannerRefresh = { refreshMagicAlarmBanner() }
+        dialog.setOnDismissListener { magicAlarmBannerRefresh = null }
 
         fun dayStartOf(cal: java.util.Calendar): Long = java.util.Calendar.getInstance().apply {
             timeInMillis = cal.timeInMillis
@@ -1751,27 +1767,38 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // internal 注入位：单测控制精确闹钟授权态（生产为真实检查）
+    internal var exactAlarmGranted: () -> Boolean = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+        } else {
+            true
+        }
+    }
+
+    // 精确闹钟设置页跳转（主页面权限引导与魔法期警示条共用）
+    internal fun openExactAlarmSettings() {
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+            )
+        } catch (e: Exception) {
+            AppLogger.e("MainActivity", "open exact alarm settings failed", e)
+            openAppDetails()
+        }
+    }
+
     private fun checkExactAlarmPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            if (!alarmManager.canScheduleExactAlarms()) {
+            if (!exactAlarmGranted()) {
                 hasPromptedExactAlarm = true
                 AppLogger.w("MainActivity", "exact alarm permission not granted")
                 AlertDialog.Builder(this)
                     .setTitle("需要精确闹钟权限")
                     .setMessage("没有精确闹钟权限时，黑屏待机状态下检测会被系统延迟到 15 分钟一次，容易漏掉开播提醒。请授予该权限以保证每分钟检测。")
-                    .setPositiveButton("去开启") { _, _ ->
-                        try {
-                            startActivity(
-                                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                                    data = Uri.parse("package:$packageName")
-                                }
-                            )
-                        } catch (e: Exception) {
-                            AppLogger.e("MainActivity", "open exact alarm settings failed", e)
-                            openAppDetails()
-                        }
-                    }
+                    .setPositiveButton("去开启") { _, _ -> openExactAlarmSettings() }
                     .setNegativeButton("稍后") { dialog, _ ->
                         dialog.dismiss()
                     }
