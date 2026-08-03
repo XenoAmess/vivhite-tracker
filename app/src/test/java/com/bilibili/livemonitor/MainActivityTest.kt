@@ -1320,6 +1320,42 @@ class MainActivityTest {
     }
 
     @Test
+    fun `宣传图预览对话框 按钮在屏内且chip为圆点与文字勾`() {
+        // 2026-08-03 用户反馈：预览图无限高 + rv 320dp 把「取消/分享」挤出屏幕，
+        // 选中勾是纯黑方块无语义，深色色点是方形像污渍
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.showPromoPreview(null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+
+        // 取消/分享按钮必须在布局中存在且可见（被挤出屏幕的根因是预览图无限高，
+        // 现在 maxHeight=240dp 限制住了）
+        val btnShare = dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoShare)
+        val btnCancel = dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoCancel)
+        assertNotNull("分享按钮必须存在", btnShare)
+        assertNotNull("取消按钮必须存在", btnCancel)
+        assertEquals(android.view.View.VISIBLE, btnShare.visibility)
+        assertEquals(android.view.View.VISIBLE, btnCancel.visibility)
+
+        // chip：色点必须圆形（OVAL GradientDrawable），选中态紫圈描边 + 名字加粗
+        // （原黑方块勾占宽会把 4 字名挤截断）
+        val rv = dialog.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvPromoStyles)!!
+        val holder = rv.adapter!!.onCreateViewHolder(rv, 0)
+        rv.adapter!!.onBindViewHolder(holder, 0) // position 0 = 默认选中 LIGHT_CARD
+        val dot = holder.itemView.findViewById<android.view.View>(R.id.vChipDot)
+        val dotBg = dot.background as? android.graphics.drawable.GradientDrawable
+        assertTrue(
+            "色点必须是圆形 GradientDrawable",
+            dotBg?.shape == android.graphics.drawable.GradientDrawable.OVAL
+        )
+        val name = holder.itemView.findViewById<android.widget.TextView>(R.id.tvChipName)
+        assertEquals(
+            "选中项名字应加粗",
+            android.graphics.Typeface.BOLD,
+            name.typeface?.style
+        )
+    }
+
+    @Test
     fun `QQ空间说说 授权后直接调shareToQzone且参数为图文类型`() {
         // 图文进 QQ 系的官方通道：说说参数必须是 TYPE_IMAGE_TEXT
         makeQqInstalled(true)

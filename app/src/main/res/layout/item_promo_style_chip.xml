@@ -21,14 +21,9 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
         android:textSize="14sp"
         android:textColor="@android:color/black" />
-
-    <View
-        android:id="@+id/vChipCheck"
-        android:layout_width="20dp"
-        android:layout_height="20dp"
-        android:layout_marginStart="8dp"
-        android:visibility="gone" />
 
 </LinearLayout>

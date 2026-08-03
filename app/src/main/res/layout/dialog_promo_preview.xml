@@ -18,6 +18,8 @@
         android:id="@+id/ivPromoPreview"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:maxHeight="240dp"
         android:adjustViewBounds="true"
         android:contentDescription="宣传图预览" />
 
@@ -34,7 +36,7 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvPromoStyles"
         android:layout_width="match_parent"
-        android:layout_height="320dp"
+        android:layout_height="300dp"
         android:clipToPadding="false"
         android:paddingStart="4dp"
         android:paddingEnd="4dp"

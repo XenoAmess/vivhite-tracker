@@ -1376,11 +1376,16 @@ class MainActivity : AppCompatActivity() {
                 val item = holder.itemView
                 val dot = item.findViewById<android.view.View>(R.id.vChipDot)
                 val name = item.findViewById<android.widget.TextView>(R.id.tvChipName)
-                val check = item.findViewById<android.view.View>(R.id.vChipCheck)
-                dot.setBackgroundColor(com.bilibili.livemonitor.util.PromoImageRenderer.chipColorOf(style))
+                val selected = style == current
+                // 圆形色点；选中态 = 紫圈描边 + 名字加粗（不占宽度，4 字名不截断）
+                dot.background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(com.bilibili.livemonitor.util.PromoImageRenderer.chipColorOf(style))
+                    if (selected) setStroke(4, 0xFF6750A4.toInt())
+                    else setStroke(1, 0x1A000000)
+                }
                 name.text = names[position]
-                check.visibility = if (style == current) android.view.View.VISIBLE else android.view.View.GONE
-                check.setBackgroundColor(0xFF1A1A1A.toInt())
+                name.setTypeface(name.typeface, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
                 item.setOnClickListener {
                     if (current != style) {
                         current = style
