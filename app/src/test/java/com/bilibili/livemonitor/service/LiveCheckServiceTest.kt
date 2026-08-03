@@ -863,29 +863,46 @@ class LiveCheckServiceTest {
     }
 
     @Test
-    fun `A4c 动态跳转intent bilibili可解析时用detail scheme 否则https回退`() {
-        // bilibili://dynamic/{id} 无路由（点击无反应实锤），detail 才是正规 scheme
+    fun `A4c 跳转intent强投递 装bili用其包名 只装HD用HD 都不装浏览器兜底`() {
+        // 废弃 scheme 猜测（bilibili://dynamic/{id} 无路由、detail 真机解析为空），
+        // 改官方 web 格式 + setPackage 强投递（liveRoomAppIntent 同款策略）
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val service = controller.get()
 
-        // 分支1：环境里有能解析 detail scheme 的 activity → 用 bilibili://dynamic/detail/
-        val resolveInfo = org.robolectric.shadows.ShadowResolveInfo.newResolveInfo(
-            "Bilibili", "tv.danmaku.bili", "MainActivity"
-        )
-        shadowOf(context.packageManager).addResolveInfoForIntent(
-            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("bilibili://dynamic/detail/123")),
-            resolveInfo
-        )
-        val appIntent = service.buildDynamicIntent("123")
-        assertEquals("bilibili://dynamic/detail/123", appIntent.dataString)
+        // 分支1：装有哔哩哔哩 → setPackage(tv.danmaku.bili)
+        service.bilibiliInstalled = { it == "tv.danmaku.bili" }
+        service.buildDynamicIntent("123").also { intent ->
+            assertEquals("https://t.bilibili.com/123", intent.dataString)
+            assertEquals("tv.danmaku.bili", intent.`package`)
+        }
+        service.buildVideoIntent(456789L).also { intent ->
+            assertEquals("https://www.bilibili.com/video/av456789", intent.dataString)
+            assertEquals("tv.danmaku.bili", intent.`package`)
+        }
 
-        // 分支2：清掉解析器 → 回退 https 官方短链
-        shadowOf(context.packageManager).setResolveInfosForIntent(
-            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("bilibili://dynamic/detail/123")),
-            emptyList()
-        )
-        val webIntent = service.buildDynamicIntent("123")
-        assertEquals("https://t.bilibili.com/123", webIntent.dataString)
+        // 分支2：只装 HD 版 → setPackage(tv.danmaku.bilibilihd)
+        service.bilibiliInstalled = { it == "tv.danmaku.bilibilihd" }
+        service.buildDynamicIntent("123").also { intent ->
+            assertEquals("tv.danmaku.bilibilihd", intent.`package`)
+        }
+        service.buildVideoIntent(456789L).also { intent ->
+            assertEquals("tv.danmaku.bilibilihd", intent.`package`)
+        }
+
+        // 分支3：都没装 → 无 setPackage，浏览器兜底
+        service.bilibiliInstalled = { false }
+        service.buildDynamicIntent("123").also { intent ->
+            assertEquals("https://t.bilibili.com/123", intent.dataString)
+            assertNull(intent.`package`)
+        }
+        service.buildVideoIntent(456789L).also { intent ->
+            assertEquals("https://www.bilibili.com/video/av456789", intent.dataString)
+            assertNull(intent.`package`)
+        }
+
+        // 分支4：两个都装 → 优先 tv.danmaku.bili
+        service.bilibiliInstalled = { true }
+        assertEquals("tv.danmaku.bili", service.resolveBiliPackage())
     }
 
     @Test

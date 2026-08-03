@@ -450,10 +450,47 @@ class LiveCheckService : Service() {
         notificationManager.notify(title.hashCode(), builder.build())
     }
 
-    private fun sendVideoNotification(aid: Long, title: String, prefix: String) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://video/$aid")).apply {
+    /**
+     * 已安装的 B 站客户端包名（tv.danmaku.bili 优先，其次 HD 版），都没装返回 null。
+     * 两个包都已在 manifest <queries> 声明，可见性无问题。
+     * internal 注入位：单测控制安装态。
+     */
+    internal var bilibiliInstalled: (String) -> Boolean = { pkg ->
+        try {
+            packageManager.getPackageInfo(pkg, 0); true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    internal fun resolveBiliPackage(): String? {
+        for (pkg in listOf("tv.danmaku.bili", "tv.danmaku.bilibilihd")) {
+            if (bilibiliInstalled(pkg)) return pkg
+        }
+        return null
+    }
+
+    /**
+     * B 站链接强投递：官方 web 格式 + setPackage 强制投递给已装客户端
+     * （liveRoomAppIntent 同款策略，绕开 scheme 路由猜测与 resolveActivity
+     * 不确定性——bilibili://dynamic/{id} 无路由、bilibili://dynamic/detail/{id}
+     * 真机实测解析为空，均废弃）。未装客户端则不加 setPackage，浏览器兜底。
+     */
+    private fun buildBiliIntent(url: String): Intent {
+        return Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            resolveBiliPackage()?.let { setPackage(it) }
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
+    }
+
+    internal fun buildDynamicIntent(dynamicId: String): Intent =
+        buildBiliIntent("https://t.bilibili.com/$dynamicId")
+
+    internal fun buildVideoIntent(aid: Long): Intent =
+        buildBiliIntent("https://www.bilibili.com/video/av$aid")
+
+    private fun sendVideoNotification(aid: Long, title: String, prefix: String) {
+        val intent = buildVideoIntent(aid)
         val pendingIntent = PendingIntent.getActivity(
             this, aid.toInt(), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -468,27 +505,6 @@ class LiveCheckService : Service() {
             .build()
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_VIDEO, notification)
-    }
-
-    /**
-     * 动态通知的跳转 intent：bilibili://dynamic/detail/{id} 是动态详情正规 scheme
-     * （旧 bilibili://dynamic/{id} 无此路由，点击无反应——2026-08-02 用户反馈实锤）；
-     * 解析不到（未装/旧版客户端）回退官方短链 https://t.bilibili.com/{id}
-     * （API 返回的「复制动态地址」同格式，浏览器/applink 均可达）。
-     * internal：单测验证两分支。
-     */
-    internal fun buildDynamicIntent(dynamicId: String): Intent {
-        val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://dynamic/detail/$dynamicId")).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        val resolvable = packageManager.queryIntentActivities(appIntent, 0).isNotEmpty()
-        return if (resolvable) {
-            appIntent
-        } else {
-            Intent(Intent.ACTION_VIEW, Uri.parse("https://t.bilibili.com/$dynamicId")).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-        }
     }
 
     private fun sendDynamicNotification(dynamicId: String, displayText: String) {
