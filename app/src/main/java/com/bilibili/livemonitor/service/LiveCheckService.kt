@@ -492,6 +492,14 @@ class LiveCheckService : Service() {
     // internal 注入位：单测置 0 避免 15s 重试阻塞 isChecking 闸门
     internal var dynamicRetryDelayMillis: Long = ERROR_RETRY_DELAY
 
+    // 下播后 [startTs, +REPLAY_WINDOW] 内的新视频判定为本场回放
+    private fun isReplayWithinWindow(pubTsSeconds: Long): Boolean {
+        val streamEnd = preferenceManager.getLastStreamEndTs()
+        if (streamEnd <= 0 || pubTsSeconds <= 0) return false
+        val pubMs = pubTsSeconds * 1000
+        return pubMs >= streamEnd && pubMs <= streamEnd + REPLAY_WINDOW_MS
+    }
+
     private suspend fun fetchDynamicOnce(): com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult<com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo> {
         return activityApi.fetchLatestDynamic(
             com.bilibili.livemonitor.util.BiliTargets.MONITOR_MID
@@ -513,10 +521,16 @@ class LiveCheckService : Service() {
             )
             preferenceManager.setLastVideoAid(latestVideo.aid)
             if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertVideo(latestVideo.aid, lastAid)) {
-                AppLogger.d(TAG, "new video: aid=${latestVideo.aid} title=${latestVideo.title.take(40)}")
-                triggerActivityAlert(
-                    com.bilibili.livemonitor.domain.ActivityType.Video(latestVideo.aid, latestVideo.title)
-                )
+                // 下播后窗口内的新视频 = 本场回放，单独提示直达
+                if (isReplayWithinWindow(dynamic.pubTs)) {
+                    AppLogger.d(TAG, "stream replay video: aid=${latestVideo.aid} title=${latestVideo.title.take(40)}")
+                    sendVideoNotification(latestVideo.aid, latestVideo.title, "本场回放已上线")
+                } else {
+                    AppLogger.d(TAG, "new video: aid=${latestVideo.aid} title=${latestVideo.title.take(40)}")
+                    triggerActivityAlert(
+                        com.bilibili.livemonitor.domain.ActivityType.Video(latestVideo.aid, latestVideo.title)
+                    )
+                }
             }
         }
 
@@ -1116,6 +1130,7 @@ class LiveCheckService : Service() {
         private const val CHECK_TIMEOUT = 25_000L // 单次检测超时25秒
         private const val ERROR_RETRY_DELAY = 15_000L // 错误后15秒重试
         private const val CHECK_WAKE_LOCK_TIMEOUT = 90_000L // 检测+重试全程锁（25s+15s+25s+余量）
+        private const val REPLAY_WINDOW_MS = 6 * 3_600_000L // 下播后 6h 内的新视频视为回放
         private const val STATUS_RESTORE_MAX_AGE = 600_000L // 进程重启时恢复状态的新鲜度窗口（10分钟）
         private const val ALARM_REQUEST_CODE = 2001
         private const val DYNAMIC_ALARM_REQUEST_CODE = 2002
