@@ -926,6 +926,51 @@ class LiveCheckServiceTest {
     }
 
     @Test
+    fun `A6 开播预告24h内 提醒一次且去重`() {
+        prefs.setServiceRunning(true)
+        // 预告动态 id 含 pubTs 相关；构造一个 1h 后开播的预告
+        val now = System.currentTimeMillis()
+        val liveRcmd = com.bilibili.livemonitor.api.BilibiliActivityApi.LiveRcmdInfo(
+            dynamicId = "live-remind-1",
+            liveStartMs = now + 3_600_000,
+            title = "今晚见",
+            contentText = "直播时间：20:00"
+        )
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok(
+                com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo(
+                    id = "text1", type = "DYNAMIC_TYPE_DRAW", displayText = "x",
+                    avItem = null, isTop = false, pubTs = 0, liveRcmd = liveRcmd
+                )
+            )
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        driveActivityCheckUntil(controller, "live reminder fired") {
+            shadowOf(nm).getNotification("live-remind-1".hashCode()) != null
+        }
+        assertNotNull("预告提醒必须发出", shadowOf(nm).getNotification("live-remind-1".hashCode()))
+        assertEquals("去重 id 必须落盘", "live-remind-1", prefs.getLastRemindedLiveDynamicId())
+
+        // 第二次检查（同一预告）不应重复提醒
+        activityApi.enqueue(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok(
+                com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo(
+                    id = "text1", type = "DYNAMIC_TYPE_DRAW", displayText = "x",
+                    avItem = null, isTop = false, pubTs = 0, liveRcmd = liveRcmd
+                )
+            )
+        )
+        val before = shadowOf(nm).allNotifications.size
+        driveActivityCheckUntil(controller, "second check done") { activityApi.callCount >= 2 }
+        assertEquals("同一预告不得重复提醒", before, shadowOf(nm).allNotifications.size)
+    }
+
+    @Test
     fun `A2 首次检测只记录基线不提醒`() {
         // 核心原则：新装/升级后第一次检测只记录当前最新 id，
         // 否则用户装完瞬间收到"新视频"通知（实际是历史视频）

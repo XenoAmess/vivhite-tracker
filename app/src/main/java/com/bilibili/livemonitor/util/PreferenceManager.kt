@@ -230,6 +230,15 @@ class PreferenceManager(context: Context) {
         return prefs.getLong(KEY_LAST_STREAM_END_TS, 0L)
     }
 
+    // 已提醒过的开播预告动态 id（按 id_str 去重）
+    fun setLastRemindedLiveDynamicId(id: String) {
+        prefs.edit().putString(KEY_LAST_REMINDED_LIVE_DYNAMIC_ID, id).apply()
+    }
+
+    fun getLastRemindedLiveDynamicId(): String {
+        return prefs.getString(KEY_LAST_REMINDED_LIVE_DYNAMIC_ID, "") ?: ""
+    }
+
     // ========== B 站全活动监控 ==========
 
     // 监控新视频投稿，默认开
@@ -345,6 +354,7 @@ class PreferenceManager(context: Context) {
         // ===== 直播生命周期提醒 =====
         private const val KEY_NOTIFY_STREAM_END = "notify_stream_end"
         private const val KEY_LAST_STREAM_END_TS = "last_stream_end_ts"
+        private const val KEY_LAST_REMINDED_LIVE_DYNAMIC_ID = "last_reminded_live_dynamic_id"
 
         // ===== B 站全活动监控 =====
         private const val KEY_MONITOR_VIDEOS = "monitor_videos"

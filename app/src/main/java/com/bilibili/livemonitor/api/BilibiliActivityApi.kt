@@ -45,6 +45,17 @@ open class BilibiliActivityApi {
     )
 
     /**
+     * 直播开播/预告（DYNAMIC_TYPE_LIVE_RCMD）。
+     * desktop feed 的字段形态以结构化 live_rcmd 为准，解析不到 liveStartMs 时调用方安全降级不提醒。
+     */
+    data class LiveRcmdInfo(
+        val dynamicId: String,
+        val liveStartMs: Long?,
+        val title: String?,
+        val contentText: String?
+    )
+
+    /**
      * 动态条目（feed/space 第一条）。
      * @param id 动态 id_str，用于去重
      * @param type DYNAMIC_TYPE_AV / DYNAMIC_TYPE_DRAW / DYNAMIC_TYPE_FORWARD / DYNAMIC_TYPE_ARTICLE
@@ -56,6 +67,7 @@ open class BilibiliActivityApi {
      * 最新非置顶动态掩盖置顶变更。
      * @param latestAvItem feed 中最新的非置顶视频。最新动态为图文时，视频监控仍可
      * 正确推进投稿基线。
+     * @param liveRcmd 本页中的直播开播/预告条目（可为 null）
      */
     data class DynamicInfo(
         val id: String,
@@ -65,7 +77,8 @@ open class BilibiliActivityApi {
         val isTop: Boolean,
         val pubTs: Long,
         val pinnedAvItem: AvItem? = null,
-        val latestAvItem: AvItem? = null
+        val latestAvItem: AvItem? = null,
+        val liveRcmd: LiveRcmdInfo? = null
     )
 
     /**
@@ -100,8 +113,12 @@ open class BilibiliActivityApi {
             var fallback: DynamicInfo? = null
             var pinnedAvItem: AvItem? = null
             var latestAvItem: AvItem? = null
+            var liveRcmd: LiveRcmdInfo? = null
             for (i in 0 until items.length()) {
                 val item = items.optJSONObject(i) ?: continue
+                parseLiveRcmd(item)?.let { liveRcmd = it }
+                // 直播预告不是内容动态，不进动态基线（避免触发"新动态"误报）
+                if (item.optString("type") == "DYNAMIC_TYPE_LIVE_RCMD") continue
                 val info = parseDynamicItem(item)
                 if (info == null) {
                     if (firstErr == null) firstErr = ActivityResult.Err("parse failed: missing id")
@@ -116,13 +133,14 @@ open class BilibiliActivityApi {
                 if (latest == null) latest = info
             }
             // 全是置顶时仍回退该项以落动态基线；正常场景返回最新非置顶项，并携带
-            // 独立的置顶视频信息。
+            // 独立的置顶视频信息与直播预告条目。
             val result = latest ?: fallback
             if (result != null) {
                 ActivityResult.Ok(
                     result.copy(
                         pinnedAvItem = pinnedAvItem,
-                        latestAvItem = latestAvItem
+                        latestAvItem = latestAvItem,
+                        liveRcmd = liveRcmd
                     )
                 )
             } else {
@@ -131,6 +149,31 @@ open class BilibiliActivityApi {
         } catch (e: Exception) {
             AppLogger.w(TAG, "parseDynamicFeed failed: ${e.message}")
             ActivityResult.Err("parse error: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * 解析直播开播/预告条目（DYNAMIC_TYPE_LIVE_RCMD）。
+     * live_start_time 可能是毫秒或秒级时间戳；解析不到时返回 null（调用方安全降级）。
+     * 字段形态：结构化 live_rcmd（live_start_time/title/content），解析失败不抛异常。
+     */
+    internal fun parseLiveRcmd(item: JSONObject): LiveRcmdInfo? {
+        return try {
+            if (item.optString("type") != "DYNAMIC_TYPE_LIVE_RCMD") return null
+            val id = item.optString("id_str").takeIf { it.isNotBlank() }
+                ?: item.optString("id").takeIf { it.isNotBlank() } ?: return null
+            val dyn = flattenModules(item)["module_dynamic"]
+            val lr = dyn?.optJSONObject("live_rcmd")
+            val rawStart = lr?.optLong("live_start_time", 0L)?.takeIf { it > 0 }
+            val startMs = rawStart?.let { if (it > 10_000_000_000L) it else it * 1000L }
+            LiveRcmdInfo(
+                dynamicId = id,
+                liveStartMs = startMs,
+                title = lr?.optString("title")?.takeIf { it.isNotBlank() },
+                contentText = lr?.optString("content")?.takeIf { it.isNotBlank() }
+            )
+        } catch (e: Exception) {
+            null
         }
     }
 

@@ -574,6 +574,47 @@ class LiveCheckService : Service() {
                 }
             }
         }
+
+        // 4) 开播预告（LIVE_RCMD）：预告时间在 24h 内且未提醒过 → 提醒一次
+        dynamic.liveRcmd?.let { rcmd ->
+            val now = System.currentTimeMillis()
+            if (com.bilibili.livemonitor.domain.LiveReminderDecider.shouldRemind(
+                    rcmd.liveStartMs,
+                    now,
+                    preferenceManager.getLastRemindedLiveDynamicId(),
+                    rcmd.dynamicId
+                )
+            ) {
+                preferenceManager.setLastRemindedLiveDynamicId(rcmd.dynamicId)
+                AppLogger.d(TAG, "live reminder: start=${rcmd.liveStartMs} title=${rcmd.title}")
+                sendLiveReminderNotification(rcmd)
+            }
+        }
+    }
+
+    private fun sendLiveReminderNotification(rcmd: com.bilibili.livemonitor.api.BilibiliActivityApi.LiveRcmdInfo) {
+        val startMs = rcmd.liveStartMs ?: return
+        val timeText = java.text.SimpleDateFormat("M月d日 HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(startMs))
+        val title = rcmd.title?.takeIf { it.isNotBlank() } ?: "白绮直播预告"
+        val contentText = rcmd.contentText?.takeIf { it.isNotBlank() } ?: "预计 $timeText 开播"
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_STREAM_LIFECYCLE_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle("🔔 $title")
+            .setContentText(contentText)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(rcmd.dynamicId.hashCode(), notification)
     }
 
     private fun triggerActivityAlert(type: com.bilibili.livemonitor.domain.ActivityType) {

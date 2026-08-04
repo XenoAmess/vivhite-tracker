@@ -71,6 +71,32 @@ class BilibiliActivityApiTest {
     }
 
     @Test
+    fun `parseDynamicFeed 含 LIVE_RCMD 预告 解析开播时间`() {
+        // live_start_time 毫秒时间戳；与一条普通图文动态同页
+        val json = """{"code":0,"data":{"items":[
+            {"id_str":"live123","type":"DYNAMIC_TYPE_LIVE_RCMD",
+             "modules":{"module_author":{"is_top":false,"pub_ts":1785260000},
+                        "module_dynamic":{"live_rcmd":{
+                          "title":"今晚见","content":"直播时间：20:00",
+                          "live_start_time":1754300000000}}}} ,
+            {"id_str":"896","type":"DYNAMIC_TYPE_DRAW",
+             "modules":{"module_author":{"is_top":false,"pub_ts":1785240803},
+                        "module_desc":{"desc":{"text":"测试动态文本"}},
+                        "module_dynamic":{"dyn_draw":{"id":403437691,"items":[]}}}}
+        ]}}"""
+        val result = api.parseDynamicFeed(json)
+        assertTrue(result is BilibiliActivityApi.ActivityResult.Ok)
+        val info = (result as BilibiliActivityApi.ActivityResult.Ok).data
+        assertEquals("896", info.id) // 最新动态仍是图文
+        assertNotNull("应解析出直播预告", info.liveRcmd)
+        val rcmd = info.liveRcmd!!
+        assertEquals("live123", rcmd.dynamicId)
+        assertEquals(1754300000000L, rcmd.liveStartMs)
+        assertEquals("今晚见", rcmd.title)
+        assertEquals("直播时间：20:00", rcmd.contentText)
+    }
+
+    @Test
     fun `parseDynamicFeed 空 items 返回 NoData`() {
         val json = """{"code":0,"data":{"items":[]}}"""
         assertEquals(
