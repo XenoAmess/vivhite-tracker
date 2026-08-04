@@ -43,12 +43,12 @@ class LiveCheckService : Service() {
     // internal var：测试可注入 fake API 验证检测编排（重试/状态保护/提醒触发）
     internal var api: LiveStatusChecker = BilibiliApi()
     private lateinit var preferenceManager: PreferenceManager
-    private var roomId: Long = DEFAULT_ROOM_ID
-    private var lastStatus: Boolean? = null
+    // @Volatile：主线程写（房间变更/onStartCommand）、IO 协程读（检测），跨线程可见
+    @Volatile private var roomId: Long = DEFAULT_ROOM_ID
+    @Volatile private var lastStatus: Boolean? = null
     private var monitoringGeneration: Long = 0L
     private var stopRequestedByUser = false
     private var stopRequestedGeneration: Long = NO_MONITORING_GENERATION
-    private lateinit var wakeLock: PowerManager.WakeLock
 
     // 用于保护检测的轻量级WakeLock
     private lateinit var checkWakeLock: PowerManager.WakeLock
@@ -68,10 +68,6 @@ class LiveCheckService : Service() {
         preferenceManager = PreferenceManager(this)
         monitoringGeneration = preferenceManager.getMonitoringGeneration()
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "BilibiliLiveMonitor::WakeLock"
-        )
         // 初始化用于检测的轻量级WakeLock，防止Doze模式影响检测
         checkWakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -106,6 +102,9 @@ class LiveCheckService : Service() {
             now = System.currentTimeMillis(),
             maxAgeMillis = STATUS_RESTORE_MAX_AGE
         )
+        // 用恢复值同步静态 lastLiveStatus，避免重启后 Worker/UI 读到 stale 值
+        // （onDestroy 只重置静态而不重置 prefs 的 lastCheckLive，两者曾可漂移）
+        lastLiveStatus = lastStatus ?: false
 
         // 观播静音新鲜度清除（A 兜底）：静音标记只在"监控持续在跑"时有意义。
         // 服务若在下播窗口期被杀（lastCheck 过期/失败/已知下播），标记已失真，
@@ -238,7 +237,8 @@ class LiveCheckService : Service() {
 
         // 执行检查（由AlarmManager触发或用户启动触发）
         serviceScope.launch {
-            if (isChecking.compareAndSet(false, true)) {
+            val started = isChecking.compareAndSet(false, true)
+            if (started) {
                 try {
                     checkLiveStatusWithRetry()
                 } catch (e: Exception) {
@@ -246,11 +246,13 @@ class LiveCheckService : Service() {
                 } finally {
                     isChecking.set(false)
                 }
+                // 检查已启动：设置下一次Alarm（作为保底，AlarmReceiver也会设置）
+                scheduleNextCheckAlarm()
             } else {
+                // 在检中跳过：不重排 60s Alarm（AlarmReceiver 已排好下一次），
+                // 否则慢检查期间每次到达的 Alarm 都把周期往后推，造成节奏漂移。
                 AppLogger.d(TAG, "check already in progress, skip")
             }
-            // 检查完成后设置下一次Alarm（作为保底，AlarmReceiver也会设置）
-            scheduleNextCheckAlarm()
             // 动态流独立 5min Alarm：常规 60s 检查只确保它存在，不能每分钟重置
             // 触发时间，否则 Alarm 永远到不了真正的动态检查。
             ensureDynamicAlarmScheduled()
@@ -260,47 +262,47 @@ class LiveCheckService : Service() {
     }
 
     private suspend fun checkLiveStatusWithRetry() {
-        val result = checkLiveStatusOnce()
-        if (LiveStateDecider.shouldRetry(result)) {
-            AppLogger.w(TAG, "first check failed: ${(result as BilibiliApi.LiveStatus.Error).reason}, retry in ${ERROR_RETRY_DELAY / 1000}s")
-            delay(ERROR_RETRY_DELAY)
-            val retryResult = checkLiveStatusOnce()
-            if (retryResult is BilibiliApi.LiveStatus.Error) {
-                AppLogger.e(TAG, "retry also failed: ${retryResult.reason}")
-                // 两次都失败，记录但不更新状态，等待下一个周期
-                preferenceManager.setLastCheck(System.currentTimeMillis(), lastLiveStatus, false)
+        // 单把锁覆盖 首次检测 + 重试间隔 + 重试 全程，防止 Doze 在间隔期休眠把重试推迟
+        if (!checkWakeLock.isHeld) {
+            checkWakeLock.acquire(CHECK_WAKE_LOCK_TIMEOUT)
+        }
+        try {
+            val result = checkLiveStatusOnce()
+            if (LiveStateDecider.shouldRetry(result)) {
+                AppLogger.w(TAG, "first check failed: ${(result as BilibiliApi.LiveStatus.Error).reason}, retry in ${ERROR_RETRY_DELAY / 1000}s")
+                delay(ERROR_RETRY_DELAY)
+                val retryResult = checkLiveStatusOnce()
+                if (retryResult is BilibiliApi.LiveStatus.Error) {
+                    AppLogger.e(TAG, "retry also failed: ${retryResult.reason}")
+                    // 两次都失败，记录但不更新状态，等待下一个周期
+                    preferenceManager.setLastCheck(System.currentTimeMillis(), lastLiveStatus, false)
+                }
+            }
+        } finally {
+            if (checkWakeLock.isHeld) {
+                checkWakeLock.release()
             }
         }
     }
 
     private suspend fun checkLiveStatusOnce(): BilibiliApi.LiveStatus {
         AppLogger.d(TAG, "checkLiveStatus roomId=$roomId")
-        // 使用WakeLock保护检测过程，防止Doze模式影响
-        if (!checkWakeLock.isHeld) {
-            checkWakeLock.acquire(60_000L)
-        }
-        try {
-            // 添加超时保护，确保检测不会挂起太久
-            val status = withTimeoutOrNull(CHECK_TIMEOUT) {
-                api.checkLiveStatus(roomId)
-            } ?: BilibiliApi.LiveStatus.Error("check timeout after ${CHECK_TIMEOUT}ms")
+        // WakeLock 由 checkLiveStatusWithRetry 统一持有（覆盖 检测+重试 全程），这里不再单独加锁
+        // 添加超时保护，确保检测不会挂起太久
+        val status = withTimeoutOrNull(CHECK_TIMEOUT) {
+            api.checkLiveStatus(roomId)
+        } ?: BilibiliApi.LiveStatus.Error("check timeout after ${CHECK_TIMEOUT}ms")
 
-            AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
+        AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
 
-            when (status) {
-                is BilibiliApi.LiveStatus.Live -> handleResult(true, status.liveStartTime)
-                is BilibiliApi.LiveStatus.NotLive -> handleResult(false)
-                is BilibiliApi.LiveStatus.Error -> {
-                    // 错误不更新状态，由调用方决定是否重试
-                }
-            }
-            return status
-        } finally {
-            // 确保释放WakeLock
-            if (checkWakeLock.isHeld) {
-                checkWakeLock.release()
+        when (status) {
+            is BilibiliApi.LiveStatus.Live -> handleResult(true, status.liveStartTime)
+            is BilibiliApi.LiveStatus.NotLive -> handleResult(false)
+            is BilibiliApi.LiveStatus.Error -> {
+                // 错误不更新状态，由调用方决定是否重试
             }
         }
+        return status
     }
 
     private fun handleResult(isLive: Boolean, liveStartTime: String? = null) {
@@ -603,19 +605,12 @@ class LiveCheckService : Service() {
     }
 
     private fun triggerAlert() {
-        wakeLock.acquire(10 * 60 * 1000L)
-        try {
-            // 服务是铃声的唯一所有者；全屏页只负责展示，避免两套 ExoPlayer 叠音。
-            playAlertSound()
-            vibrate()
-            // Android 10+ 不保证后台 startActivity 成功，交给高优先级通知的
-            // fullScreenIntent 处理锁屏/前台展示。
-            sendAlertNotification()
-        } finally {
-            if (wakeLock.isHeld) {
-                wakeLock.release()
-            }
-        }
+        // 服务是铃声的唯一所有者；全屏页只负责展示，避免两套 ExoPlayer 叠音。
+        playAlertSound()
+        vibrate()
+        // Android 10+ 不保证后台 startActivity 成功，交给高优先级通知的
+        // fullScreenIntent 处理锁屏/前台展示。
+        sendAlertNotification()
     }
 
     // 提醒铃声播放器引用（internal 便于测试）。此前是局部变量：
@@ -879,9 +874,6 @@ class LiveCheckService : Service() {
         }
 
         // 释放所有WakeLock
-        if (::wakeLock.isInitialized && wakeLock.isHeld) {
-            wakeLock.release()
-        }
         if (::checkWakeLock.isInitialized && checkWakeLock.isHeld) {
             checkWakeLock.release()
         }
@@ -1027,6 +1019,7 @@ class LiveCheckService : Service() {
         private const val DYNAMIC_CHECK_INTERVAL = 5 * 60_000L // 5分钟
         private const val CHECK_TIMEOUT = 25_000L // 单次检测超时25秒
         private const val ERROR_RETRY_DELAY = 15_000L // 错误后15秒重试
+        private const val CHECK_WAKE_LOCK_TIMEOUT = 90_000L // 检测+重试全程锁（25s+15s+25s+余量）
         private const val STATUS_RESTORE_MAX_AGE = 600_000L // 进程重启时恢复状态的新鲜度窗口（10分钟）
         private const val ALARM_REQUEST_CODE = 2001
         private const val DYNAMIC_ALARM_REQUEST_CODE = 2002
