@@ -174,12 +174,12 @@ object PromoImageRenderer {
             Style.BLACK_WHITE_FILM -> renderBwFilm(cover, headline, body)
         }
 
-    /** ZXing 纯 JVM QR 位图 */
-    fun renderQr(size: Int = QR_SIZE): Bitmap {
+    /** ZXing 纯 JVM QR 位图；浅色静区可与具体版面融合，黑色模块保持不变。 */
+    fun renderQr(size: Int = QR_SIZE, lightColor: Int = Color.WHITE): Bitmap {
         val matrix = QRCodeWriter().encode(QR_CONTENT, BarcodeFormat.QR_CODE, size, size)
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         for (x in 0 until size) for (y in 0 until size) {
-            bmp.setPixel(x, y, if (matrix.get(x, y)) Color.BLACK else Color.WHITE)
+            bmp.setPixel(x, y, if (matrix.get(x, y)) Color.BLACK else lightColor)
         }
         return bmp
     }
@@ -245,6 +245,42 @@ object PromoImageRenderer {
         val top = dst.top + (dst.height() - h) / 2f
         return RectF(left, top, left + w, top + h)
     }
+
+    // 完整保留封面，给环境背景使用；不能复用 centerCrop，否则 16:9 封面进 4:5 会只剩中间一截。
+    internal fun fitCenterRect(coverW: Int, coverH: Int, dst: RectF): RectF {
+        val scale = minOf(dst.width() / coverW, dst.height() / coverH)
+        val w = coverW * scale
+        val h = coverH * scale
+        val left = dst.left + (dst.width() - w) / 2f
+        val top = dst.top + (dst.height() - h) / 2f
+        return RectF(left, top, left + w, top + h)
+    }
+
+    private fun sampleBandColor(bitmap: Bitmap, startFraction: Float, endFraction: Float): Int {
+        var red = 0
+        var green = 0
+        var blue = 0
+        var samples = 0
+        for (row in 0..4) {
+            val fraction = startFraction + (endFraction - startFraction) * row / 4f
+            val y = ((bitmap.height - 1) * fraction).toInt().coerceIn(0, bitmap.height - 1)
+            for (column in 0..8) {
+                val x = ((bitmap.width - 1) * column / 8f).toInt()
+                val pixel = bitmap.getPixel(x, y)
+                red += Color.red(pixel)
+                green += Color.green(pixel)
+                blue += Color.blue(pixel)
+                samples++
+            }
+        }
+        return Color.rgb(red / samples, green / samples, blue / samples)
+    }
+
+    private fun shade(color: Int, factor: Float): Int = Color.rgb(
+        (Color.red(color) * factor).toInt(),
+        (Color.green(color) * factor).toInt(),
+        (Color.blue(color) * factor).toInt()
+    )
 
     private fun drawRoundedCover(canvas: Canvas, dst: RectF, cover: Bitmap?, radius: Float, placeholderColor: Int) {
         canvas.save()
@@ -1502,25 +1538,95 @@ object PromoImageRenderer {
         val bitmap = newBitmap()
         val canvas = Canvas(bitmap)
         if (cover != null) {
-            val filled = centerCropTo(cover, WIDTH, HEIGHT)
-            val tiny = Bitmap.createScaledBitmap(filled, WIDTH / 16, HEIGHT / 16, true)
-            val blurred = Bitmap.createScaledBitmap(tiny, WIDTH, HEIGHT, true)
-            canvas.drawBitmap(blurred, 0f, 0f, null)
-            if (filled != cover) filled.recycle()
+            // 先用封面上下两端的取色铺满画布，再把完整的 16:9 封面虚化后居中融入。
+            // 这样既有封面的环境色，也不会为了填满 4:5 画布粗暴放大并裁掉横向主体。
+            val topColor = shade(sampleBandColor(cover, 0f, 0.28f), 0.54f)
+            val bottomColor = shade(sampleBandColor(cover, 0.72f, 1f), 0.40f)
+            canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = LinearGradient(0f, 0f, 0f, HEIGHT.toFloat(), topColor, bottomColor, Shader.TileMode.CLAMP)
+            })
+
+            val ambientBounds = fitCenterRect(
+                cover.width, cover.height, RectF(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat())
+            )
+            val tinyWidth = 96
+            val tinyHeight = maxOf(1, cover.height * tinyWidth / cover.width)
+            val tiny = Bitmap.createScaledBitmap(cover, tinyWidth, tinyHeight, true)
+            val blurred = Bitmap.createScaledBitmap(
+                tiny, ambientBounds.width().toInt(), ambientBounds.height().toInt(), true
+            )
+            canvas.drawBitmap(
+                blurred, null, ambientBounds,
+                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            )
+            canvas.drawRect(ambientBounds, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = LinearGradient(
+                    0f, ambientBounds.top, 0f, ambientBounds.bottom,
+                    intArrayOf(
+                        Color.argb(220, Color.red(topColor), Color.green(topColor), Color.blue(topColor)),
+                        Color.TRANSPARENT,
+                        Color.argb(220, Color.red(bottomColor), Color.green(bottomColor), Color.blue(bottomColor))
+                    ),
+                    floatArrayOf(0f, 0.5f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+            })
             tiny.recycle(); blurred.recycle()
         } else {
-            canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF6750A4.toInt() })
+            canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = LinearGradient(
+                    0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(),
+                    0xFF8064B7.toInt(), 0xFF33234F.toInt(), Shader.TileMode.CLAMP
+                )
+            })
         }
-        canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint().apply { color = 0x66000000 })
+        canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f, 0f, 0f, HEIGHT.toFloat(),
+                0x330E0B1A, 0x660E0B1A, Shader.TileMode.CLAMP
+            )
+        })
 
-        val card = RectF(84f, 190f, (WIDTH - 84).toFloat(), 1160f)
-        canvas.drawRoundRect(card, 36f, 36f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xF2FFFFFF.toInt() })
+        val card = RectF(72f, 148f, (WIDTH - 72).toFloat(), 1192f)
+        canvas.drawRoundRect(card, 44f, 44f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xD9FBF9FF.toInt() })
+        canvas.drawRoundRect(card, 44f, 44f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x75FFFFFF
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+        })
         val isLive = isLiveFromHeadline(headline)
-        drawBadge(canvas, WIDTH / 2f, 300f, isLive, darkText = false)
-        drawCenter(canvas, paintText(50f, 0xFF1B1B1F.toInt(), bold = true), headline.take(24), WIDTH / 2f, 430f)
-        drawCenter(canvas, paintText(32f, 0xFF44464F.toInt()), body.take(40), WIDTH / 2f, 506f)
-        drawQrCard(canvas, WIDTH / 2f, 660f, shadow = true)
-        drawCenter(canvas, paintText(26f, 0xEEFFFFFF.toInt()), "来自「牢白播了吗」· 白绮开播监控", WIDTH / 2f, HEIGHT - 48f)
+        drawBadge(canvas, WIDTH / 2f, 278f, isLive, darkText = false)
+        drawCenter(canvas, paintText(50f, 0xFF1B1B1F.toInt(), bold = true), headline.take(24), WIDTH / 2f, 408f)
+        drawCenter(canvas, paintText(30f, 0xFF44464F.toInt()), body.take(40), WIDTH / 2f, 476f)
+
+        // 扫码区只用分隔线组织信息：二维码保留自身静区，不再叠一张有阴影的大白卡。
+        canvas.drawLine(132f, 556f, WIDTH - 132f, 556f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x241B1B1F
+            strokeWidth = 2f
+        })
+        canvas.drawLine(442f, 628f, 442f, 876f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x1F1B1B1F
+            strokeWidth = 2f
+        })
+        val qrSize = 248
+        val qr = renderQr(qrSize, lightColor = 0xFFF8F5FF.toInt())
+        canvas.drawBitmap(qr, 154f, 628f, null)
+        qr.recycle()
+        drawTextLeft(canvas, paintText(22f, 0xFF6750A4.toInt(), bold = true), "扫码进入", 492f, 692f)
+        drawTextLeft(canvas, paintText(44f, 0xFF1B1B1F.toInt(), bold = true), "白绮直播间", 492f, 762f)
+        drawTextLeft(canvas, paintText(26f, 0xFF5F5B66.toInt()), "Bilibili  ·  房间 11258892", 492f, 816f)
+        canvas.drawLine(492f, 852f, 876f, 852f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x336750A4
+            strokeWidth = 2f
+        })
+        drawTextLeft(canvas, paintText(20f, 0xFF6750A4.toInt(), bold = true), "打开直播，及时蹲守", 492f, 892f)
+
+        canvas.drawLine(132f, 1008f, WIDTH - 132f, 1008f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x1F1B1B1F
+            strokeWidth = 2f
+        })
+        drawCenter(canvas, paintText(26f, 0xFF625D6B.toInt()), "来自「牢白播了吗」· 白绮开播监控", WIDTH / 2f, 1094f)
+        drawCenter(canvas, paintText(20f, 0xFF8A8492.toInt()), "BILIBILI LIVE  ·  11258892", WIDTH / 2f, 1136f)
         return bitmap
     }
 

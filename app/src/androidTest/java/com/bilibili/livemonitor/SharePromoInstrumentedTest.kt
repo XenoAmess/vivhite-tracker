@@ -5,8 +5,13 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.qrcode.QRCodeReader
 import com.bilibili.livemonitor.util.PromoImageRenderer
 import com.bilibili.livemonitor.util.ShareImageLoader
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -81,6 +86,24 @@ class SharePromoInstrumentedTest {
             x += 4
         }
         assertTrue("二维码区域必须有黑色模块", hasBlack)
+        promo.recycle()
+    }
+
+    @Test
+    fun 虚化背景风的浅紫二维码静区真实可扫码() {
+        val promo = PromoImageRenderer.render(
+            PromoImageRenderer.Style.BLUR_BG, null,
+            headline = "白绮还没开播",
+            body = "白绮还没开播，先来直播间蹲一个开播！"
+        )
+        // renderBlurBg 的扫码信息栏：直接从最终海报裁出二维码，验证浅紫静区也能解码。
+        val qrSize = 248
+        val pixels = IntArray(qrSize * qrSize)
+        promo.getPixels(pixels, 0, qrSize, 154, 628, qrSize, qrSize)
+        val source = RGBLuminanceSource(qrSize, qrSize, pixels)
+        val result = QRCodeReader().decode(BinaryBitmap(HybridBinarizer(source)))
+
+        assertEquals(PromoImageRenderer.QR_CONTENT, result.text)
         promo.recycle()
     }
 }

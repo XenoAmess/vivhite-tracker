@@ -23,6 +23,15 @@ class PromoImageRendererTest {
     }
 
     @Test
+    fun `二维码可使用贴合版面的浅色静区`() {
+        val lightColor = 0xFFF8F5FF.toInt()
+        val qr = PromoImageRenderer.renderQr(200, lightColor)
+
+        // ZXing 矩阵自带四模块静区；允许换成近白色以融入玻璃卡，黑色模块仍不变。
+        assertEquals(lightColor, qr.getPixel(0, 0))
+    }
+
+    @Test
     fun `二维码三个定位角区域存在黑色模块`() {
         // QR 的 finder pattern 在左上/右上/左下三个角落区域
         // （ZXing 输出带 4 模块静区，不能断言 (0,0) 像素，改扫区域）
@@ -161,5 +170,16 @@ class PromoImageRendererTest {
         val r2 = PromoImageRenderer.centerCropRect(900, 1600, dst)
         assertEquals("宽高比保持", 900f / 1600f, r2.width() / r2.height(), 0.001f)
         assertEquals("宽度必须填满", dst.width(), r2.width(), 0.001f)
+    }
+
+    @Test
+    fun `fitCenterRect 保留横向封面全貌而非裁成竖图`() {
+        val dst = android.graphics.RectF(0f, 0f, 1080f, 1350f)
+        val rect = PromoImageRenderer.fitCenterRect(1600, 900, dst)
+
+        assertEquals("横向封面应按画布宽度缩放", 1080f, rect.width(), 0.001f)
+        assertEquals("完整 16:9 封面高度应保留", 607.5f, rect.height(), 0.001f)
+        assertEquals("封面比例不可变形", 1600f / 900f, rect.width() / rect.height(), 0.001f)
+        assertEquals("应在竖图画布中垂直居中", dst.centerY(), rect.centerY(), 0.001f)
     }
 }
