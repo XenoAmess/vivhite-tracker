@@ -68,23 +68,12 @@
 |---|---|---|---|
 | F1 | `getRecentLastStatus` 分层倒挂 | `util/PreferenceManager.kt:250-258` | 归位到 `LiveStateDecider` 消费侧 / 删除，服务直接用 `restoreLastStatus` |
 
-### Batch G — 依赖与构建（低风险）
-
-| # | 项 | 位置 | 动作 |
-|---|---|---|---|
-| G1 | 无 version catalog | `settings.gradle.kts` + `app/build.gradle.kts` | 引入 `gradle/libs.versions.toml`（AGP/Kotlin 版本随 AGP 走，仅迁移依赖版本号） |
-| G2 | build.gradle.kts 每次配置跑 3 次 git exec | `app/build.gradle.kts:20,24,41` | 合并为一次 `providers.exec` |
-| G3 | AppLogger 主线程读 1MB + 整文件轮转 | `util/AppLogger.kt:75-93` | readAll 移 IO / 轮转增量写 |
-
 ### 明确不做（成本/风险不成比例）
 
 - **MainActivity 整体拆分**（ShareController/UpdateController/MagicPeriodDialogFragment/设置抽屉 BottomSheet）：收益大但需连带迁移 2278 行测试，留作后续专项。
 - **PromoImageRenderer 拆分/参数化**：自包含、已有测试、行为即视觉，改动风险高。
 - **jbsdiff 替换**：~~2013 未维护库~~ —— **已落地**（见「执行状态」增量更新专项）：客户端集成 ApkDiffPatch（jbsdiff 保留为兼容分支），稳定版发布侧切 ZipDiff 生成，补丁 6.74MB→0.58MB。
 - **文案全部迁移 strings.xml**：52 处 Toast 工程量大收益低；仅新建文案用资源。
-- **version catalog（G1）**：单模块依赖版本已集中在一个 build.gradle.kts，引入 libs.versions.toml 收益边际。
-- **合并 git exec（G2）**：需 shell 拼接命令，Windows 不可移植、可读性差，三处 git 调用开销可忽略。
-- **AppLogger readAll/trim（G3）**：1MB 主线程读约几毫秒；改异步会让 LogActivityTest 全部改等待逻辑，收益不成比例。写入/截断已在单线程 executor 上，无 UX 风险。
 
 ## 执行状态
 
@@ -96,7 +85,6 @@
 | D 精确闹钟排程统一 | ✅ 已落地 | `e51d27a` |
 | E MainActivity 低风险抽取 | ✅ 已落地 | `5954505` |
 | F PreferenceManager 收敛 | ✅ 已落地 | `bcbeb43` |
-| G 依赖与构建 | ⏭️ 跳过（见「明确不做」） | — |
 | **增量更新专项（ApkDiffPatch）** | ✅ 已落地（客户端 `a19e061` + 服务端本次） | 见 `docs/delta-update-alternatives.md` |
 
 增量更新专项要点：客户端打入 4 ABI `libapkpatch.so`、`ApkPatcher` 按补丁头分派（ZiPat1/BSDIFF40）；发布侧 `ApkNormalized + apksigner34 重签 + ZipDiff` 生成，回打自验，旧客户端自动全量。**Beta 通道仍为 jbsdiff（客户端兼容），迁移留待后续。**
