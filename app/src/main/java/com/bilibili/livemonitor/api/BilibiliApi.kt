@@ -5,8 +5,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import java.io.IOException
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
 
 open class BilibiliApi : LiveStatusChecker {
 
@@ -29,26 +27,17 @@ open class BilibiliApi : LiveStatusChecker {
 
     // internal open：测试可注入 fake 实现验证兜底编排
     internal open suspend fun checkByApi(roomId: Long): LiveStatus {
-        var connection: HttpsURLConnection? = null
         return try {
-            val url = URL("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId")
-            connection = url.openConnection() as HttpsURLConnection
-            connection.apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Referer", "https://live.bilibili.com/")
-                connectTimeout = 5000
-                readTimeout = 5000
-            }
-
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            val response = HttpClient.getBody(
+                "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId",
+                timeoutMs = HTTP_TIMEOUT_MS,
+                referer = "https://live.bilibili.com/"
+            )
             parseApiResponse(response)
         } catch (e: IOException) {
             LiveStatus.Error("api network error: ${e.message}")
         } catch (e: Exception) {
             LiveStatus.Error("api error: ${e.javaClass.simpleName}: ${e.message}")
-        } finally {
-            connection?.disconnect()
         }
     }
 
@@ -57,7 +46,7 @@ open class BilibiliApi : LiveStatusChecker {
         return try {
             val url = "https://live.bilibili.com/$roomId"
             val doc = Jsoup.connect(url)
-                .userAgent(USER_AGENT)
+                .userAgent(HttpClient.USER_AGENT)
                 .referrer("https://www.bilibili.com/")
                 .timeout(5000)
                 .get()
@@ -92,30 +81,18 @@ open class BilibiliApi : LiveStatusChecker {
      * 替代旧版 fetchRoomCover（标题之前被丢弃了，现在一次请求拿回）。
      */
     suspend fun fetchRoomInfo(roomId: Long): RoomInfo? = withContext(Dispatchers.IO) {
-        var connection: HttpsURLConnection? = null
-        try {
-            val url = URL("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId")
-            connection = url.openConnection() as HttpsURLConnection
-            connection.apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Referer", "https://live.bilibili.com/")
-                connectTimeout = 5000
-                readTimeout = 5000
-            }
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-            val status = parseApiResponse(response)
-            if (status is LiveStatus.Error) return@withContext null
-            RoomInfo(
-                title = parseRoomTitle(response),
-                cover = parseRoomCover(response),
-                live = status is LiveStatus.Live
-            )
-        } catch (e: Exception) {
-            null
-        } finally {
-            connection?.disconnect()
-        }
+        val response = HttpClient.get(
+            "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId",
+            timeoutMs = HTTP_TIMEOUT_MS,
+            referer = "https://live.bilibili.com/"
+        ) ?: return@withContext null
+        val status = parseApiResponse(response)
+        if (status is LiveStatus.Error) return@withContext null
+        RoomInfo(
+            title = parseRoomTitle(response),
+            cover = parseRoomCover(response),
+            live = status is LiveStatus.Live
+        )
     }
 
     /**
@@ -124,28 +101,17 @@ open class BilibiliApi : LiveStatusChecker {
      * 返回 null = 网络/API 异常（调用方用静态兜底图）。
      */
     suspend fun fetchAnchorFace(mid: Long): String? = withContext(Dispatchers.IO) {
-        var connection: HttpsURLConnection? = null
-        try {
-            val url = URL("https://api.bilibili.com/x/space/acc/info?mid=$mid")
-            connection = url.openConnection() as HttpsURLConnection
-            connection.apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Referer", "https://space.bilibili.com/")
-                connectTimeout = 5000
-                readTimeout = 5000
-            }
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-            parseFace(response)
-        } catch (e: Exception) {
-            null
-        } finally {
-            connection?.disconnect()
-        }
+        val response = HttpClient.get(
+            "https://api.bilibili.com/x/space/acc/info?mid=$mid",
+            timeoutMs = HTTP_TIMEOUT_MS,
+            referer = "https://space.bilibili.com/"
+        ) ?: return@withContext null
+        parseFace(response)
     }
 
     companion object {
-        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        // B 站 API 连接/读取超时（统一走 HttpClient，UA/Referer 由 HttpClient 管理）
+        private const val HTTP_TIMEOUT_MS = 5000
 
         // internal 便于单测
         internal fun parseRoomTitle(response: String): String? {

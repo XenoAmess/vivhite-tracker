@@ -5,13 +5,13 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.bilibili.livemonitor.api.HttpClient
 import java.io.File
-import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 /**
  * 分享配图加载：直播间封面下载与 FileProvider 授权 uri。
- * 项目不引图片库（coil/glide），HttpsURLConnection 直连 B 站 CDN。
+ * 项目不引图片库（coil/glide），网络走共享 HttpClient（UA/超时/Referer 统一）。
  *
  * 文件落在 cacheDir/shared/（file_paths.xml 已声明 cache-path），
  * 通过 FileProvider 授权给分享目标读取（ACTION_SEND EXTRA_STREAM）。
@@ -23,14 +23,7 @@ open class ShareImageLoader {
         return try {
             val dir = sharedDir(context)
             val file = File(dir, fileName)
-            val connection = URL(url).openConnection() as HttpsURLConnection
-            connection.apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Referer", "https://live.bilibili.com/")
-                connectTimeout = 5000
-                readTimeout = 8000
-            }
+            val connection = HttpClient.open(url, timeoutMs = 5000, referer = "https://live.bilibili.com/")
             connection.inputStream.use { input ->
                 file.outputStream().use { input.copyTo(it) }
             }
@@ -69,13 +62,7 @@ open class ShareImageLoader {
     }
 
     private fun openImageConnection(url: String): HttpsURLConnection =
-        (URL(url).openConnection() as HttpsURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", USER_AGENT)
-            setRequestProperty("Referer", "https://live.bilibili.com/")
-            connectTimeout = 5000
-            readTimeout = 8000
-        }
+        HttpClient.open(url, timeoutMs = 5000, referer = "https://live.bilibili.com/")
 
     private fun sampleSizeFor(width: Int, height: Int): Int {
         var sample = 1
@@ -107,6 +94,5 @@ open class ShareImageLoader {
     companion object {
         private const val TAG = "ShareImageLoader"
         private const val MAX_DECODED_COVER_DIMENSION = 1440
-        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 }
