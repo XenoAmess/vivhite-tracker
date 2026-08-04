@@ -106,7 +106,7 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
-    implementation("org.jsoup:jsoup:1.22.2")
+    implementation("org.jsoup:jsoup:1.23.1")
     // 长宣传图的直播间二维码（纯 JVM，QR 矩阵可单测）
     implementation("com.google.zxing:core:3.5.3")
     // 增量更新打补丁（bsdiff 的 Java 移植，纯 JVM 无 ABI 分裂）
