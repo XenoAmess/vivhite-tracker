@@ -1,13 +1,11 @@
 package com.bilibili.livemonitor.util
 
 import android.content.Context
-import io.sigpipe.jbsdiff.Patch
 import java.io.File
 import java.security.MessageDigest
 
-// 增量补丁应用与 APK 校验。按补丁头自动分派：
-// - "ZiPat1..." → ApkDiffPatch（libapkpatch.so，真机，压缩率远超 bsdiff）
-// - "BSDIFF40" → jbsdiff（纯 JVM，兼容 version.json 里存量的 bsdiff 补丁）
+// 增量补丁应用与 APK 校验。补丁格式为 ApkDiffPatch（"ZiPat1" 头），
+// 由 libapkpatch.so（jniLibs 4 ABI）打补丁；其他格式一律拒绝（调用方回退全量下载）。
 object ApkPatcher {
 
     // 已安装 APK 的文件路径（系统保留安装时的原始 APK，可读取用于增量打底）
@@ -34,21 +32,16 @@ object ApkPatcher {
     }
 
     /**
-     * 对 baseApk 应用补丁，输出到 outFile。按补丁头自动分派。
+     * 对 baseApk 应用 ApkDiffPatch 补丁，输出到 outFile。
      *
      * 任何失败抛普通 Exception，由调用方（IncrementalUpdater）回退全量下载。
      * 注意：ApkDiffPatch 是 native，底包/补丁处理大，需在 IO 线程调用。
      */
     fun applyPatch(context: Context, baseApk: File, patchFile: File, outFile: File) {
         val magic = readMagic(patchFile)
-        when {
-            magic.startsWith(APKDIFF_PATCH_MAGIC) -> applyApkDiffPatch(context, baseApk, patchFile, outFile)
-            magic.startsWith(BSDIFF_MAGIC) -> applyJbsdiff(baseApk, patchFile, outFile)
-            else -> throw IllegalArgumentException("unknown patch format: ${magic.take(8)}")
+        if (!magic.startsWith(APKDIFF_PATCH_MAGIC)) {
+            throw IllegalArgumentException("unknown patch format: ${magic.take(8)}")
         }
-    }
-
-    private fun applyApkDiffPatch(context: Context, baseApk: File, patchFile: File, outFile: File) {
         val tmp = File(context.cacheDir, "apkpatch_tmp.bin")
         try {
             val rc = com.github.sisong.ApkPatch.patch(
@@ -75,14 +68,6 @@ object ApkPatcher {
         }
     }
 
-    private fun applyJbsdiff(baseApk: File, patchFile: File, outFile: File) {
-        val oldBytes = baseApk.readBytes()
-        val patchBytes = patchFile.readBytes()
-        outFile.outputStream().buffered().use { out ->
-            Patch.patch(oldBytes, patchBytes, out)
-        }
-    }
-
     private fun readMagic(file: File): String {
         return file.inputStream().buffered().use { input ->
             val buf = ByteArray(8)
@@ -92,7 +77,6 @@ object ApkPatcher {
     }
 
     private const val APKDIFF_PATCH_MAGIC = "ZiPat1"
-    private const val BSDIFF_MAGIC = "BSDIFF40"
     // ApkDiffPatch 解压内存上限（128MB 覆盖 40MB 级 APK 的全量解压，超出走临时文件流式）
     private const val MAX_UNCOMPRESS_MEMORY_BYTES = 128L * 1024 * 1024
     private const val APKDIFF_THREAD_NUM = 2

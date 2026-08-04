@@ -109,10 +109,8 @@ dependencies {
     implementation("org.jsoup:jsoup:1.23.1")
     // 长宣传图的直播间二维码（纯 JVM，QR 矩阵可单测）
     implementation("com.google.zxing:core:3.5.4")
-    // 增量更新打补丁（bsdiff 的 Java 移植，纯 JVM 无 ABI 分裂）
-    implementation("io.sigpipe:jbsdiff:1.0")
-    // jbsdiff 的 bzip2 依赖（它传递的是 2013 年的 1.5，显式提到新版本）
-    implementation("org.apache.commons:commons-compress:1.28.0")
+    // 增量更新打补丁（ApkDiffPatch 的 Android JNI 库，libapkpatch.so 已打入 jniLibs 4 ABI）
+    // jbsdiff（io.sigpipe）已随稳定版/beta 双通道切 ApkDiffPatch 后移除
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     // 媒体播放器（ExoPlayer/Media3 - 用于 alarm 铃声 gapless 循环，解决 MediaPlayer 循环间隔）
     implementation("androidx.media3:media3-exoplayer:1.5.1")

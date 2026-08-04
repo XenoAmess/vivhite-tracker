@@ -3,7 +3,6 @@ package com.bilibili.livemonitor.util
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.domain.UpdateDecider
-import io.sigpipe.jbsdiff.Diff
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -13,13 +12,13 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.random.Random
 
 /**
- * 增量更新编排端到端：内存 fake 下载器 + 真实 jbsdiff 打补丁，
+ * 增量更新编排端到端：内存 fake 下载器 + 注入 fake 打补丁（patch 字节即目标字节）。
  * 覆盖 成功链/两跳链/底包不匹配/补丁损坏/结果不匹配/下载失败 全部分支。
+ * （真实 ApkDiffPatch 打补丁路径由 IncrementalUpdateInstrumentedTest 用 ZiPat1 夹具覆盖）
  */
 @RunWith(RobolectricTestRunner::class)
 class IncrementalUpdaterTest {
@@ -30,12 +29,15 @@ class IncrementalUpdaterTest {
 
     // 链式版本的"发布物"：vc -> apk 字节
     private val apkByVc = mutableMapOf<Int, ByteArray>()
-    // url -> patch 字节
+    // url -> patch 字节（fake 打补丁：patch 即目标）
     private val patchByUrl = mutableMapOf<String, ByteArray>()
 
     @Before
     fun setUp() {
         updater = IncrementalUpdater(context)
+        // fake 打补丁：把"补丁"（= 目标字节）原样写进输出。
+        // 真实 native 打补丁在 Robolectric 跑不了，由 instrumented 夹具覆盖。
+        updater.patcher = { _, patch, out -> out.writeBytes(patch.readBytes()) }
         apkByVc.clear()
         patchByUrl.clear()
         // 底包注入：fixture 文件充当"已安装 APK"（Robolectric 改不动 context.applicationInfo）
@@ -44,7 +46,7 @@ class IncrementalUpdaterTest {
     }
 
     private fun makeApk(seed: Int, size: Int = 64 * 1024): ByteArray {
-        // 结构化伪随机：相邻版本大量重复前缀，bsdiff 才有意义
+        // 结构化伪随机：相邻版本大量重复前缀（贴近真实 APK 版本差异形态）
         val rnd = Random(42)
         val common = rnd.nextBytes(size - 4096)
         return common + Random(seed).nextBytes(4096)
@@ -55,14 +57,13 @@ class IncrementalUpdaterTest {
     }
 
     private fun addPatch(fromVc: Int, toVc: Int): UpdateDecider.PatchHop {
-        val url = "https://test/patch-$fromVc-to-$toVc.bspatch"
-        val out = ByteArrayOutputStream()
-        Diff.diff(apkByVc.getValue(fromVc), apkByVc.getValue(toVc), out)
-        patchByUrl[url] = out.toByteArray()
+        val url = "https://test/patch-$fromVc-to-$toVc.patch"
+        // fake：补丁字节 = 目标 apk 字节，配合 fake patcher 原样输出
+        patchByUrl[url] = apkByVc.getValue(toVc)
         return UpdateDecider.PatchHop(
             toVersionCode = toVc,
             url = url,
-            size = out.size().toLong(),
+            size = patchByUrl.getValue(url).size.toLong(),
             patchSha256 = sha256Bytes(patchByUrl.getValue(url)),
             resultSha256 = sha256Bytes(apkByVc.getValue(toVc))
         )
