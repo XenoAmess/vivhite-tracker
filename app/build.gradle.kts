@@ -112,7 +112,7 @@ dependencies {
     // 增量更新打补丁（bsdiff 的 Java 移植，纯 JVM 无 ABI 分裂）
     implementation("io.sigpipe:jbsdiff:1.0")
     // jbsdiff 的 bzip2 依赖（它传递的是 2013 年的 1.5，显式提到新版本）
-    implementation("org.apache.commons:commons-compress:1.26.0")
+    implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     // 媒体播放器（ExoPlayer/Media3 - 用于 alarm 铃声 gapless 循环，解决 MediaPlayer 循环间隔）
     implementation("androidx.media3:media3-exoplayer:1.5.1")
