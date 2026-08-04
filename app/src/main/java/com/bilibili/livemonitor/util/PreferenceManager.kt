@@ -259,6 +259,17 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_LAST_LIVE_TITLE, "") ?: ""
     }
 
+    // ========== 外观 ==========
+
+    // 深色模式：0=跟随系统 1=浅色 2=深色
+    fun setDarkMode(mode: Int) {
+        prefs.edit().putInt(KEY_DARK_MODE, mode).apply()
+    }
+
+    fun getDarkMode(): Int {
+        return prefs.getInt(KEY_DARK_MODE, DARK_MODE_SYSTEM)
+    }
+
     // ========== B 站全活动监控 ==========
 
     // 监控新视频投稿，默认开
@@ -391,6 +402,12 @@ class PreferenceManager(context: Context) {
         // ===== 直播主题变化提醒 =====
         private const val KEY_NOTIFY_TITLE_CHANGE = "notify_title_change"
         private const val KEY_LAST_LIVE_TITLE = "last_live_title"
+
+        // ===== 外观 =====
+        private const val KEY_DARK_MODE = "dark_mode"
+        const val DARK_MODE_SYSTEM = 0
+        const val DARK_MODE_LIGHT = 1
+        const val DARK_MODE_DARK = 2
 
         // ===== B 站全活动监控 =====
         private const val KEY_MONITOR_VIDEOS = "monitor_videos"

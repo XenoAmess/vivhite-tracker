@@ -13,6 +13,7 @@ class LiveMonitorApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        applyDarkMode(PreferenceManager(this).getDarkMode())
         AppLogger.init(this)
         createNotificationChannels()
 
@@ -21,6 +22,24 @@ class LiveMonitorApp : Application() {
         // ExistingPeriodicWorkPolicy.KEEP 保证重复注册幂等，不会起两份周期任务。
         if (PreferenceManager(this).isServiceRunning()) {
             LiveCheckWorker.schedulePeriodic(this)
+        }
+    }
+
+    // 深色模式：在 Activity inflate 前应用（Application.onCreate 是全局生效点）
+    private fun applyDarkMode(mode: Int) {
+        when (mode) {
+            PreferenceManager.DARK_MODE_LIGHT ->
+                androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
+                    androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
+                )
+            PreferenceManager.DARK_MODE_DARK ->
+                androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
+                    androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
+                )
+            else ->
+                androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
+                    androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                )
         }
     }
 

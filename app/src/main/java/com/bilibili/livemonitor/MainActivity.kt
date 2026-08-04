@@ -331,6 +331,13 @@ class MainActivity : AppCompatActivity() {
                 onExpand = { view -> bindLiveAlertsSection(view) }
             ),
             SettingsEntry(
+                title = "外观",
+                subtitle = "深色模式",
+                iconRes = android.R.drawable.ic_menu_gallery,
+                expandLayoutRes = R.layout.expand_section_appearance,
+                onExpand = { view -> bindAppearanceSection(view) }
+            ),
+            SettingsEntry(
                 title = "更新设置",
                 subtitle = computeUpdateSubtitle(),
                 iconRes = android.R.drawable.ic_menu_manage,
@@ -808,6 +815,40 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNotifyTitleChange).apply {
             isChecked = preferenceManager.isNotifyTitleChange()
             setOnCheckedChangeListener { _, c -> preferenceManager.setNotifyTitleChange(c) }
+        }
+    }
+
+    private fun bindAppearanceSection(view: android.view.View) {
+        val rg = view.findViewById<android.widget.RadioGroup>(R.id.rgDarkMode)
+        val checkedId = when (preferenceManager.getDarkMode()) {
+            PreferenceManager.DARK_MODE_LIGHT -> R.id.rbDarkLight
+            PreferenceManager.DARK_MODE_DARK -> R.id.rbDarkDark
+            else -> R.id.rbDarkSystem
+        }
+        rg.check(checkedId)
+        rg.setOnCheckedChangeListener { _, id ->
+            val mode = when (id) {
+                R.id.rbDarkLight -> PreferenceManager.DARK_MODE_LIGHT
+                R.id.rbDarkDark -> PreferenceManager.DARK_MODE_DARK
+                else -> PreferenceManager.DARK_MODE_SYSTEM
+            }
+            preferenceManager.setDarkMode(mode)
+            // 应用夜间模式并重建界面以拾取主题
+            when (mode) {
+                PreferenceManager.DARK_MODE_LIGHT ->
+                    androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
+                        androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
+                    )
+                PreferenceManager.DARK_MODE_DARK ->
+                    androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
+                        androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
+                    )
+                else ->
+                    androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
+                        androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                    )
+            }
+            recreate()
         }
     }
 

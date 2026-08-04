@@ -2,6 +2,7 @@ package com.bilibili.livemonitor.util
 
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -196,5 +197,45 @@ class PreferenceManagerTest {
     fun `lastDynamicId round trip`() {
         prefs.setLastDynamicId("dyn123456")
         assertEquals("dyn123456", prefs.getLastDynamicId())
+    }
+
+    @Test
+    fun `勿扰时段默认关闭 起止默认2300-0700`() {
+        assertFalse("勿扰默认关", prefs.isQuietHoursEnabled())
+        assertEquals(23 * 60, prefs.getQuietStartMinutes())
+        assertEquals(7 * 60, prefs.getQuietEndMinutes())
+        prefs.setQuietHoursEnabled(true)
+        prefs.setQuietStartMinutes(22 * 60)
+        prefs.setQuietEndMinutes(8 * 60)
+        assertTrue(prefs.isQuietHoursEnabled())
+        assertEquals(22 * 60, prefs.getQuietStartMinutes())
+        assertEquals(8 * 60, prefs.getQuietEndMinutes())
+    }
+
+    @Test
+    fun `直播提醒与主题变化默认值`() {
+        assertTrue("下播提醒默认开", prefs.isNotifyStreamEnd())
+        assertFalse("主题变化默认关", prefs.isNotifyTitleChange())
+        prefs.setNotifyStreamEnd(false)
+        prefs.setNotifyTitleChange(true)
+        assertFalse(prefs.isNotifyStreamEnd())
+        assertTrue(prefs.isNotifyTitleChange())
+    }
+
+    @Test
+    fun `动态类型默认全开 round trip`() {
+        val defaultTypes = setOf("DYNAMIC_TYPE_DRAW", "DYNAMIC_TYPE_FORWARD", "DYNAMIC_TYPE_ARTICLE")
+        assertEquals(defaultTypes, prefs.getMonitorDynamicTypes())
+        assertTrue(prefs.isDynamicTypeEnabled("DYNAMIC_TYPE_DRAW"))
+        prefs.setMonitorDynamicTypes(setOf("DYNAMIC_TYPE_DRAW"))
+        assertFalse(prefs.isDynamicTypeEnabled("DYNAMIC_TYPE_FORWARD"))
+        assertTrue(prefs.isDynamicTypeEnabled("DYNAMIC_TYPE_DRAW"))
+    }
+
+    @Test
+    fun `深色模式默认跟随系统 round trip`() {
+        assertEquals(PreferenceManager.DARK_MODE_SYSTEM, prefs.getDarkMode())
+        prefs.setDarkMode(PreferenceManager.DARK_MODE_DARK)
+        assertEquals(PreferenceManager.DARK_MODE_DARK, prefs.getDarkMode())
     }
 }
