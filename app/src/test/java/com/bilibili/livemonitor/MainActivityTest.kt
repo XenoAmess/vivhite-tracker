@@ -36,7 +36,6 @@ class MainActivityTest {
     fun setUp() {
         prefs = PreferenceManager(context)
         LiveCheckService.isRunning = false
-        LiveCheckService.isUserStopped = false
         // Robolectric 跨方法复用 classloader，FileProvider.sCache 跨方法存活会
         // 钉死上个用例的 dataDir（探针实证），凡用到 FileProvider 的用例都会互坑
         com.bilibili.livemonitor.util.FileProviderTestUtil.clearFileProviderCache()
@@ -50,7 +49,6 @@ class MainActivityTest {
     @After
     fun tearDown() {
         LiveCheckService.isRunning = false
-        LiveCheckService.isUserStopped = false
         org.robolectric.util.ReflectionHelpers.setStaticField(
             android.os.Build::class.java, "MANUFACTURER", originalManufacturer
         )
@@ -2157,37 +2155,34 @@ class MainActivityTest {
 
     // ---------- 活动监控设置 ----------
 
-    @Test
-    fun `点活动监控按钮 弹出设置对话框`() {
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-
-        // 设置入口整合到抽屉，弹出原活动对话框的内部方法
-        activity.showActivitySettingsDialog()
-
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-        assertTrue("应弹出 AlertDialog", dialog is androidx.appcompat.app.AlertDialog)
+    /** 打开设置抽屉并展开「活动监控」（第 3 个条目），返回抽屉根视图 */
+    private fun openActivitySection(activity: MainActivity): android.view.View {
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 2)
+        return (org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog)
+            .findViewById<android.view.View>(R.id.itemsContainer)!!
     }
 
     @Test
-    fun `活动监控对话框有 4 个开关`() {
+    fun `展开活动监控section 有 4 个开关`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.showActivitySettingsDialog()
 
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
-        assertNotNull(dialog.findViewById(R.id.switchMonitorVideos))
-        assertNotNull(dialog.findViewById(R.id.switchMonitorPinned))
-        assertNotNull(dialog.findViewById(R.id.switchMonitorDynamics))
-        assertNotNull(dialog.findViewById(R.id.switchAlertRingOnActivity))
+        val sectionView = openActivitySection(activity)
+
+        assertNotNull(sectionView.findViewById(R.id.switchMonitorVideos))
+        assertNotNull(sectionView.findViewById(R.id.switchMonitorPinned))
+        assertNotNull(sectionView.findViewById(R.id.switchMonitorDynamics))
+        assertNotNull(sectionView.findViewById(R.id.switchAlertRingOnActivity))
     }
 
     @Test
     fun `活动监控开关切换落 prefs`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        activity.showActivitySettingsDialog()
 
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
-        val switchVideos = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorVideos)!!
-        val switchDynamics = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorDynamics)!!
+        val sectionView = openActivitySection(activity)
+        val switchVideos = sectionView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorVideos)!!
+        val switchDynamics = sectionView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorDynamics)!!
 
         assertEquals("默认应开", true, switchVideos.isChecked)
         switchVideos.isChecked = true

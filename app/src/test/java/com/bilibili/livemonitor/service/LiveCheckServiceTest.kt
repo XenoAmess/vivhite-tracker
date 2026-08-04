@@ -69,7 +69,6 @@ class LiveCheckServiceTest {
         prefs = PreferenceManager(context)
         fakeApi = FakeApi()
         LiveCheckService.isRunning = false
-        LiveCheckService.isUserStopped = false
         LiveCheckService.lastLiveStatus = false
     }
 
@@ -80,7 +79,6 @@ class LiveCheckServiceTest {
         controllers.forEach { runCatching { it.destroy() } }
         controllers.clear()
         LiveCheckService.isRunning = false
-        LiveCheckService.isUserStopped = false
     }
 
     private fun buildService(intent: Intent? = null): ServiceController<LiveCheckService> {
@@ -141,7 +139,6 @@ class LiveCheckServiceTest {
 
         controller.withIntent(Intent(LiveCheckService.ACTION_STOP_SERVICE)).startCommand(0, 2)
 
-        assertTrue(LiveCheckService.isUserStopped)
         assertFalse(prefs.isServiceRunning())
         val periodic = WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork("live_check_periodic").get()

@@ -394,7 +394,7 @@ class DefaultQqSdkSharer : QqSdkSharer {
     init {
         // MainActivity 在 onCreate 时把 applicationContext 注入这里，
         // 用于 isAuthorized / login 调 Tencent.createInstance
-        // 此处不主动 inject，由外部 (QqShare.bind) 触发
+        // 此处不主动 inject，由外部 DefaultQqSdkSharer.bind(context) 触发
     }
 
     fun bind(context: android.content.Context) {

@@ -94,7 +94,6 @@ class LiveCheckService : Service() {
             AppLogger.w(TAG, "monitoring disabled in prefs, aborting stray start")
             stopRequestedByUser = true
             stopRequestedGeneration = monitoringGeneration
-            isUserStopped = true
             stopSelf()
             return
         }
@@ -149,7 +148,6 @@ class LiveCheckService : Service() {
             }
             stopRequestedByUser = true
             stopRequestedGeneration = requestedGeneration
-            isUserStopped = true
             preferenceManager.setServiceRunning(false)
             preferenceManager.setAlertSuppressed(false)
             LiveCheckWorker.cancelAll(this)
@@ -160,7 +158,6 @@ class LiveCheckService : Service() {
                 AppLogger.d(TAG, "STOP superseded by a newer start command")
                 stopRequestedByUser = false
                 stopRequestedGeneration = NO_MONITORING_GENERATION
-                isUserStopped = false
             }
             return START_NOT_STICKY
         }
@@ -177,7 +174,6 @@ class LiveCheckService : Service() {
             AppLogger.w(TAG, "onStartCommand but monitoring disabled, aborting")
             stopRequestedByUser = true
             stopRequestedGeneration = preferenceManager.getMonitoringGeneration()
-            isUserStopped = true
             stopSelf()
             return START_NOT_STICKY
         }
@@ -201,7 +197,6 @@ class LiveCheckService : Service() {
             monitoringGeneration = currentGeneration
             stopRequestedByUser = false
             stopRequestedGeneration = NO_MONITORING_GENERATION
-            isUserStopped = false
         }
 
         // 观播静音命令（点"打开直播间"）：监控不停，本场直播结束前不提醒。
@@ -603,17 +598,8 @@ class LiveCheckService : Service() {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_SERVICE, notification)
 
-        // 更新应用图标
-        updateAppIcon(isLive)
-    }
-
-    private fun updateAppIcon(isLive: Boolean) {
-        // 通过发送广播让主界面更新图标
-        val intent = Intent(ACTION_STATUS_CHANGED).apply {
-            putExtra(EXTRA_IS_LIVE, isLive)
-            setPackage(packageName)
-        }
-        sendBroadcast(intent)
+        // 更新应用图标由 MainActivity.onResume/updateUI 从 prefs 刷新（历史遗留的
+        // ACTION_STATUS_CHANGED 广播无接收者，已删除；界面在回到前台时自动更新）
     }
 
     private fun triggerAlert() {
@@ -914,7 +900,6 @@ class LiveCheckService : Service() {
         // 重置标志
         stopRequestedByUser = false
         stopRequestedGeneration = NO_MONITORING_GENERATION
-        isUserStopped = false
     }
 
     private fun scheduleNextCheckAlarm() {
@@ -957,21 +942,6 @@ class LiveCheckService : Service() {
             AppLogger.e(TAG, "scheduleNextCheckAlarm SecurityException", e)
         } catch (e: Exception) {
             AppLogger.e(TAG, "scheduleNextCheckAlarm failed", e)
-        }
-    }
-
-    private fun cancelAlarm() {
-        try {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(this, AlarmReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                this, ALARM_REQUEST_CODE, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            alarmManager.cancel(pendingIntent)
-            AppLogger.d(TAG, "cancelAlarm")
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "cancelAlarm failed", e)
         }
     }
 
@@ -1045,8 +1015,6 @@ class LiveCheckService : Service() {
 
     companion object {
         const val EXTRA_ROOM_ID = "room_id"
-        const val ACTION_STATUS_CHANGED = "com.bilibili.livemonitor.STATUS_CHANGED"
-        const val EXTRA_IS_LIVE = "is_live"
         const val ACTION_STOP_SERVICE = "com.bilibili.livemonitor.STOP_SERVICE"
         const val ACTION_STOP_ALERT = "com.bilibili.livemonitor.STOP_ALERT"
         const val ACTION_WATCH_LIVE = "com.bilibili.livemonitor.WATCH_LIVE"
@@ -1069,10 +1037,6 @@ class LiveCheckService : Service() {
 
         @Volatile
         var lastLiveStatus = false
-
-        // 标记是否是用户手动停止，避免自动重启
-        @Volatile
-        var isUserStopped = false
 
         // androidTest 钩子（同进程 instrumented test 专用，生产恒为 null）：
         // apiOverride 注入 fake 检测源；lastAlertPlayer 观测真实提醒播放器

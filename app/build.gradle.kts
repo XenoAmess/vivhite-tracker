@@ -116,7 +116,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     // 媒体播放器（ExoPlayer/Media3 - 用于 alarm 铃声 gapless 循环，解决 MediaPlayer 循环间隔）
     implementation("androidx.media3:media3-exoplayer:1.5.1")
-    implementation("androidx.media3:media3-common:1.5.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260719")
     testImplementation("org.robolectric:robolectric:4.16.1")

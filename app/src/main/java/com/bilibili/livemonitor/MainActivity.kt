@@ -1025,43 +1025,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // ========== 活动监控设置 ==========
-
-    internal fun showActivitySettingsDialog() {
-        val view = layoutInflater.inflate(R.layout.dialog_activity_settings, null)
-        val switchVideos = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorVideos)
-        val switchPinned = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorPinned)
-        val switchDynamics = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorDynamics)
-        val switchRing = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAlertRingOnActivity)
-
-        switchVideos.isChecked = preferenceManager.isMonitorVideos()
-        switchPinned.isChecked = preferenceManager.isMonitorPinned()
-        switchDynamics.isChecked = preferenceManager.isMonitorDynamics()
-        switchRing.isChecked = preferenceManager.isAlertRingOnActivity()
-
-        switchVideos.setOnCheckedChangeListener { _, isChecked ->
-            preferenceManager.setMonitorVideos(isChecked)
-            AppLogger.d("MainActivity", "monitorVideos=$isChecked")
-        }
-        switchPinned.setOnCheckedChangeListener { _, isChecked ->
-            preferenceManager.setMonitorPinned(isChecked)
-            AppLogger.d("MainActivity", "monitorPinned=$isChecked")
-        }
-        switchDynamics.setOnCheckedChangeListener { _, isChecked ->
-            preferenceManager.setMonitorDynamics(isChecked)
-            AppLogger.d("MainActivity", "monitorDynamics=$isChecked")
-        }
-        switchRing.setOnCheckedChangeListener { _, isChecked ->
-            preferenceManager.setAlertRingOnActivity(isChecked)
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("活动监控")
-            .setView(view)
-            .setPositiveButton("完成", null)
-            .show()
-    }
-
     // ========== 提醒铃声自定义 ==========
 
     private val alertSoundProvider = AlertSoundProvider()
