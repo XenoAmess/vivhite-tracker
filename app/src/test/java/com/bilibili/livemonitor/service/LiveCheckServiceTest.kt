@@ -299,6 +299,38 @@ class LiveCheckServiceTest {
     }
 
     @Test
+    fun `S16 开播记录场次 下播闭合并下发播提醒`() {
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(
+            BilibiliApi.LiveStatus.NotLive,
+            BilibiliApi.LiveStatus.Live(),
+            BilibiliApi.LiveStatus.NotLive
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        controller.startCommand(0, 1) // NotLive
+        waitFor("check1 done") { fakeApi.callCount >= 1 && !service.isChecking.get() }
+        controller.startCommand(0, 2) // Live
+        waitFor("live detected") { prefs.isLastCheckLive() && !service.isChecking.get() }
+        controller.startCommand(0, 3) // NotLive
+        waitFor("stream end notif") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_STREAM_END) != null
+        }
+        val notif = shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_STREAM_END)!!
+        assertEquals("白绮已下播", notif.extras.getString(android.app.Notification.EXTRA_TITLE))
+
+        // 场次应已闭合入库（notification 由同一协程在 DB 更新后发出，故可直接查）
+        val sessions = kotlinx.coroutines.runBlocking {
+            com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao().recentSessions(5)
+        }
+        val closed = sessions.firstOrNull { it.endTs != null }
+        assertNotNull("应记录一场已闭合的直播", closed)
+        assertTrue(closed!!.endTs!! > closed.startTs)
+    }
+
+    @Test
     fun `S14 选定游园设施后开播提醒加载alert_6资源`() {
         // 回归（真机用户反馈）：以为设了游园设施，开播实际播默认海愿。
         // 验证「prefs 选中 → playAlertSound 加载对应内置资源」的完整解析链

@@ -76,6 +76,14 @@ class LiveMonitorApp : Application() {
                     description = "记录的魔法期到结束时间时响铃提醒"
                     enableVibration(true)
                     enableLights(true)
+                },
+                // 下播/回放上线/开播预告 共用一个 MED 通道，避免通道爆炸
+                NotificationChannel(
+                    CHANNEL_STREAM_LIFECYCLE_ID,
+                    "直播动态",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "下播 / 回放上线 / 开播预告提醒"
                 }
             )
 
@@ -90,10 +98,12 @@ class LiveMonitorApp : Application() {
         const val CHANNEL_VIDEO_ALERT_ID = "video_alert_v2"
         const val CHANNEL_DYNAMIC_ALERT_ID = "dynamic_alert_v2"
         const val CHANNEL_MAGIC_ID = "magic_alert"
+        const val CHANNEL_STREAM_LIFECYCLE_ID = "stream_lifecycle"
         const val NOTIFICATION_ID_SERVICE = 1001
         const val NOTIFICATION_ID_ALERT = 1002
         const val NOTIFICATION_ID_VIDEO = 1003
         const val NOTIFICATION_ID_DYNAMIC = 1004
         const val NOTIFICATION_ID_MAGIC = 1005
+        const val NOTIFICATION_ID_STREAM_END = 1006
     }
 }

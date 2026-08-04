@@ -210,6 +210,26 @@ class PreferenceManager(context: Context) {
         return prefs.getInt(KEY_QUIET_END_MINUTES, DEFAULT_QUIET_END_MINUTES)
     }
 
+    // ========== 直播生命周期提醒 ==========
+
+    // 下播时通知（含时长），默认开
+    fun setNotifyStreamEnd(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFY_STREAM_END, enabled).apply()
+    }
+
+    fun isNotifyStreamEnd(): Boolean {
+        return prefs.getBoolean(KEY_NOTIFY_STREAM_END, true)
+    }
+
+    // 最近一次下播时间戳（回放上线提醒窗口基准）
+    fun setLastStreamEndTs(ts: Long) {
+        prefs.edit().putLong(KEY_LAST_STREAM_END_TS, ts).apply()
+    }
+
+    fun getLastStreamEndTs(): Long {
+        return prefs.getLong(KEY_LAST_STREAM_END_TS, 0L)
+    }
+
     // ========== B 站全活动监控 ==========
 
     // 监控新视频投稿，默认开
@@ -321,6 +341,10 @@ class PreferenceManager(context: Context) {
         private const val KEY_QUIET_END_MINUTES = "quiet_end_minutes"
         private const val DEFAULT_QUIET_START_MINUTES = 23 * 60
         private const val DEFAULT_QUIET_END_MINUTES = 7 * 60
+
+        // ===== 直播生命周期提醒 =====
+        private const val KEY_NOTIFY_STREAM_END = "notify_stream_end"
+        private const val KEY_LAST_STREAM_END_TS = "last_stream_end_ts"
 
         // ===== B 站全活动监控 =====
         private const val KEY_MONITOR_VIDEOS = "monitor_videos"

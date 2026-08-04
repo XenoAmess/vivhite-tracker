@@ -342,13 +342,103 @@ class LiveCheckService : Service() {
 
         // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播（静音期不提醒）
         val shouldAlert = LiveStateDecider.shouldAlert(lastStatus, isLive, suppressed)
+        val wasLive = lastStatus == true
 
+        // 场次记录：任何 未开播→开播 跳变都记（含观播静音期，静音只影响提醒不影响记录）
+        if (isLive && !wasLive) {
+            recordStreamStart(liveStartTime)
+        }
         if (shouldAlert) {
             AppLogger.d(TAG, "triggerAlert")
             triggerAlert()
         }
+        // 下播：闭合场次 + 下播提醒
+        if (!isLive && wasLive) {
+            recordStreamEnd()
+        }
 
         lastStatus = isLive
+    }
+
+    // ========== 直播场次记录（Room）与生命周期提醒 ==========
+
+    // B 站 live_start_time 可能是秒级时间戳字符串或 "yyyy-MM-dd HH:mm:ss"
+    private fun parseLiveStartTime(raw: String?): Long? {
+        if (raw.isNullOrBlank()) return null
+        val asSeconds = raw.toLongOrNull()
+        if (asSeconds != null) {
+            return if (asSeconds > 10_000_000_000L) asSeconds else asSeconds * 1000L
+        }
+        return try {
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                .parse(raw)?.time
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // 开播跳变：先闭合可能残留的未闭合场次（进程死亡），再插入新场次
+    private fun recordStreamStart(liveStartTime: String?) {
+        val dao = com.bilibili.livemonitor.db.AppDatabase.get(this).streamSessionDao()
+        val startTs = parseLiveStartTime(liveStartTime) ?: System.currentTimeMillis()
+        serviceScope.launch {
+            try {
+                dao.closeOpenSessions(startTs)
+                dao.insertSession(com.bilibili.livemonitor.db.StreamSessionEntity(startTs = startTs))
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "record stream start failed", e)
+            }
+        }
+    }
+
+    // 下播跳变：闭合开在场次；无开在场次（进程死亡后）用 prefs 的 live_start_time 补
+    private fun recordStreamEnd() {
+        val dao = com.bilibili.livemonitor.db.AppDatabase.get(this).streamSessionDao()
+        val endTs = System.currentTimeMillis()
+        preferenceManager.setLastStreamEndTs(endTs)
+        serviceScope.launch {
+            try {
+                val open = dao.findOpenSession()
+                val startTs = open?.startTs ?: parseLiveStartTime(preferenceManager.getLastLiveStartTime())
+                if (open != null) {
+                    dao.updateSession(open.copy(endTs = endTs))
+                } else if (startTs != null) {
+                    dao.insertSession(com.bilibili.livemonitor.db.StreamSessionEntity(startTs = startTs, endTs = endTs))
+                }
+                if (startTs != null && preferenceManager.isNotifyStreamEnd()) {
+                    sendStreamEndNotification(endTs - startTs)
+                }
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "record stream end failed", e)
+            }
+        }
+    }
+
+    private fun sendStreamEndNotification(durationMs: Long) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_STREAM_LIFECYCLE_ID)
+            .setSmallIcon(R.drawable.img_off)
+            .setContentTitle("白绮已下播")
+            .setContentText("本场直播 ${formatDuration(durationMs)}")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_STREAM_END, notification)
+    }
+
+    private fun formatDuration(ms: Long): String {
+        val totalMinutes = ms / 60_000
+        val h = totalMinutes / 60
+        val m = totalMinutes % 60
+        return if (h > 0) "${h}小时${m}分" else "${m}分钟"
     }
 
     // ========== B 站全活动监控 ==========
