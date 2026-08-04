@@ -259,23 +259,34 @@ class PreferenceManager(context: Context) {
 
     companion object {
         private const val PREF_NAME = "bilibili_live_monitor"
+
+        // ===== 监控目标与运行开关 =====
         private const val KEY_ROOM_ID = "room_id"
         private const val KEY_SERVICE_RUNNING = "service_running"
         private const val KEY_MONITORING_GENERATION = "monitoring_generation"
+        private const val KEY_OEM_GUIDE_PROMPTED = "oem_guide_prompted"
+        private const val KEY_FIRST_LAUNCH_DONE = "first_launch_done"
+        private const val DEFAULT_ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
+
+        // ===== 直播检测状态（Worker/Service/UI 共享）=====
         private const val KEY_LAST_CHECK_TIME = "last_check_time"
         private const val KEY_LAST_CHECK_LIVE = "last_check_live"
         private const val KEY_LAST_CHECK_SUCCESS = "last_check_success"
-        private const val KEY_OEM_GUIDE_PROMPTED = "oem_guide_prompted"
-        private const val KEY_FIRST_LAUNCH_DONE = "first_launch_done"
         private const val KEY_ALERT_SUPPRESSED = "alert_suppressed"
         private const val KEY_LAST_LIVE_START_TIME = "last_live_start_time"
         private const val KEY_SUPPRESSED_LIVE_START = "suppressed_live_start"
+
+        // ===== 应用更新检查 =====
         private const val KEY_AUTO_CHECK_UPDATE = "auto_check_update"
         private const val KEY_AUTO_DOWNLOAD_UPDATE = "auto_download_update"
         private const val KEY_LAST_UPDATE_CHECK_TIME = "last_update_check_time"
         private const val KEY_DISMISSED_VERSION_CODE = "dismissed_version_code"
+
+        // ===== 提醒铃声 =====
         private const val KEY_ALERT_SOUND_URI = "alert_sound_uri"
         private const val KEY_ALERT_SOUND_TITLE = "alert_sound_title"
+
+        // ===== B 站全活动监控 =====
         private const val KEY_MONITOR_VIDEOS = "monitor_videos"
         private const val KEY_MONITOR_PINNED = "monitor_pinned"
         private const val KEY_MONITOR_DYNAMICS = "monitor_dynamics"
@@ -283,9 +294,10 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_VIDEO_AID = "last_video_aid"
         private const val KEY_LAST_PINNED_AID = "last_pinned_aid"
         private const val KEY_LAST_DYNAMIC_ID = "last_dynamic_id"
+
+        // ===== 宣传图 / 魔法期 =====
         private const val KEY_PROMO_STYLE = "promo_style"
         private const val DEFAULT_PROMO_STYLE = "LIGHT_CARD"
         private const val KEY_MAGIC_PERIODS = "magic_periods"
-        private const val DEFAULT_ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
     }
 }
