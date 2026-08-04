@@ -87,7 +87,7 @@
 | F PreferenceManager 收敛 | ✅ 已落地 | `bcbeb43` |
 | **增量更新专项（ApkDiffPatch）** | ✅ 已落地（客户端 `a19e061` + 服务端本次） | 见 `docs/delta-update-alternatives.md` |
 
-增量更新专项要点：客户端打入 4 ABI `libapkpatch.so`、`ApkPatcher` 按补丁头分派（ZiPat1/BSDIFF40）；发布侧 `ApkNormalized + apksigner34 重签 + ZipDiff` 生成，回打自验，旧客户端自动全量。**Beta 通道仍为 jbsdiff（客户端兼容），迁移留待后续。**
+增量更新专项要点：客户端打入 4 ABI `libapkpatch.so`、`ApkPatcher` 支持 ZiPat1（jbsdiff 已随双通道迁移移除）；发布侧与 beta 侧均 `ApkNormalized + apksigner34 重签 + ZipDiff` 生成，回打自验，旧客户端自动全量。
 
 B/E/F 落地时发现并修复的额外问题：
 - `ShareImageFactory` KDoc 中 `image/*` 会构成嵌套块注释（Kotlin 块注释可嵌套），吞掉 `*/` 导致解析错乱——改为措辞规避。

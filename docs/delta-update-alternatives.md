@@ -87,7 +87,7 @@ README 明确：「ApkDiffPatch can't be used by Android app store, because it r
   - release workflow：下载 ApkDiffPatch v1.8.1 linux64 → `ApkNormalized` + `apksigner34` 重签 → 发布物
   - `build_delta_chains.py`：对最近 8 个 release 生成单跳直达补丁，`ZipPatch` 回打逐字节 `cmp` 自验，
     只对含 `libapkpatch.so` 的 from-版本生成（旧客户端自动全量）
-  - Beta 通道（`build_beta_chains.py`）暂留 jbsdiff，客户端两格式并存，迁移留作后续
+  - Beta 通道（`build_beta_chains.py`）已同步迁移为 ApkDiffPatch（客户端格式统一 ZiPat1）
 
 ## 3. 方案对比
 

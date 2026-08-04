@@ -223,7 +223,7 @@ class ShareController(private val activity: MainActivity) {
         val iv = view.findViewById<android.widget.ImageView>(com.bilibili.livemonitor.R.id.ivPromoPreview)
         val rv = view.findViewById<androidx.recyclerview.widget.RecyclerView>(com.bilibili.livemonitor.R.id.rvPromoStyles)
         val shareButton = view.findViewById<com.google.android.material.button.MaterialButton>(com.bilibili.livemonitor.R.id.btnPromoShare)
-        val dialog = android.app.AlertDialog.Builder(activity).setView(view).create()
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(activity).setView(view).create()
         shareButton.isEnabled = false
 
         val allStyles = com.bilibili.livemonitor.util.PromoImageRenderer.Style.values()

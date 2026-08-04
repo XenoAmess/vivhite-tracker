@@ -262,9 +262,9 @@ APK 下载网络异常时会删除未完成文件并返回失败。
 
 发布或补丁生成失败不会阻断完整 APK 的发布；缺少补丁或链条时客户端仅下载整包。
 
-### 生成策略（Beta：仍为 jbsdiff，待迁移）
+### 生成策略（Beta：ApkDiffPatch）
 
-Beta 脚本 `build_beta_chains.py` 暂保留 jbsdiff（客户端 ApkPatcher 仍兼容 `BSDIFF40`，两格式并存无碍）。迁移到 ApkDiffPatch 是后续项。
+Beta 脚本 `build_beta_chains.py` 与稳定版同一套 ApkDiffPatch 管线（归一化+apksigner34 重签 + ZipDiff 单跳直达 + 回打自验 + lib 守卫），客户端格式统一为 ZiPat1。
 
 ### 客户端执行和回退
 
