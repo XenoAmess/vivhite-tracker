@@ -21,12 +21,20 @@ class LogActivity : AppCompatActivity() {
         setContentView(R.layout.activity_log)
 
         // targetSdk 35+ 强制 edge-to-edge，内容会顶到状态栏下面被遮挡；
-        // 把系统栏高度加进顶部 padding（保留原有 16dp 内边距）
+        // 把系统栏高度加进上下 padding（保留原有 16dp 内边距）
         val root = findViewById<android.widget.LinearLayout>(R.id.logRoot)
+        val basePaddingLeft = root.paddingLeft
         val basePaddingTop = root.paddingTop
+        val basePaddingRight = root.paddingRight
+        val basePaddingBottom = root.paddingBottom
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            v.setPadding(v.paddingLeft, basePaddingTop + bars.top, v.paddingRight, v.paddingBottom)
+            v.setPadding(
+                basePaddingLeft + bars.left,
+                basePaddingTop + bars.top,
+                basePaddingRight + bars.right,
+                basePaddingBottom + bars.bottom
+            )
             insets
         }
 

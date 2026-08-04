@@ -117,11 +117,17 @@ object PromoImageRenderer {
     }
 
 
-    fun render(style: Style, cover: Bitmap?, headline: String, body: String): Bitmap =
+    fun render(
+        style: Style,
+        cover: Bitmap?,
+        headline: String,
+        body: String,
+        isLive: Boolean = false
+    ): Bitmap =
         when (style) {
-            Style.LIGHT_CARD -> renderLightCard(cover, headline, body)
-            Style.BLUR_BG -> renderBlurBg(cover, headline, body)
-            Style.DARK -> renderDark(cover, headline, body)
+            Style.LIGHT_CARD -> renderLightCard(cover, headline, body, isLive)
+            Style.BLUR_BG -> renderBlurBg(cover, headline, body, isLive)
+            Style.DARK -> renderDark(cover, headline, body, isLive)
             Style.MAGAZINE_COVER -> renderMagazineCover(cover, headline, body)
             Style.NEWSPAPER_FRONT -> renderNewspaperFront(cover, headline, body)
             Style.TYPEWRITER -> renderTypewriter(cover, headline, body)
@@ -129,12 +135,12 @@ object PromoImageRenderer {
             Style.EDITORIAL_PHOTO -> renderEditorialPhoto(cover, headline, body)
             Style.OPED_COLUMN -> renderOpedColumn(cover, headline, body)
             Style.BUSINESS_WEEKLY -> renderBusinessWeekly(cover, headline, body)
-            Style.HUGE_TYPE -> renderHugeType(cover, headline, body)
+            Style.HUGE_TYPE -> renderHugeType(cover, headline, body, isLive)
             Style.BLACK_SQUARE -> renderBlackSquare(cover, headline, body)
             Style.SYSTEM_UI_MOCKUP -> renderSystemUiMockup(cover, headline, body)
             Style.RECEIPT -> renderReceipt(cover, headline, body)
             Style.LINE_ART_MINIMAL -> renderLineArtMinimal(cover, headline, body)
-            Style.SINGLE_GLYPH_POSTER -> renderSingleGlyph(cover, headline, body)
+            Style.SINGLE_GLYPH_POSTER -> renderSingleGlyph(cover, headline, body, isLive)
             Style.INK_SCROLL -> renderInkScroll(cover, headline, body)
             Style.SONG_GREEN_LANDSCAPE -> renderSongGreen(cover, headline, body)
             Style.PAPER_CUT_WINDOW -> renderPaperCut(cover, headline, body)
@@ -151,15 +157,15 @@ object PromoImageRenderer {
             Style.NEO_BRUTALISM -> renderNeoBrutal(cover, headline, body)
             Style.THREE_D_FLOATER -> renderThreeD(cover, headline, body)
             Style.GRADIENT_MESH -> renderMesh(cover, headline, body)
-            Style.GAMING_HUD -> renderHud(cover, headline, body)
-            Style.PIXEL_ART -> renderPixel(cover, headline, body)
+            Style.GAMING_HUD -> renderHud(cover, headline, body, isLive)
+            Style.PIXEL_ART -> renderPixel(cover, headline, body, isLive)
             Style.CYBERPUNK_TERMINAL -> renderCyber(cover, headline, body)
             Style.QR_DOMINANT -> renderQrDominant(cover, headline, body)
             Style.APP_STORE_LISTING -> renderAppStore(cover, headline, body)
-            Style.RETRO_WEB_2000 -> renderRetroWeb(cover, headline, body)
-            Style.DASHBOARD -> renderDashboard(cover, headline, body)
+            Style.RETRO_WEB_2000 -> renderRetroWeb(cover, headline, body, isLive)
+            Style.DASHBOARD -> renderDashboard(cover, headline, body, isLive)
             Style.EVENT_TICKET -> renderEventTicket(cover, headline, body)
-            Style.WEATHER_CARD -> renderWeather(cover, headline, body)
+            Style.WEATHER_CARD -> renderWeather(cover, headline, body, isLive)
             Style.NFT_CARD -> renderNft(cover, headline, body)
             Style.BOARDING_PASS -> renderBoarding(cover, headline, body)
             Style.BIRTHDAY_CAKE -> renderBirthday(cover, headline, body)
@@ -393,8 +399,6 @@ object PromoImageRenderer {
         c.drawPath(p, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color })
     }
 
-    private fun isLiveFromHeadline(headline: String): Boolean = !headline.contains("还没开播")
-
     private fun centerCropTo(cover: Bitmap, dstW: Int, dstH: Int): Bitmap {
         val src = centerCropSrc(cover.width, cover.height, dstW, dstH)
         val cropped = Bitmap.createBitmap(cover, src.left, src.top, src.width(), src.height())
@@ -534,10 +538,9 @@ object PromoImageRenderer {
         return b
     }
     // ===F2===
-    private fun renderHugeType(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderHugeType(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val b = newBitmap(); val c = Canvas(b)
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() })
-        val isLive = isLiveFromHeadline(headline)
         val glyph = if (isLive) "\u770b" else "\u7b49"
         drawCenter(c, paintText(560f, 0xFFE0E0E0.toInt()), glyph, WIDTH / 2f, 700f)
         drawCenter(c, paintText(54f, 0xFF1A1A1A.toInt()), headline.take(14), WIDTH / 2f, 880f)
@@ -632,9 +635,8 @@ object PromoImageRenderer {
         return b
     }
 
-    private fun renderSingleGlyph(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderSingleGlyph(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val b = newBitmap(); val c = Canvas(b)
-        val isLive = isLiveFromHeadline(headline)
         val grad = if (isLive) intArrayOf(0xFFFFB199.toInt(), 0xFFFF6F61.toInt()) else intArrayOf(0xFFB3C5E0.toInt(), 0xFF6A7DA0.toInt())
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint().apply {
             shader = LinearGradient(0f, 0f, 0f, HEIGHT.toFloat(), grad[0], grad[1], Shader.TileMode.CLAMP)
@@ -972,7 +974,7 @@ object PromoImageRenderer {
         return b
     }
     // ===F6===
-    private fun renderHud(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderHud(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val b = newBitmap(); val c = Canvas(b)
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF0A0E1A.toInt() })
         val grid = Paint().apply { color = 0xFF1B2333.toInt(); strokeWidth = 1f }
@@ -989,16 +991,22 @@ object PromoImageRenderer {
         c.drawRect(bar, Paint().apply { color = 0xFF00E676.toInt() })
         c.drawRect(sx + 4, 124f, (WIDTH - sx - 4) * 0.5f, 196f, Paint().apply { color = 0xFF00E676.toInt() })
         drawTextLeft(c, paintText(28f, 0xFF00E676.toInt(), bold = true).setMono(), "\u25ae\u25ae\u25ae\u25ae\u25ae\u25ae\u25ae\u25ae\u25af\u25af  HP  11258/24000", sx + 14, 170f)
-        drawCenter(c, paintText(56f, 0xFFFAFAFA.toInt(), bold = true).setMono(), "\u258e LIVE 11258", WIDTH / 2f, 290f)
+        drawCenter(
+            c,
+            paintText(56f, 0xFFFAFAFA.toInt(), bold = true).setMono(),
+            "\u258e ${if (isLive) "LIVE" else "IDLE"} 11258",
+            WIDTH / 2f,
+            290f
+        )
         drawRoundedCover(c, Rect(120, 360, WIDTH - 120, 760), cover, 6f, 0xFF00E676.toInt())
         drawCenterClipped(c, paintText(30f, 0xFF00E676.toInt()).setMono(), headline.take(20), WIDTH / 2f, 830f, 880f)
         drawCenterClipped(c, paintText(18f, 0xFF8BC34A.toInt()).setMono(), body, WIDTH / 2f, 880f, 880f)
-        drawCenterClipped(c, paintText(16f, 0xFF00E676.toInt()).setMono(), "> SCAN QR TO JOIN LIVE", WIDTH / 2f, 940f, 880f)
+        drawCenterClipped(c, paintText(16f, 0xFF00E676.toInt()).setMono(), "> SCAN QR TO ENTER ROOM", WIDTH / 2f, 940f, 880f)
         drawQrCard(c, WIDTH / 2f, 1000f, qrSize = 240f)
         return b
     }
 
-    private fun renderPixel(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderPixel(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val b = newBitmap(); val c = Canvas(b)
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF6D4C41.toInt() })
         if (cover != null) {
@@ -1011,10 +1019,22 @@ object PromoImageRenderer {
             for (i in 0..10) for (j in 0..10) c.drawRect(i * 108f + 200f, 220f + j * 60f, i * 108f + 280f, 220f + j * 60f + 60f, Paint().apply { color = 0xFF388E3C.toInt() })
         }
         val mono = paintText(32f, 0xFF1A1A1A.toInt()).setMono()
-        drawCenter(c, paintText(48f, 0xFF1A1A1A.toInt(), bold = true).setMono(), "\u2593\u2593\u2593 LIVE  11258 \u2593\u2593\u2593", WIDTH / 2f, 130f)
+        drawCenter(
+            c,
+            paintText(48f, 0xFF1A1A1A.toInt(), bold = true).setMono(),
+            "\u2593\u2593\u2593 ${if (isLive) "LIVE" else "IDLE"}  11258 \u2593\u2593\u2593",
+            WIDTH / 2f,
+            130f
+        )
         drawCenter(c, mono, headline.take(20), WIDTH / 2f, 920f)
         drawCenterClipped(c, paintText(20f, 0xFF1A1A1A.toInt()).setMono(), body, WIDTH / 2f, 980f, 880f)
-        drawCenter(c, paintText(28f, 0xFFFFEB3B.toInt(), bold = true).setMono(), "\u25ae\u25ae\u25ae PRESS START \u25ae\u25ae\u25ae", WIDTH / 2f, 1060f)
+        drawCenter(
+            c,
+            paintText(28f, 0xFFFFEB3B.toInt(), bold = true).setMono(),
+            if (isLive) "\u25ae\u25ae\u25ae PRESS START \u25ae\u25ae\u25ae" else "\u25ae\u25ae\u25ae WAITING ROOM \u25ae\u25ae\u25ae",
+            WIDTH / 2f,
+            1060f
+        )
         drawQrCard(c, WIDTH / 2f, 1100f, qrSize = 180f)
         return b
     }
@@ -1091,10 +1111,11 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(16f, 0xFF888888.toInt()), "\u9002\u5408 9+  \u00b7  \u5de5\u5177  \u00b7  \u4e2d\u6587", (WIDTH - 400f).toFloat(), 900f)
         c.drawRoundRect(RectF(160f, 1000f, (WIDTH - 160f).toFloat(), 1100f), 12f, 12f, Paint().apply { color = 0xFF0066CC.toInt() })
         drawCenter(c, paintText(28f, 0xFFFFFFFF.toInt(), bold = true), "\u5b89\u88c5", WIDTH / 2f, 1060f)
+        drawQrCard(c, WIDTH / 2f, 1130f, qrSize = 160f)
         return b
     }
 
-    private fun renderRetroWeb(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderRetroWeb(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val b = newBitmap(); val c = Canvas(b)
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFB3E5FC.toInt() })
         c.drawRect(40f, 60f, WIDTH - 40f, HEIGHT - 60f, Paint().apply { color = 0xFFFFFFFF.toInt() })
@@ -1102,7 +1123,12 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(20f, 0xFFFFFFFF.toInt()).setMono(), "  \u2605 \u767d\u7eda's Home Page  \u2606  white-room.live  \u2014\u2014 \u25a1 \u00d7", 60f, 110f)
         val marquee = RectF(40f, 170f, WIDTH - 40f, 240f)
         c.drawRect(marquee, Paint().apply { color = 0xFFFFEB3B.toInt() })
-        drawCenter(c, paintText(36f, 0xFFB71C1C.toInt(), bold = true), "\u2605 \u2606 LIVE  NOW !!  \u6b22\u8fce\u6765\u5230\u767d\u7eda\u7684\u76f4\u64ad\u95f4  !! LIVE NOW \u2606 \u2605", WIDTH / 2f, 222f)
+        val marqueeText = if (isLive) {
+            "\u2605 \u2606 LIVE NOW !!  \u6b22\u8fce\u6765\u5230\u767d\u7eda\u7684\u76f4\u64ad\u95f4  !! LIVE NOW \u2606 \u2605"
+        } else {
+            "\u2605 \u2606 WAITING ROOM  \u6b22\u8fce\u6765\u767d\u7eda\u76f4\u64ad\u95f4\u8e72\u5f00\u64ad  \u2606 \u2605"
+        }
+        drawCenter(c, paintText(36f, 0xFFB71C1C.toInt(), bold = true), marqueeText, WIDTH / 2f, 222f)
         drawRoundedCover(c, Rect(80, 280, 560, 600), cover, 4f, 0xFF42A5F5.toInt())
         drawTextLeft(c, paintText(40f, 0xFF0D47A1.toInt(), bold = true), "\u2606 " + headline.take(20) + " \u2606", 600f, 320f)
         drawTextLeft(c, paintText(20f, 0xFF1565C0.toInt()).apply { isUnderlineText = true }, "-> \u70b9\u51fb\u8fd9\u91cc\u8fdb\u5165\u76f4\u64ad\u95f4  <-", 600f, 380f)
@@ -1112,12 +1138,13 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(24f, 0xFFB71C1C.toInt(), bold = true).setMono(), "11258892", 220f, 700f)
         drawTextLeft(c, paintText(18f, 0xFF0D47A1.toInt()).apply { isUnderlineText = true }, "\u00b7  [ \u5206\u4eab ]  [ \u5173\u4e8e\u767d\u7eda ]  [ QQ\u7fa4 ]  [ \u7559\u8a00\u677f ]", 60f, 780f)
         c.drawLine(40f, 1100f, WIDTH - 40f, 1100f, Paint().apply { color = 0xFF9E9E9E.toInt() })
+        drawQrCard(c, WIDTH / 2f, 830f, qrSize = 220f)
         drawCenter(c, paintText(14f, 0xFF616161.toInt()).setMono(), "\u00a9 2026  \u7262\u767d\u64ad\u4e86\u5417  \u00b7  Made with \u2665 in GitHub Actions  \u00b7  Best viewed in 1024x768", WIDTH / 2f, 1170f)
         drawCenter(c, paintText(12f, 0xFF9E9E9E.toInt()).setMono(), "[This page has been viewed 11258892 times]", WIDTH / 2f, 1210f)
         return b
     }
     // ===F7===
-    private fun renderDashboard(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderDashboard(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val b = newBitmap(); val c = Canvas(b)
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF0D1B2A.toInt() })
         for (i in 0..WIDTH step 40) c.drawLine(i.toFloat(), 0f, i.toFloat(), HEIGHT.toFloat(), Paint().apply { color = 0x11FFFFFF.toInt() })
@@ -1125,7 +1152,7 @@ object PromoImageRenderer {
         drawTextLeft(c, paintText(16f, 0xFF00B0FF.toInt(), bold = true).setMono(), "  > STREAM  MONITOR  v2.6", 32f, 56f)
         drawTextLeft(c, paintText(12f, 0xFF607D8B.toInt()).setMono(), "  2026  \u00b7  node 11258  \u00b7  ALIVE", 32f, 76f)
         val cards = listOf(
-            Triple("STATUS", if (isLiveFromHeadline(headline)) "\u25cf LIVE" else "\u25cb IDLE", if (isLiveFromHeadline(headline)) 0xFF00E676.toInt() else 0xFFBDBDBD.toInt()),
+            Triple("STATUS", if (isLive) "\u25cf LIVE" else "\u25cb IDLE", if (isLive) 0xFF00E676.toInt() else 0xFFBDBDBD.toInt()),
             Triple("VIEWERS", "11258", 0xFF40C4FF.toInt()),
             Triple("UPTIME", "24h00m", 0xFFFFB74D.toInt()),
             Triple("PACKET", "0.00% LOSS", 0xFF00E676.toInt())
@@ -1185,7 +1212,7 @@ object PromoImageRenderer {
         return b
     }
 
-    private fun renderWeather(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderWeather(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val b = newBitmap(); val c = Canvas(b)
         c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint().apply {
             shader = LinearGradient(0f, 0f, 0f, HEIGHT.toFloat(), 0xFF90CAF9.toInt(), 0xFFE3F2FD.toInt(), Shader.TileMode.CLAMP)
@@ -1195,8 +1222,8 @@ object PromoImageRenderer {
         c.drawCircle(cx + 50, cy - 30, 130f, Paint().apply { color = 0xFF90CAF9.toInt() })
         for (i in 0..20) c.drawCircle(60f + (i * 53f) % WIDTH, 100f + (i * 73f) % 280, 4f, Paint().apply { color = 0xFFFFFFFF.toInt() })
         drawCenter(c, paintText(36f, 0xFF1A237E.toInt(), bold = true), "11258  \u0261  open", cx, 680f)
-        drawCenter(c, paintText(28f, 0xFF1A1A1A.toInt(), bold = true), "weather: \u76f4\u64ad\u672a\u5f00\u64ad", cx, 740f)
-        drawCenter(c, paintText(22f, 0xFF424242.toInt()), "\u9884\u8ba1\u7b49 24h, \u4f53\u611f\u300c\u767d\u7eda\u300d", cx, 800f)
+        drawCenter(c, paintText(28f, 0xFF1A1A1A.toInt(), bold = true), "weather: \u76f4\u64ad${if (isLive) "\u4e2d" else "\u672a\u5f00\u64ad"}", cx, 740f)
+        drawCenter(c, paintText(22f, 0xFF424242.toInt()), if (isLive) "\u6b63\u5728\u5f00\u64ad, \u4f53\u611f\u300c\u767d\u7eda\u300d" else "\u9884\u8ba1\u7b49 24h, \u4f53\u611f\u300c\u767d\u7eda\u300d", cx, 800f)
         drawCenterClipped(c, paintText(18f, 0xFF555555.toInt()), body, cx, 850f, 880f)
         drawCenterClipped(c, paintText(16f, 0xFF1A237E.toInt()), "UMI  /  white-room.live", cx, 900f, 880f)
         drawCenter(c, paintText(18f, 0xFF1A1A1A.toInt()), "\u2193 \u626b\u7801\u67e5\u770b\u5b9e\u65f6\u76f4\u64ad", cx, 1000f)
@@ -1514,7 +1541,7 @@ object PromoImageRenderer {
         return b
     }
 
-    private fun renderLightCard(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderLightCard(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val bitmap = newBitmap()
         val canvas = Canvas(bitmap)
         canvas.drawRect(
@@ -1524,7 +1551,6 @@ object PromoImageRenderer {
             }
         )
         drawRoundedCover(canvas, Rect(64, 48, WIDTH - 64, 560), cover, 32f, 0xFF6750A4.toInt())
-        val isLive = isLiveFromHeadline(headline)
         drawBadge(canvas, WIDTH / 2f, 628f, isLive, darkText = false)
         drawCenter(canvas, paintText(52f, 0xFF1B1B1F.toInt(), bold = true), headline.take(24), WIDTH / 2f, 740f)
         drawCenter(canvas, paintText(34f, 0xFF44464F.toInt()), body.take(40), WIDTH / 2f, 812f)
@@ -1534,7 +1560,7 @@ object PromoImageRenderer {
         return bitmap
     }
 
-    private fun renderBlurBg(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderBlurBg(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val bitmap = newBitmap()
         val canvas = Canvas(bitmap)
         if (cover != null) {
@@ -1594,7 +1620,6 @@ object PromoImageRenderer {
             style = Paint.Style.STROKE
             strokeWidth = 2f
         })
-        val isLive = isLiveFromHeadline(headline)
         drawBadge(canvas, WIDTH / 2f, 278f, isLive, darkText = false)
         drawCenter(canvas, paintText(50f, 0xFF1B1B1F.toInt(), bold = true), headline.take(24), WIDTH / 2f, 408f)
         drawCenter(canvas, paintText(30f, 0xFF44464F.toInt()), body.take(40), WIDTH / 2f, 476f)
@@ -1626,11 +1651,17 @@ object PromoImageRenderer {
             strokeWidth = 2f
         })
         drawCenter(canvas, paintText(26f, 0xFF625D6B.toInt()), "来自「牢白播了吗」· 白绮开播监控", WIDTH / 2f, 1094f)
-        drawCenter(canvas, paintText(20f, 0xFF8A8492.toInt()), "BILIBILI LIVE  ·  11258892", WIDTH / 2f, 1136f)
+        drawCenter(
+            canvas,
+            paintText(20f, 0xFF8A8492.toInt()),
+            "BILIBILI ${if (isLive) "LIVE" else "WAITING"}  ·  11258892",
+            WIDTH / 2f,
+            1136f
+        )
         return bitmap
     }
 
-    private fun renderDark(cover: Bitmap?, headline: String, body: String): Bitmap {
+    private fun renderDark(cover: Bitmap?, headline: String, body: String, isLive: Boolean): Bitmap {
         val bitmap = newBitmap()
         val canvas = Canvas(bitmap)
         canvas.drawRect(
@@ -1640,7 +1671,6 @@ object PromoImageRenderer {
             }
         )
         drawRoundedCover(canvas, Rect(64, 48, WIDTH - 64, 560), cover, 32f, 0xFF4A4458.toInt())
-        val isLive = isLiveFromHeadline(headline)
         drawBadge(canvas, WIDTH / 2f, 628f, isLive, darkText = false)
         drawCenter(canvas, paintText(52f, 0xFFF2EFF7.toInt(), bold = true), headline.take(24), WIDTH / 2f, 740f)
         drawCenter(canvas, paintText(34f, 0xFFC9C5D0.toInt()), body.take(40), WIDTH / 2f, 812f)

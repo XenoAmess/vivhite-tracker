@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
+import com.bilibili.livemonitor.service.LiveCheckService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -66,6 +67,10 @@ class AlertActivityTest {
             "https://live.bilibili.com/11258892",
             started?.dataString
         )
+        assertEquals(
+            LiveCheckService.ACTION_WATCH_LIVE,
+            shadowOf(activity).nextStartedService?.action
+        )
         assertTrue(activity.isFinishing)
         controller.destroy()
     }
@@ -79,6 +84,10 @@ class AlertActivityTest {
             R.id.btnDismiss
         ).performClick()
 
+        assertEquals(
+            LiveCheckService.ACTION_STOP_ALERT,
+            shadowOf(activity).nextStartedService?.action
+        )
         assertTrue(activity.isFinishing)
         controller.destroy()
     }

@@ -34,6 +34,7 @@ import com.bilibili.livemonitor.util.AlertSoundProvider
 import com.bilibili.livemonitor.util.PreferenceManager
 import com.bilibili.livemonitor.worker.LiveCheckWorker
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
 
 class LiveCheckService : Service() {
 
@@ -44,13 +45,19 @@ class LiveCheckService : Service() {
     private lateinit var preferenceManager: PreferenceManager
     private var roomId: Long = DEFAULT_ROOM_ID
     private var lastStatus: Boolean? = null
+    private var monitoringGeneration: Long = 0L
+    private var stopRequestedByUser = false
+    private var stopRequestedGeneration: Long = NO_MONITORING_GENERATION
     private lateinit var wakeLock: PowerManager.WakeLock
 
     // 用于保护检测的轻量级WakeLock
     private lateinit var checkWakeLock: PowerManager.WakeLock
 
-    // 防止并发检查
-    private val isChecking = java.util.concurrent.atomic.AtomicBoolean(false)
+    // 防止并发检查；internal 让单测能等待一次检查完整处理完毕。
+    internal val isChecking = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    // 常规视频检查与独立动态 Alarm 会打同一 feed；不能并发读写同一批基线。
+    private val activityCheckMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -59,6 +66,7 @@ class LiveCheckService : Service() {
         // 生产恒为 null。必须在任何检测发生前应用
         apiOverride?.let { api = it }
         preferenceManager = PreferenceManager(this)
+        monitoringGeneration = preferenceManager.getMonitoringGeneration()
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -84,6 +92,8 @@ class LiveCheckService : Service() {
         // prefs 刷回 true，用户停止后服务会被任意滞留启动复活并继续监控）
         if (!preferenceManager.isServiceRunning()) {
             AppLogger.w(TAG, "monitoring disabled in prefs, aborting stray start")
+            stopRequestedByUser = true
+            stopRequestedGeneration = monitoringGeneration
             isUserStopped = true
             stopSelf()
             return
@@ -119,22 +129,83 @@ class LiveCheckService : Service() {
 
         // 确保WorkManager兜底任务已注册
         LiveCheckWorker.schedulePeriodic(this)
+        ensureDynamicAlarmScheduled()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         AppLogger.d(TAG, "onStartCommand action=${intent?.action}")
         // 处理停止命令
         if (intent?.action == ACTION_STOP_SERVICE) {
+            val requestedGeneration = intent.getLongExtra(
+                EXTRA_MONITORING_GENERATION,
+                preferenceManager.getMonitoringGeneration()
+            )
+            if (requestedGeneration != preferenceManager.getMonitoringGeneration()) {
+                AppLogger.w(
+                    TAG,
+                    "ignoring stale STOP: requested=$requestedGeneration current=${preferenceManager.getMonitoringGeneration()}"
+                )
+                return START_STICKY
+            }
+            stopRequestedByUser = true
+            stopRequestedGeneration = requestedGeneration
             isUserStopped = true
             preferenceManager.setServiceRunning(false)
             preferenceManager.setAlertSuppressed(false)
             LiveCheckWorker.cancelAll(this)
+            cancelScheduledChecks(this)
             stopAlertSound()
+            // 新的 start command 已到达时不能把它一并杀掉；新会话会接管同一服务实例。
+            if (!stopSelfResult(startId)) {
+                AppLogger.d(TAG, "STOP superseded by a newer start command")
+                stopRequestedByUser = false
+                stopRequestedGeneration = NO_MONITORING_GENERATION
+                isUserStopped = false
+            }
+            return START_NOT_STICKY
+        }
+
+        // 全屏提醒页被用户处理后只停铃，不改变监控开关或会话状态。
+        if (intent?.action == ACTION_STOP_ALERT) {
+            stopAlertSoundSync()
+            return if (preferenceManager.isServiceRunning()) START_STICKY else START_NOT_STICKY
+        }
+
+        // 停止权威位二次检查：onCreate 自毁后仍可能有已入队的 intent 被投递，
+        // 这里必须再次确认，不能把 prefs 刷回 true（否则用户停止会被复活）
+        if (!preferenceManager.isServiceRunning()) {
+            AppLogger.w(TAG, "onStartCommand but monitoring disabled, aborting")
+            stopRequestedByUser = true
+            stopRequestedGeneration = preferenceManager.getMonitoringGeneration()
+            isUserStopped = true
             stopSelf()
             return START_NOT_STICKY
         }
 
-        // 观播静音命令（点"打开直播间"）：监控不停，本场直播结束前不提醒
+        val requestedGeneration = intent?.getLongExtra(
+            EXTRA_MONITORING_GENERATION,
+            NO_MONITORING_GENERATION
+        ) ?: NO_MONITORING_GENERATION
+        val currentGeneration = preferenceManager.getMonitoringGeneration()
+        if (requestedGeneration != NO_MONITORING_GENERATION
+            && requestedGeneration != currentGeneration
+        ) {
+            AppLogger.w(
+                TAG,
+                "ignoring stale START: requested=$requestedGeneration current=$currentGeneration"
+            )
+            return START_STICKY
+        }
+        if (monitoringGeneration != currentGeneration) {
+            AppLogger.d(TAG, "adopting current monitoring generation $currentGeneration")
+            monitoringGeneration = currentGeneration
+            stopRequestedByUser = false
+            stopRequestedGeneration = NO_MONITORING_GENERATION
+            isUserStopped = false
+        }
+
+        // 观播静音命令（点"打开直播间"）：监控不停，本场直播结束前不提醒。
+        // 必须放在 prefs 权威位检查之后，停止后的残留命令不能重置静音状态。
         if (intent?.action == ACTION_WATCH_LIVE) {
             AppLogger.d(TAG, "enter watch-live muted mode")
             preferenceManager.setAlertSuppressed(true)
@@ -145,13 +216,9 @@ class LiveCheckService : Service() {
             return START_STICKY
         }
 
-        // 动态流检测（独立 5min Alarm 触发）：只查动态，不走直播/视频检测
+        // 活动流检测（独立 5min Alarm 触发）：视频、动态、置顶共用同一风险敏感端点，
+        // 必须一起降频，不能让视频/置顶开关把动态接口重新拉回每分钟。
         if (intent?.action == ACTION_CHECK_DYNAMICS) {
-            if (!preferenceManager.isServiceRunning()) {
-                AppLogger.w(TAG, "ACTION_CHECK_DYNAMICS but monitoring disabled, aborting")
-                stopSelf()
-                return START_NOT_STICKY
-            }
             serviceScope.launch {
                 try {
                     checkNewDynamics()
@@ -161,15 +228,6 @@ class LiveCheckService : Service() {
                 scheduleNextDynamicAlarm()
             }
             return START_STICKY
-        }
-
-        // 停止权威位二次检查：onCreate 自毁后仍可能有已入队的 intent 被投递，
-        // 这里必须再次确认，不能把 prefs 刷回 true（否则用户停止会被复活）
-        if (!preferenceManager.isServiceRunning()) {
-            AppLogger.w(TAG, "onStartCommand but monitoring disabled, aborting")
-            isUserStopped = true
-            stopSelf()
-            return START_NOT_STICKY
         }
 
         val newRoomId = intent?.getLongExtra(EXTRA_ROOM_ID, DEFAULT_ROOM_ID) ?: DEFAULT_ROOM_ID
@@ -188,8 +246,6 @@ class LiveCheckService : Service() {
             if (isChecking.compareAndSet(false, true)) {
                 try {
                     checkLiveStatusWithRetry()
-                    // 活动监控：视频 + 置顶（与直播同 60s 周期）
-                    checkActivities()
                 } catch (e: Exception) {
                     AppLogger.e(TAG, "checkLiveStatus error", e)
                 } finally {
@@ -200,8 +256,9 @@ class LiveCheckService : Service() {
             }
             // 检查完成后设置下一次Alarm（作为保底，AlarmReceiver也会设置）
             scheduleNextCheckAlarm()
-            // 动态流独立 5min Alarm（风控脆弱，降频 + ±10s 抖动）
-            scheduleNextDynamicAlarm()
+            // 动态流独立 5min Alarm：常规 60s 检查只确保它存在，不能每分钟重置
+            // 触发时间，否则 Alarm 永远到不了真正的动态检查。
+            ensureDynamicAlarmScheduled()
         }
 
         return START_STICKY
@@ -304,40 +361,44 @@ class LiveCheckService : Service() {
     internal var activityApi: com.bilibili.livemonitor.api.BilibiliActivityApi =
         com.bilibili.livemonitor.api.BilibiliActivityApi()
 
-    private suspend fun checkActivities() {
-        // 视频/动态/置顶 共用一个 API 调用（desktop feed/space 一条数据全包）
-        if (preferenceManager.isMonitorVideos()
-            || preferenceManager.isMonitorDynamics()
-            || preferenceManager.isMonitorPinned()
-        ) {
-            checkDynamicFeed()
-        }
-    }
-
-    // 由 ACTION_CHECK_DYNAMICS 单独触发（5min 周期），与 60s 周期解耦
+    // 由 ACTION_CHECK_DYNAMICS 单独触发（5min 周期）。三个活动功能共用 feed，
+    // 所以一次请求统一处理视频、动态和置顶，而不是随直播检查每分钟打接口。
     suspend fun checkNewDynamics() {
-        if (!preferenceManager.isServiceRunning()) return
+        if (!preferenceManager.isServiceRunning() || !isActivityMonitoringEnabled()) return
         checkDynamicFeed()
     }
 
+    private fun isActivityMonitoringEnabled(): Boolean =
+        preferenceManager.isMonitorVideos()
+            || preferenceManager.isMonitorDynamics()
+            || preferenceManager.isMonitorPinned()
+
     private suspend fun checkDynamicFeed() {
+        if (!activityCheckMutex.tryLock()) {
+            AppLogger.d(TAG, "activity check already in progress, skip")
+            return
+        }
+        try {
         // desktop 端点间歇性返回 code=0 但 items=[]（2026-08-02 实测约 1/6 抽风率），
         // Err/NoData 统一等 15s 重试一次（对齐直播检测策略），避免偶发漏检
-        when (val result = fetchDynamicOnce()) {
-            is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
-                handleDynamicResult(result.data)
-            }
-            else -> {
-                AppLogger.w(TAG, "dynamic check failed ($result), retry in ${dynamicRetryDelayMillis / 1000}s")
-                kotlinx.coroutines.delay(dynamicRetryDelayMillis)
-                when (val retry = fetchDynamicOnce()) {
-                    is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
-                        AppLogger.d(TAG, "dynamic retry succeeded")
-                        handleDynamicResult(retry.data)
+            when (val result = fetchDynamicOnce()) {
+                is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
+                    handleDynamicResult(result.data)
+                }
+                else -> {
+                    AppLogger.w(TAG, "dynamic check failed ($result), retry in ${dynamicRetryDelayMillis / 1000}s")
+                    kotlinx.coroutines.delay(dynamicRetryDelayMillis)
+                    when (val retry = fetchDynamicOnce()) {
+                        is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
+                            AppLogger.d(TAG, "dynamic retry succeeded")
+                            handleDynamicResult(retry.data)
+                        }
+                        else -> AppLogger.w(TAG, "dynamic retry also failed ($retry)")
                     }
-                    else -> AppLogger.w(TAG, "dynamic retry also failed ($retry)")
                 }
             }
+        } finally {
+            activityCheckMutex.unlock()
         }
     }
 
@@ -355,17 +416,19 @@ class LiveCheckService : Service() {
             preferenceManager.getLastDynamicId()
         )
 
-        // 1) 视频变化（DYNAMIC_TYPE_AV 时 avItem 非空，aid 变化）
+        // 1) 视频变化：最新动态本身是视频时直接用它；若最新动态是图文，仍要从
+        // feed 中保留的最新视频（或唯一的置顶视频）推进视频基线。
         val avItem = dynamic.avItem
-        if (preferenceManager.isMonitorVideos() && avItem != null) {
+        val latestVideo = dynamic.latestAvItem ?: avItem ?: dynamic.pinnedAvItem
+        if (preferenceManager.isMonitorVideos() && latestVideo != null) {
             val lastAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
                 preferenceManager.getLastVideoAid()
             )
-            preferenceManager.setLastVideoAid(avItem.aid)
-            if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertVideo(avItem.aid, lastAid)) {
-                AppLogger.d(TAG, "new video: aid=${avItem.aid} title=${avItem.title.take(40)}")
+            preferenceManager.setLastVideoAid(latestVideo.aid)
+            if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertVideo(latestVideo.aid, lastAid)) {
+                AppLogger.d(TAG, "new video: aid=${latestVideo.aid} title=${latestVideo.title.take(40)}")
                 triggerActivityAlert(
-                    com.bilibili.livemonitor.domain.ActivityType.Video(avItem.aid, avItem.title)
+                    com.bilibili.livemonitor.domain.ActivityType.Video(latestVideo.aid, latestVideo.title)
                 )
             }
         }
@@ -389,13 +452,18 @@ class LiveCheckService : Service() {
             val lastPinnedAid = com.bilibili.livemonitor.domain.ActivityDecider.longToNullable(
                 preferenceManager.getLastPinnedAid()
             )
-            val currentPinnedAid: Long? = if (dynamic.isTop && avItem != null) avItem.aid else null
+            // latest dynamic 与置顶视频是独立字段：feed 首项通常是置顶，解析层会跳过它
+            // 以免吞掉新动态，但这里仍必须使用它判断置顶变更。
+            val pinnedVideo = dynamic.pinnedAvItem ?: avItem?.takeIf { dynamic.isTop }
+            val currentPinnedAid: Long? = pinnedVideo?.aid
             if (currentPinnedAid != lastPinnedAid) {
                 preferenceManager.setLastPinnedAid(currentPinnedAid ?: -1)
                 AppLogger.d(TAG, "pinned changed: $lastPinnedAid → $currentPinnedAid")
-                if (lastPinnedAid != null || currentPinnedAid != null) {
-                    // 至少一侧有值才报警（避免首次 null→null 误报）
-                    val title = avItem?.title ?: "置顶已取消"
+                if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertPinned(
+                        currentPinnedAid, lastPinnedAid
+                    )
+                ) {
+                    val title = pinnedVideo?.title ?: "置顶已取消"
                     triggerActivityAlert(
                         com.bilibili.livemonitor.domain.ActivityType.Pinned(
                             currentPinnedAid ?: 0,
@@ -549,24 +617,18 @@ class LiveCheckService : Service() {
     }
 
     private fun triggerAlert() {
-        // 唤醒屏幕
         wakeLock.acquire(10 * 60 * 1000L)
-
-        // 播放铃声
-        playAlertSound()
-
-        // 震动
-        vibrate()
-
-        // 显示全屏提醒
-        showFullScreenAlert()
-
-        // 发送通知
-        sendAlertNotification()
-
-        // 释放唤醒锁
-        if (wakeLock.isHeld) {
-            wakeLock.release()
+        try {
+            // 服务是铃声的唯一所有者；全屏页只负责展示，避免两套 ExoPlayer 叠音。
+            playAlertSound()
+            vibrate()
+            // Android 10+ 不保证后台 startActivity 成功，交给高优先级通知的
+            // fullScreenIntent 处理锁屏/前台展示。
+            sendAlertNotification()
+        } finally {
+            if (wakeLock.isHeld) {
+                wakeLock.release()
+            }
         }
     }
 
@@ -708,19 +770,20 @@ class LiveCheckService : Service() {
         }
     }
 
-    private fun showFullScreenAlert() {
-        val intent = Intent(this, AlertActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        startActivity(intent)
-    }
-
     private fun sendAlertNotification() {
-        val intent = Intent(this, MainActivity::class.java).apply {
+        val contentIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
+            this, 0, contentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val fullScreenIntent = PendingIntent.getActivity(
+            this,
+            1,
+            Intent(this, AlertActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -733,7 +796,7 @@ class LiveCheckService : Service() {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .setFullScreenIntent(pendingIntent, true)
+            .setFullScreenIntent(fullScreenIntent, true)
             .build()
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -799,10 +862,20 @@ class LiveCheckService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        AppLogger.d(TAG, "onDestroy isUserStopped=$isUserStopped")
+        val currentGeneration = preferenceManager.getMonitoringGeneration()
+        val ownsCurrentSession = monitoringGeneration == currentGeneration
+        val userStoppedCurrentSession = stopRequestedByUser
+            && stopRequestedGeneration == currentGeneration
+        AppLogger.d(
+            TAG,
+            "onDestroy userStop=$userStoppedCurrentSession ownsCurrent=$ownsCurrentSession " +
+                "serviceGen=$monitoringGeneration currentGen=$currentGeneration"
+        )
         serviceScope.cancel()
-        isRunning = false
-        lastLiveStatus = false
+        if (ownsCurrentSession) {
+            isRunning = false
+            lastLiveStatus = false
+        }
         // 停止提醒铃声（用户停止监控/服务销毁时铃声必须停）。
         // onDestroy 跑在主线程，直接同步停——投递到 alertScope 会被下面的 cancel 杀掉
         stopAlertSoundSync()
@@ -811,11 +884,13 @@ class LiveCheckService : Service() {
         // 只有用户主动停止才清除运行标记；系统杀进程/异常销毁要保留 true，
         // 否则 onDestroy→ServiceRestartReceiver 重启链会被自己卡死
         // （Receiver 启动前检查 prefs，false 会拒绝重启）
-        if (isUserStopped) {
+        if (userStoppedCurrentSession) {
             preferenceManager.setServiceRunning(false)
         }
-        cancelAlarm()
-        cancelDynamicAlarm()
+        // 旧会话在用户快速 stop→start 后销毁时，绝不能取消新会话刚排好的任务。
+        if (ownsCurrentSession) {
+            cancelScheduledChecks(this)
+        }
 
         // 释放所有WakeLock
         if (::wakeLock.isInitialized && wakeLock.isHeld) {
@@ -826,7 +901,7 @@ class LiveCheckService : Service() {
         }
 
         // 只有非用户手动停止时才发送广播重启服务
-        if (!isUserStopped) {
+        if (!userStoppedCurrentSession && ownsCurrentSession && preferenceManager.isServiceRunning()) {
             try {
                 val broadcastIntent = Intent(this, com.bilibili.livemonitor.receiver.ServiceRestartReceiver::class.java).apply {
                     action = ACTION_RESTART_SERVICE
@@ -837,6 +912,8 @@ class LiveCheckService : Service() {
             }
         }
         // 重置标志
+        stopRequestedByUser = false
+        stopRequestedGeneration = NO_MONITORING_GENERATION
         isUserStopped = false
     }
 
@@ -898,9 +975,28 @@ class LiveCheckService : Service() {
         }
     }
 
+    // 常规检查只确保活动 Alarm 存在；真正的 5 分钟周期只在 ACTION_CHECK_DYNAMICS
+    // 完成后重排，避免每分钟直播检查把触发时间不断往后推。
+    private fun ensureDynamicAlarmScheduled() {
+        if (!isActivityMonitoringEnabled()) {
+            cancelDynamicAlarm()
+            return
+        }
+        val existing = PendingIntent.getService(
+            this,
+            DYNAMIC_ALARM_REQUEST_CODE,
+            Intent(this, LiveCheckService::class.java).apply { action = ACTION_CHECK_DYNAMICS },
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (existing == null) scheduleNextDynamicAlarm()
+    }
+
     // 动态流独立 5min Alarm（风控脆弱，降频 + ±10s 抖动避免固定间隔被识别）
     private fun scheduleNextDynamicAlarm() {
-        if (!preferenceManager.isMonitorDynamics()) return
+        if (!isActivityMonitoringEnabled()) {
+            cancelDynamicAlarm()
+            return
+        }
         try {
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(this, LiveCheckService::class.java).apply {
@@ -941,6 +1037,7 @@ class LiveCheckService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
         } catch (e: Exception) {
             AppLogger.e(TAG, "cancelDynamicAlarm failed", e)
         }
@@ -951,10 +1048,13 @@ class LiveCheckService : Service() {
         const val ACTION_STATUS_CHANGED = "com.bilibili.livemonitor.STATUS_CHANGED"
         const val EXTRA_IS_LIVE = "is_live"
         const val ACTION_STOP_SERVICE = "com.bilibili.livemonitor.STOP_SERVICE"
+        const val ACTION_STOP_ALERT = "com.bilibili.livemonitor.STOP_ALERT"
         const val ACTION_WATCH_LIVE = "com.bilibili.livemonitor.WATCH_LIVE"
         const val ACTION_RESTART_SERVICE = "com.bilibili.livemonitor.RESTART_SERVICE"
         const val ACTION_CHECK_DYNAMICS = "com.bilibili.livemonitor.CHECK_DYNAMICS"
+        const val EXTRA_MONITORING_GENERATION = "monitoring_generation"
         private const val DEFAULT_ROOM_ID = 11258892L
+        private const val NO_MONITORING_GENERATION = -1L
         private const val CHECK_INTERVAL = 60_000L // 60秒
         private const val DYNAMIC_CHECK_INTERVAL = 5 * 60_000L // 5分钟
         private const val CHECK_TIMEOUT = 25_000L // 单次检测超时25秒
@@ -981,5 +1081,30 @@ class LiveCheckService : Service() {
 
         @Volatile
         internal var lastAlertPlayer: ExoPlayer? = null
+
+        /** Stop path used when no service instance exists; avoids creating a service only for STOP. */
+        fun cancelScheduledChecks(context: Context) {
+            try {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                val checkIntent = PendingIntent.getBroadcast(
+                    context,
+                    ALARM_REQUEST_CODE,
+                    Intent(context, AlarmReceiver::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.cancel(checkIntent)
+                checkIntent.cancel()
+                val activityIntent = PendingIntent.getService(
+                    context,
+                    DYNAMIC_ALARM_REQUEST_CODE,
+                    Intent(context, LiveCheckService::class.java).apply { action = ACTION_CHECK_DYNAMICS },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.cancel(activityIntent)
+                activityIntent.cancel()
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "cancelScheduledChecks failed", e)
+            }
+        }
     }
 }

@@ -1,24 +1,19 @@
 package com.bilibili.livemonitor
 
-import android.media.AudioAttributes
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import androidx.media3.common.AudioAttributes as Media3AudioAttributes
-import androidx.media3.common.C
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import com.bilibili.livemonitor.databinding.ActivityAlertBinding
+import com.bilibili.livemonitor.service.LiveCheckService
 import kotlinx.coroutines.*
 
 class AlertActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAlertBinding
-    private var mediaPlayer: ExoPlayer? = null
-    private val scope = CoroutineScope(Dispatchers.Main)
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +44,21 @@ class AlertActivity : AppCompatActivity() {
 
         binding = ActivityAlertBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        val root = binding.root
+        val basePaddingLeft = root.paddingLeft
+        val basePaddingTop = root.paddingTop
+        val basePaddingRight = root.paddingRight
+        val basePaddingBottom = root.paddingBottom
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            view.setPadding(
+                basePaddingLeft + bars.left,
+                basePaddingTop + bars.top,
+                basePaddingRight + bars.right,
+                basePaddingBottom + bars.bottom
+            )
+            insets
+        }
 
         // 拦截返回手势/返回键，强制用户点击按钮（targetSdk 36+ 需用 OnBackPressedDispatcher）
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -58,7 +68,7 @@ class AlertActivity : AppCompatActivity() {
         })
 
         setupUI()
-        playAlarm()
+        // 声音由 LiveCheckService 唯一持有；此页只承接通知的全屏展示，避免叠音。
 
         // 30秒后自动关闭
         scope.launch {
@@ -78,6 +88,7 @@ class AlertActivity : AppCompatActivity() {
             tvAlertMessage.text = "直播间 11258892 正在直播中\n快去看看吧！"
             
             btnGoToLive.setOnClickListener {
+                notifyLiveService(LiveCheckService.ACTION_WATCH_LIVE)
                 // 打开直播间
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                     data = android.net.Uri.parse("https://live.bilibili.com/11258892")
@@ -87,47 +98,18 @@ class AlertActivity : AppCompatActivity() {
             }
 
             btnDismiss.setOnClickListener {
+                notifyLiveService(LiveCheckService.ACTION_STOP_ALERT)
                 finish()
             }
         }
     }
 
-    private val alertSoundProvider = com.bilibili.livemonitor.util.AlertSoundProvider()
-
-    private fun playAlarm() {
-        try {
-            val prefs = com.bilibili.livemonitor.util.PreferenceManager(this)
-            mediaPlayer = ExoPlayer.Builder(this).build().apply {
-                val attrs = Media3AudioAttributes.Builder()
-                    .setUsage(C.USAGE_ALARM)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)
-                    .build()
-                setAudioAttributes(attrs, /* handleAudioFocus = */ false)
-                if (!alertSoundProvider.setupDataSource(
-                        this@AlertActivity, this, prefs.getAlertSoundUri()
-                    )) {
-                    com.bilibili.livemonitor.util.AppLogger.w("AlertActivity", "all sound sources failed, skip alarm")
-                    release()
-                    mediaPlayer = null
-                    return@apply
-                }
-                repeatMode = Player.REPEAT_MODE_ONE  // gapless 循环
-                playWhenReady = true
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+    private fun notifyLiveService(action: String) {
+        startService(android.content.Intent(this, LiveCheckService::class.java).setAction(action))
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        mediaPlayer?.apply {
-            if (isPlaying) {
-                stop()
-            }
-            release()
-        }
-        mediaPlayer = null
         scope.cancel()
     }
 }

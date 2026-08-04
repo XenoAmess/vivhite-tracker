@@ -22,8 +22,9 @@ object HttpClient {
         extraHeaders: Map<String, String> = emptyMap(),
         timeoutMs: Int = 8000
     ): String? {
+        var connection: HttpsURLConnection? = null
         return try {
-            val connection = URL(url).openConnection() as HttpsURLConnection
+            connection = URL(url).openConnection() as HttpsURLConnection
             connection.apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
@@ -33,10 +34,11 @@ object HttpClient {
                 readTimeout = timeoutMs
             }
             val body = connection.inputStream.bufferedReader().use { it.readText() }
-            connection.disconnect()
             body
         } catch (e: Exception) {
             null
+        } finally {
+            connection?.disconnect()
         }
     }
 }

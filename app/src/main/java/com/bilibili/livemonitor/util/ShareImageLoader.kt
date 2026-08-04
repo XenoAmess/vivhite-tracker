@@ -44,22 +44,45 @@ open class ShareImageLoader {
 
     /** 下载并解码为 Bitmap（长宣传图合成用）；失败返回 null（渲染器用占位块） */
     open fun downloadBitmap(url: String): Bitmap? {
+        var boundsConnection: HttpsURLConnection? = null
+        var decodeConnection: HttpsURLConnection? = null
         return try {
-            val connection = URL(url).openConnection() as HttpsURLConnection
-            connection.apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Referer", "https://live.bilibili.com/")
-                connectTimeout = 5000
-                readTimeout = 8000
+            // 直播封面可达数 MB；先只读 bounds，再按宣传图所需分辨率采样，避免一次分享
+            // 就把原图完整解进堆内存。
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            boundsConnection = openImageConnection(url)
+            boundsConnection.inputStream.use { BitmapFactory.decodeStream(it, null, bounds) }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight)
             }
-            val bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) }
-            connection.disconnect()
-            bitmap
+            decodeConnection = openImageConnection(url)
+            decodeConnection.inputStream.use { BitmapFactory.decodeStream(it, null, options) }
         } catch (e: Exception) {
             AppLogger.w(TAG, "download share bitmap failed: $url", e)
             null
+        } finally {
+            boundsConnection?.disconnect()
+            decodeConnection?.disconnect()
         }
+    }
+
+    private fun openImageConnection(url: String): HttpsURLConnection =
+        (URL(url).openConnection() as HttpsURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", USER_AGENT)
+            setRequestProperty("Referer", "https://live.bilibili.com/")
+            connectTimeout = 5000
+            readTimeout = 8000
+        }
+
+    private fun sampleSizeFor(width: Int, height: Int): Int {
+        var sample = 1
+        while (maxOf(width / sample, height / sample) > MAX_DECODED_COVER_DIMENSION) {
+            sample *= 2
+        }
+        return sample
     }
 
     /** bitmap 写入分享缓存目录（长宣传图落盘） */
@@ -83,6 +106,7 @@ open class ShareImageLoader {
 
     companion object {
         private const val TAG = "ShareImageLoader"
+        private const val MAX_DECODED_COVER_DIMENSION = 1440
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 }

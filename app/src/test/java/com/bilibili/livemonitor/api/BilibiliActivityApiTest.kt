@@ -192,6 +192,7 @@ class BilibiliActivityApiTest {
         assertEquals("数组形态视频", av!!.title)
         assertEquals(116853292667144L, av.aid)
         assertEquals(3546L, av.playCount)
+        assertEquals("最新非置顶视频必须单独保留", av, (result as BilibiliActivityApi.ActivityResult.Ok).data.latestAvItem)
     }
 
     @Test
@@ -211,6 +212,31 @@ class BilibiliActivityApiTest {
         assertEquals("必须跳过置顶取到新动态", "1231913654110126086", info.id)
         assertEquals("今天的新动态", info.displayText)
         assertFalse(info.isTop)
+    }
+
+    @Test
+    fun `parseDynamicFeed 保留置顶视频同时返回最新非置顶动态`() {
+        val json = """{"code":0,"data":{"items":[
+            {"id_str":"pinned","type":"DYNAMIC_TYPE_AV",
+             "modules":[
+                {"module_author":{"is_top":true,"pub_ts":100}},
+                {"module_dynamic":{"dyn_archive":{"aid":"500","bvid":"BVpin","title":"置顶视频","duration_text":"01:00","cover":"","stat":{"play":0,"like":0}}}}
+             ]},
+            {"id_str":"latest","type":"DYNAMIC_TYPE_DRAW",
+             "modules":[
+                {"module_author":{"is_top":false,"pub_ts":200}},
+                {"module_desc":{"text":"刚发的新动态"}}
+             ]}
+        ]}}"""
+
+        val result = api.parseDynamicFeed(json)
+        assertTrue(result is BilibiliActivityApi.ActivityResult.Ok)
+        val info = (result as BilibiliActivityApi.ActivityResult.Ok).data
+        assertEquals("latest", info.id)
+        assertFalse(info.isTop)
+        assertNotNull("置顶视频必须单独保留", info.pinnedAvItem)
+        assertEquals(500L, info.pinnedAvItem!!.aid)
+        assertEquals("置顶视频", info.pinnedAvItem!!.title)
     }
 
     @Test

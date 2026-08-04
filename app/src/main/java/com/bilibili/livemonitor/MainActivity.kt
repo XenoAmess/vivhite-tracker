@@ -40,6 +40,8 @@ import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
@@ -128,11 +130,19 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         // targetSdk 35+ 强制 edge-to-edge，头像会顶到状态栏下面被遮挡；
-        // 把系统栏高度加进顶部 padding（保留原有 24dp 内边距，与 LogActivity 同款处理）
+        // 把系统栏高度加进上下 padding，避免底部操作落到导航手势区。
+        val basePaddingLeft = binding.root.paddingLeft
         val basePaddingTop = binding.root.paddingTop
+        val basePaddingRight = binding.root.paddingRight
+        val basePaddingBottom = binding.root.paddingBottom
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
             val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            v.setPadding(v.paddingLeft, basePaddingTop + bars.top, v.paddingRight, v.paddingBottom)
+            v.setPadding(
+                basePaddingLeft + bars.left,
+                basePaddingTop + bars.top,
+                basePaddingRight + bars.right,
+                basePaddingBottom + bars.bottom
+            )
             insets
         }
 
@@ -171,6 +181,13 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         stopPreview()
+    }
+
+    override fun onDestroy() {
+        magicAlarmBannerRefresh = null
+        updateScope.cancel()
+        shareScope.cancel()
+        super.onDestroy()
     }
 
     private fun setupUI() {
@@ -252,6 +269,9 @@ class MainActivity : AppCompatActivity() {
     private val updateScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob()
     )
+
+    // 整张宣传图的 Canvas 合成与 QR 生成不能占主线程；测试可注入 Unconfined 做同步断言。
+    internal var promoRenderDispatcher: CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default
 
     // 前台每日一次静默自动检测：到点先落时间戳（失败也节流，避免每次进 App 都打 API）
     internal fun autoCheckUpdateIfDue(now: Long = System.currentTimeMillis()) {
@@ -510,8 +530,11 @@ class MainActivity : AppCompatActivity() {
             val daysInMonth = first.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
             val margin = (2 * resources.displayMetrics.density).toInt()
             // 单元格宽度必须给外边距留量，否则 7×(cell+2m) 超出网格把周六列切出屏幕
+            val fallbackGridWidth = (
+                resources.displayMetrics.widthPixels - (56 * resources.displayMetrics.density).toInt()
+            ).coerceAtLeast(7 * (2 * margin + 1))
             val cellSize = calendarCellSizePx(
-                grid.width.takeIf { it > 0 } ?: (120 + 2 * margin) * 7, margin
+                grid.width.takeIf { it > 0 } ?: fallbackGridWidth, margin
             )
             repeat(firstWeekday - 1) {
                 val blank = android.widget.TextView(this)
@@ -682,6 +705,8 @@ class MainActivity : AppCompatActivity() {
 
         refreshCalendar(); refreshEditors()
         dialog.show()
+        // AlertDialog show 后才有真实宽度；重绘一次保证分屏/横屏用实际网格尺寸。
+        grid.post { refreshCalendar() }
     }
 
     private fun computeActivitySubtitle(): String {
@@ -1336,7 +1361,7 @@ class MainActivity : AppCompatActivity() {
             val headline = if (isLive && !title.isNullOrBlank()) "白绮开播啦！「$title」"
                            else com.bilibili.livemonitor.domain.ShareTextDecider.title(isLive, title)
             val body = com.bilibili.livemonitor.domain.ShareTextDecider.body(isLive, QqShare.ROOM_ID, title)
-            showPromoPreview(coverBitmap, headline, body)
+            showPromoPreview(coverBitmap, headline, body, isLive)
         }
     }
 
@@ -1344,11 +1369,18 @@ class MainActivity : AppCompatActivity() {
      * 宣传图预览对话框：53 种风格 chip 列表，点切换即时重渲染，选择持久化，点「分享」才落盘发出。
      * chip 用色点 + 名字 3 列网格（RecyclerView + GridLayoutManager）。
      */
-    internal fun showPromoPreview(cover: android.graphics.Bitmap?, headline: String, body: String) {
+    internal fun showPromoPreview(
+        cover: android.graphics.Bitmap?,
+        headline: String,
+        body: String,
+        isLive: Boolean = false
+    ) {
         val view = layoutInflater.inflate(R.layout.dialog_promo_preview, null)
         val iv = view.findViewById<android.widget.ImageView>(R.id.ivPromoPreview)
         val rv = view.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvPromoStyles)
+        val shareButton = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoShare)
         val dialog = AlertDialog.Builder(this).setView(view).create()
+        shareButton.isEnabled = false
 
         val allStyles = com.bilibili.livemonitor.util.PromoImageRenderer.Style.values()
         val initial: com.bilibili.livemonitor.util.PromoImageRenderer.Style = runCatching {
@@ -1356,11 +1388,38 @@ class MainActivity : AppCompatActivity() {
         }.getOrNull() ?: com.bilibili.livemonitor.util.PromoImageRenderer.Style.LIGHT_CARD
         var current: com.bilibili.livemonitor.util.PromoImageRenderer.Style = initial
         var bitmap: android.graphics.Bitmap? = null
+        var renderJob: kotlinx.coroutines.Job? = null
+        var renderGeneration = 0
+        var disposed = false
 
         fun rerender() {
-            bitmap = com.bilibili.livemonitor.util.PromoImageRenderer.render(current, cover, headline, body)
-            iv.setImageBitmap(bitmap)
             rv.adapter?.notifyDataSetChanged()
+            shareButton.isEnabled = false
+            val requestedStyle = current
+            val generation = ++renderGeneration
+            renderJob?.cancel()
+            renderJob = shareScope.launch {
+                // Keep ownership until the coroutine has resumed successfully: Canvas rendering is
+                // non-cooperative, so a cancelled render can otherwise orphan its native bitmap.
+                var rendered: android.graphics.Bitmap? = null
+                try {
+                    withContext(promoRenderDispatcher) {
+                        rendered = com.bilibili.livemonitor.util.PromoImageRenderer.render(
+                        requestedStyle, cover, headline, body, isLive
+                        )
+                    }
+                    val currentBitmap = rendered ?: return@launch
+                    if (disposed || generation != renderGeneration) return@launch
+                    val previous = bitmap
+                    bitmap = currentBitmap
+                    rendered = null
+                    iv.setImageBitmap(currentBitmap)
+                    previous?.recycle()
+                    shareButton.isEnabled = true
+                } finally {
+                    rendered?.recycle()
+                }
+            }
         }
 
         val names = resources.getStringArray(R.array.promo_style_names)
@@ -1397,18 +1456,25 @@ class MainActivity : AppCompatActivity() {
 
             override fun getItemCount(): Int = allStyles.size
         }
+        dialog.setOnDismissListener {
+            disposed = true
+            renderGeneration++
+            renderJob?.cancel()
+            bitmap?.recycle()
+            bitmap = null
+        }
+        dialog.show()
         rerender()
 
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoShare)
-            .setOnClickListener {
+        shareButton.setOnClickListener {
                 val bmp = bitmap ?: return@setOnClickListener
+                // 分享协程接管位图所有权，dialog dismiss 不得抢先 recycle。
+                bitmap = null
                 dialog.dismiss()
                 sharePromoBitmap(bmp, body)
             }
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoCancel)
             .setOnClickListener { dialog.dismiss() }
-
-        dialog.show()
     }
 
     private fun sharePromoBitmap(promo: android.graphics.Bitmap, body: String) {
@@ -1726,10 +1792,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun startMonitoring() {
         preferenceManager.saveRoomId(ROOM_ID)
-        preferenceManager.setServiceRunning(true)
+        val generation = preferenceManager.beginMonitoringSession()
 
         val serviceIntent = Intent(this, LiveCheckService::class.java).apply {
             putExtra(LiveCheckService.EXTRA_ROOM_ID, ROOM_ID)
+            putExtra(LiveCheckService.EXTRA_MONITORING_GENERATION, generation)
         }
         ContextCompat.startForegroundService(this, serviceIntent)
 
@@ -1743,12 +1810,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopMonitoring() {
+        val generation = preferenceManager.getMonitoringGeneration()
         preferenceManager.setServiceRunning(false)
-        // 发送停止命令，让服务自己停止（避免自动重启）
-        val stopIntent = Intent(this, LiveCheckService::class.java).apply {
-            action = LiveCheckService.ACTION_STOP_SERVICE
+        // 服务已死时不能为投递 STOP 再创建它；直接清理残留 Alarm/Worker 即可。
+        com.bilibili.livemonitor.worker.LiveCheckWorker.cancelAll(this)
+        LiveCheckService.cancelScheduledChecks(this)
+        if (LiveCheckService.isRunning) {
+            // STOP 绑定当前会话。用户快速重新开始后，旧 STOP 会被服务识别为过期命令。
+            val stopIntent = Intent(this, LiveCheckService::class.java).apply {
+                action = LiveCheckService.ACTION_STOP_SERVICE
+                putExtra(LiveCheckService.EXTRA_MONITORING_GENERATION, generation)
+            }
+            startService(stopIntent)
         }
-        startService(stopIntent)
 
         Toast.makeText(this, "已停止监控", Toast.LENGTH_SHORT).show()
 

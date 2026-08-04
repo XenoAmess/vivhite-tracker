@@ -52,6 +52,10 @@ open class BilibiliActivityApi {
      * @param avItem 该动态附带的视频（DYNAMIC_TYPE_AV 时存在；其他类型为 null）
      * @param isTop 是否置顶
      * @param pubTs 发布时间戳（秒）
+     * @param pinnedAvItem 当前置顶的视频。它和 latest dynamic 是两条独立语义，避免
+     * 最新非置顶动态掩盖置顶变更。
+     * @param latestAvItem feed 中最新的非置顶视频。最新动态为图文时，视频监控仍可
+     * 正确推进投稿基线。
      */
     data class DynamicInfo(
         val id: String,
@@ -59,7 +63,9 @@ open class BilibiliActivityApi {
         val displayText: String,
         val avItem: AvItem?,
         val isTop: Boolean,
-        val pubTs: Long
+        val pubTs: Long,
+        val pinnedAvItem: AvItem? = null,
+        val latestAvItem: AvItem? = null
     )
 
     /**
@@ -87,10 +93,13 @@ open class BilibiliActivityApi {
             val data = obj.optJSONObject("data") ?: return ActivityResult.Err("missing data")
             val items = data.optJSONArray("items") ?: return ActivityResult.NoData
             if (items.length() == 0) return ActivityResult.NoData
-            // 跳过置顶：置顶动态恒居 items[0]，只取第 0 条会让 last_dynamic_id
-            // 永远是置顶那条，新动态全部漏检（2026-08-02 线上实锤：
-            // 置顶 id=896036023158439940 占位，当日新动态在 items[1] 不可见）
+            // 置顶动态恒居 items[0]，不能把它当作最新动态；但置顶视频本身也必须
+            // 单独保留，否则下层永远无法感知置顶变更。
             var firstErr: ActivityResult.Err? = null
+            var latest: DynamicInfo? = null
+            var fallback: DynamicInfo? = null
+            var pinnedAvItem: AvItem? = null
+            var latestAvItem: AvItem? = null
             for (i in 0 until items.length()) {
                 val item = items.optJSONObject(i) ?: continue
                 val info = parseDynamicItem(item)
@@ -98,13 +107,24 @@ open class BilibiliActivityApi {
                     if (firstErr == null) firstErr = ActivityResult.Err("parse failed: missing id")
                     continue
                 }
-                if (info.isTop) continue
-                return ActivityResult.Ok(info)
+                if (fallback == null) fallback = info
+                if (info.isTop) {
+                    pinnedAvItem = pinnedAvItem ?: info.avItem
+                    continue
+                }
+                latestAvItem = latestAvItem ?: info.avItem
+                if (latest == null) latest = info
             }
-            // 全是置顶（用户只置顶不发新内容）：回退用第 0 条，保证 baseline 能落
-            val fallback = items.optJSONObject(0)?.let { parseDynamicItem(it) }
-            if (fallback != null) {
-                ActivityResult.Ok(fallback)
+            // 全是置顶时仍回退该项以落动态基线；正常场景返回最新非置顶项，并携带
+            // 独立的置顶视频信息。
+            val result = latest ?: fallback
+            if (result != null) {
+                ActivityResult.Ok(
+                    result.copy(
+                        pinnedAvItem = pinnedAvItem,
+                        latestAvItem = latestAvItem
+                    )
+                )
             } else {
                 firstErr ?: ActivityResult.Err("parse failed: missing id")
             }

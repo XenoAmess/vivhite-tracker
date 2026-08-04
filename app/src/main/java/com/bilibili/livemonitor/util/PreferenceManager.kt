@@ -24,6 +24,24 @@ class PreferenceManager(context: Context) {
         return prefs.getBoolean(KEY_SERVICE_RUNNING, false)
     }
 
+    /**
+     * 用户每次开始监控都进入新会话。STOP intent 带着当时的会话号，延迟到达时不会
+     * 误杀已经重新开始的监控实例。
+     */
+    fun beginMonitoringSession(): Long {
+        val next = maxOf(
+            prefs.getLong(KEY_MONITORING_GENERATION, 0L) + 1,
+            System.currentTimeMillis()
+        )
+        prefs.edit()
+            .putLong(KEY_MONITORING_GENERATION, next)
+            .putBoolean(KEY_SERVICE_RUNNING, true)
+            .apply()
+        return next
+    }
+
+    fun getMonitoringGeneration(): Long = prefs.getLong(KEY_MONITORING_GENERATION, 0L)
+
     fun setLastCheck(timeMillis: Long, isLive: Boolean, success: Boolean) {
         prefs.edit()
             .putLong(KEY_LAST_CHECK_TIME, timeMillis)
@@ -243,6 +261,7 @@ class PreferenceManager(context: Context) {
         private const val PREF_NAME = "bilibili_live_monitor"
         private const val KEY_ROOM_ID = "room_id"
         private const val KEY_SERVICE_RUNNING = "service_running"
+        private const val KEY_MONITORING_GENERATION = "monitoring_generation"
         private const val KEY_LAST_CHECK_TIME = "last_check_time"
         private const val KEY_LAST_CHECK_LIVE = "last_check_live"
         private const val KEY_LAST_CHECK_SUCCESS = "last_check_success"

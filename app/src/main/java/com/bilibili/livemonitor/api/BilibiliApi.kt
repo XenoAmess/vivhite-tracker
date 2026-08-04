@@ -29,9 +29,10 @@ open class BilibiliApi : LiveStatusChecker {
 
     // internal open：测试可注入 fake 实现验证兜底编排
     internal open suspend fun checkByApi(roomId: Long): LiveStatus {
+        var connection: HttpsURLConnection? = null
         return try {
             val url = URL("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId")
-            val connection = url.openConnection() as HttpsURLConnection
+            connection = url.openConnection() as HttpsURLConnection
             connection.apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
@@ -41,13 +42,13 @@ open class BilibiliApi : LiveStatusChecker {
             }
 
             val response = connection.inputStream.bufferedReader().use { it.readText() }
-            connection.disconnect()
-
             parseApiResponse(response)
         } catch (e: IOException) {
             LiveStatus.Error("api network error: ${e.message}")
         } catch (e: Exception) {
             LiveStatus.Error("api error: ${e.javaClass.simpleName}: ${e.message}")
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -68,9 +69,9 @@ open class BilibiliApi : LiveStatusChecker {
                 if (status != null) return status
             }
 
-            // 备用方法：检查页面上的开播标识
-            val liveBadge = doc.select(".live-status, .living-icon, [class*='live'], [class*='living']")
-            if (liveBadge.isNotEmpty()) LiveStatus.Live() else LiveStatus.NotLive
+            // 页面样式类常含 live/living（按钮、脚本容器等），不能据此把未知状态写成
+            // NotLive 或 Live。没有明确的状态字段时保留 Error，让上层重试且不污染基线。
+            LiveStatus.Error("webpage status unavailable")
         } catch (e: IOException) {
             LiveStatus.Error("webpage network error: ${e.message}")
         } catch (e: Exception) {
@@ -91,9 +92,10 @@ open class BilibiliApi : LiveStatusChecker {
      * 替代旧版 fetchRoomCover（标题之前被丢弃了，现在一次请求拿回）。
      */
     suspend fun fetchRoomInfo(roomId: Long): RoomInfo? = withContext(Dispatchers.IO) {
+        var connection: HttpsURLConnection? = null
         try {
             val url = URL("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId")
-            val connection = url.openConnection() as HttpsURLConnection
+            connection = url.openConnection() as HttpsURLConnection
             connection.apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
@@ -102,14 +104,17 @@ open class BilibiliApi : LiveStatusChecker {
                 readTimeout = 5000
             }
             val response = connection.inputStream.bufferedReader().use { it.readText() }
-            connection.disconnect()
+            val status = parseApiResponse(response)
+            if (status is LiveStatus.Error) return@withContext null
             RoomInfo(
                 title = parseRoomTitle(response),
                 cover = parseRoomCover(response),
-                live = parseApiResponse(response) is LiveStatus.Live
+                live = status is LiveStatus.Live
             )
         } catch (e: Exception) {
             null
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -119,9 +124,10 @@ open class BilibiliApi : LiveStatusChecker {
      * 返回 null = 网络/API 异常（调用方用静态兜底图）。
      */
     suspend fun fetchAnchorFace(mid: Long): String? = withContext(Dispatchers.IO) {
+        var connection: HttpsURLConnection? = null
         try {
             val url = URL("https://api.bilibili.com/x/space/acc/info?mid=$mid")
-            val connection = url.openConnection() as HttpsURLConnection
+            connection = url.openConnection() as HttpsURLConnection
             connection.apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
@@ -130,10 +136,11 @@ open class BilibiliApi : LiveStatusChecker {
                 readTimeout = 5000
             }
             val response = connection.inputStream.bufferedReader().use { it.readText() }
-            connection.disconnect()
             parseFace(response)
         } catch (e: Exception) {
             null
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -177,14 +184,22 @@ open class BilibiliApi : LiveStatusChecker {
         internal fun parseApiResponse(response: String): LiveStatus {
             return try {
                 val json = JSONObject(response)
+                val code = json.optInt("code", Int.MIN_VALUE)
+                if (code != 0) {
+                    return LiveStatus.Error("api response code=$code message=${json.optString("message")}")
+                }
                 val data = json.optJSONObject("data")
                     ?: return LiveStatus.Error("api response missing data field")
-                val liveStatus = data.optInt("live_status", 0)
-                if (liveStatus == 1) {
-                    // live_start_time 用于"观播静音绑定本场直播"：新一场开播时自动解除静音
-                    LiveStatus.Live(data.optString("live_start_time").takeIf { it.isNotBlank() })
-                } else {
-                    LiveStatus.NotLive
+                if (!data.has("live_status")) {
+                    return LiveStatus.Error("api response missing live_status")
+                }
+                when (val liveStatus = data.optInt("live_status", -1)) {
+                    1 -> {
+                        // live_start_time 用于"观播静音绑定本场直播"：新一场开播时自动解除静音
+                        LiveStatus.Live(data.optString("live_start_time").takeIf { it.isNotBlank() })
+                    }
+                    0, 2 -> LiveStatus.NotLive
+                    else -> LiveStatus.Error("api response unknown live_status=$liveStatus")
                 }
             } catch (e: Exception) {
                 LiveStatus.Error("api parse error: ${e.javaClass.simpleName}: ${e.message}")
@@ -193,21 +208,22 @@ open class BilibiliApi : LiveStatusChecker {
 
         // 返回null表示脚本中未找到状态信息
         internal fun parseScriptContent(text: String): LiveStatus? {
-            if (!text.contains("live_status") && !text.contains("\"status\":")) return null
-
-            val statusMatch = Regex("\"live_status\"\\s*:\\s*(\\d)").find(text)
+            val statusMatch = Regex("\"live_status\"\\s*:\\s*(\\d+)").find(text)
             if (statusMatch != null) {
-                val status = statusMatch.groupValues[1].toIntOrNull() ?: 0
-                return if (status == 1) LiveStatus.Live() else LiveStatus.NotLive
+                return when (statusMatch.groupValues[1].toIntOrNull()) {
+                    1 -> LiveStatus.Live()
+                    0, 2 -> LiveStatus.NotLive
+                    else -> null
+                }
             }
 
             val statusMatch2 = Regex("\"status\"\\s*:\\s*\"?([^\"\\s,}]+)\"?").find(text)
             if (statusMatch2 != null) {
                 val status = statusMatch2.groupValues[1]
-                return if (status == "LIVE" || status == "1" || status == "true") {
-                    LiveStatus.Live()
-                } else {
-                    LiveStatus.NotLive
+                return when (status.uppercase()) {
+                    "LIVE", "1", "TRUE" -> LiveStatus.Live()
+                    "NOT_LIVE", "OFFLINE", "0", "2", "FALSE" -> LiveStatus.NotLive
+                    else -> null
                 }
             }
             return null

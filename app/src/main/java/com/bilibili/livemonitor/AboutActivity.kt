@@ -15,10 +15,18 @@ class AboutActivity : AppCompatActivity() {
 
         // 同 LogActivity：edge-to-edge 下把状态栏高度补进顶部 padding
         val root = findViewById<LinearLayout>(R.id.aboutRoot)
+        val basePaddingLeft = root.paddingLeft
         val basePaddingTop = root.paddingTop
+        val basePaddingRight = root.paddingRight
+        val basePaddingBottom = root.paddingBottom
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            v.setPadding(v.paddingLeft, basePaddingTop + bars.top, v.paddingRight, v.paddingBottom)
+            v.setPadding(
+                basePaddingLeft + bars.left,
+                basePaddingTop + bars.top,
+                basePaddingRight + bars.right,
+                basePaddingBottom + bars.bottom
+            )
             insets
         }
 

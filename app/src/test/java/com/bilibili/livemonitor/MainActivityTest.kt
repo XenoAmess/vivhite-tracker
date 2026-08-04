@@ -321,6 +321,7 @@ class MainActivityTest {
         // 不带 setPackage，让系统选择器自己列所有能解析的 bilibili 客户端
         assertEquals(null, bilibiliIntent.`package`)
     }
+    @Test
     fun `监控中点打开直播间 置观播静音但不停止监控`() {        // 用户需求：点打开直播间后持续监控，本场直播结束前不再响铃
         makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
         prefs.setServiceRunning(true)
@@ -1031,6 +1032,7 @@ class MainActivityTest {
     fun `宣传图 预览后点分享 intent 带png图片流与状态文案`() {
         // 用户场景：选生成宣传图 → 预览对话框（三风格可切）→ 点分享 → 系统面板
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.promoRenderDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
         activity.roomInfoFetcher = {
             com.bilibili.livemonitor.api.BilibiliApi.RoomInfo("失眠 无言", "https://i0.hdslb.com/c.jpg", true)
         }
@@ -1045,8 +1047,11 @@ class MainActivityTest {
             d != null && d.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoShare) != null
         }
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-        dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoShare)
-            .performClick()
+        val shareButton = dialog.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPromoShare)
+        waitShareResult("promo preview rendered") {
+            shareButton.isEnabled && dialog.findViewById<android.widget.ImageView>(R.id.ivPromoPreview).drawable != null
+        }
+        shareButton.performClick()
         waitShareResult("promo share intent") {
             shadowOf(context).peekNextStartedActivity() != null
         }
@@ -1292,11 +1297,13 @@ class MainActivityTest {
     fun `宣传图预览对话框 chip列表切换风格重渲染且记住选择`() {
         // 用户需求：50+ 种风格 chip 列表可切换看效果，选择要持久化
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.promoRenderDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
 
         activity.showPromoPreview(null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
 
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
         val iv = dialog.findViewById<android.widget.ImageView>(R.id.ivPromoPreview)!!
+        waitShareResult("default promo preview rendered") { iv.drawable != null }
         assertNotNull("默认风格应立即渲染预览", iv.drawable)
         val rv = dialog.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvPromoStyles)!!
         assertEquals("chip 列表必须含全部 53 种风格", 53, rv.adapter!!.itemCount)
@@ -1324,8 +1331,12 @@ class MainActivityTest {
         // 2026-08-03 用户反馈：预览图无限高 + rv 320dp 把「取消/分享」挤出屏幕，
         // 选中勾是纯黑方块无语义，深色色点是方形像污渍
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.promoRenderDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
         activity.showPromoPreview(null, "白绮还没开播", "白绮还没开播，先来直播间蹲一个开播！")
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        waitShareResult("promo preview rendered") {
+            dialog.findViewById<android.widget.ImageView>(R.id.ivPromoPreview).drawable != null
+        }
 
         // 取消/分享按钮必须在布局中存在且可见（被挤出屏幕的根因是预览图无限高，
         // 现在 maxHeight=240dp 限制住了）

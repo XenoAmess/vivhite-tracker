@@ -8,10 +8,11 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.domain.MagicPeriod
-import com.bilibili.livemonitor.util.FakeExoPlayer
+import com.bilibili.livemonitor.service.MagicAlertService
 import com.bilibili.livemonitor.util.MagicPeriodStore
 import com.bilibili.livemonitor.util.PreferenceManager
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -30,19 +31,19 @@ class MagicEndReceiverTest {
 
     private val context: Application = ApplicationProvider.getApplicationContext()
     private lateinit var prefs: PreferenceManager
+    private var alertStarted = false
 
     @Before
     fun setUp() {
         prefs = PreferenceManager(context)
         prefs.setMagicPeriodsJson("[]")
-        MagicEndReceiver.playerFactory = { FakeExoPlayer().player }
+        alertStarted = false
+        MagicEndReceiver.alertStarter = { alertStarted = true }
     }
 
     @After
     fun tearDown() {
-        MagicEndReceiver.playerFactory = { context ->
-            androidx.media3.exoplayer.ExoPlayer.Builder(context).build()
-        }
+        MagicEndReceiver.alertStarter = MagicAlertService::start
     }
 
     @Test
@@ -57,6 +58,7 @@ class MagicEndReceiverTest {
             "魔法期结束通知必须发出",
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_MAGIC)
         )
+        assertTrue("Receiver 必须交给前台服务播放铃声", alertStarted)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         assertTrue(
             "必须重排下一个未来结束闹钟",
@@ -88,5 +90,17 @@ class MagicEndReceiverTest {
         assertNotNull(shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_MAGIC))
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         assertTrue(shadowOf(alarmManager).scheduledAlarms.isEmpty())
+    }
+
+    @Test
+    fun `前台服务启动被拒绝时 仍以高优先级系统通知兜底`() {
+        MagicEndReceiver.alertStarter = { throw IllegalStateException("fgs not allowed") }
+
+        MagicEndReceiver().onReceive(context, Intent())
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notification = shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_MAGIC)
+        assertNotNull("前台服务失败时也必须可见提醒", notification)
+        assertEquals(android.app.Notification.PRIORITY_MAX, notification!!.priority)
     }
 }

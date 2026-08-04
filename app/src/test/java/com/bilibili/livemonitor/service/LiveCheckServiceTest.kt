@@ -152,6 +152,30 @@ class LiveCheckServiceTest {
     }
 
     @Test
+    fun `S3a 延迟旧START不得回退到已开始的新会话`() {
+        val oldGeneration = prefs.beginMonitoringSession()
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        val currentGeneration = prefs.beginMonitoringSession()
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive)
+
+        controller.withIntent(Intent(context, LiveCheckService::class.java).apply {
+            putExtra(LiveCheckService.EXTRA_MONITORING_GENERATION, currentGeneration)
+        }).startCommand(0, 1)
+        waitFor("current session checked") {
+            fakeApi.callCount == 1 && !service.isChecking.get()
+        }
+
+        controller.withIntent(Intent(context, LiveCheckService::class.java).apply {
+            putExtra(LiveCheckService.EXTRA_MONITORING_GENERATION, oldGeneration)
+        }).startCommand(0, 2)
+        Thread.sleep(300)
+
+        assertEquals("延迟旧START不得再次检测", 1, fakeApi.callCount)
+        assertTrue("当前监控会话必须保持运行", LiveCheckService.isRunning)
+    }
+
+    @Test
     fun `S4 系统销毁时prefs保持true且发送重启广播`() {
         // 真机场景：系统内存压力杀服务，必须能经 ServiceRestartReceiver 自拉起
         prefs.setServiceRunning(true)
@@ -225,6 +249,7 @@ class LiveCheckServiceTest {
         prefs.setServiceRunning(true)
         fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live())
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         controller.startCommand(0, 1)
         waitFor("first check done") { fakeApi.callCount >= 1 && prefs.getLastCheckTime() > 0 }
 
@@ -232,12 +257,16 @@ class LiveCheckServiceTest {
         // isChecking 锁未释放被跳过（真实场景 60s 间隔不存在此竞态）
         waitFor("alert notification", 20_000) {
             controller.startCommand(0, 2)
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT) != null
         }
-        val startedActivity = shadowOf(context).nextStartedActivity
-        assertNotNull("应启动全屏提醒", startedActivity)
-        assertEquals(AlertActivity::class.java.name, startedActivity.component?.className)
+        val alertNotification = shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT)!!
+        val fullScreenIntent = alertNotification.fullScreenIntent
+        assertNotNull("应配置全屏提醒", fullScreenIntent)
+        assertEquals(
+            AlertActivity::class.java.name,
+            shadowOf(fullScreenIntent!!).savedIntent.component?.className
+        )
+        assertNull("服务不得直接从后台启动提醒页", shadowOf(context).peekNextStartedActivity())
         // 宣传卖点是"响铃+震动"：铃声有 P 系用例守护，震动此前零断言
         val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE)
             as android.os.VibratorManager
@@ -357,10 +386,10 @@ class LiveCheckServiceTest {
         // 逐次驱动检测（每次等 handleResult 落盘再继续，避免轮询 startCommand
         // 把响应队列推进过头——CI 慢 runner 上曾因此误触发提醒）
         fun driveOneCheck(startId: Int) {
-            val before = prefs.getLastCheckTime()
+            val callsBefore = fakeApi.callCount
+            controller.startCommand(0, startId)
             waitFor("check advances", 15_000) {
-                controller.startCommand(0, startId)
-                prefs.getLastCheckTime() != before
+                fakeApi.callCount > callsBefore && !controller.get().isChecking.get()
             }
         }
 
@@ -437,10 +466,10 @@ class LiveCheckServiceTest {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         fun driveOneCheck(startId: Int) {
-            val before = prefs.getLastCheckTime()
+            val callsBefore = fakeApi.callCount
+            controller.startCommand(0, startId)
             waitFor("check advances", 15_000) {
-                controller.startCommand(0, startId)
-                prefs.getLastCheckTime() != before
+                fakeApi.callCount > callsBefore && !controller.get().isChecking.get()
             }
         }
 
@@ -488,10 +517,10 @@ class LiveCheckServiceTest {
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
 
         fun driveOneCheck(startId: Int) {
-            val before = prefs.getLastCheckTime()
+            val callsBefore = fakeApi.callCount
+            controller.startCommand(0, startId)
             waitFor("check advances", 15_000) {
-                controller.startCommand(0, startId)
-                prefs.getLastCheckTime() != before
+                fakeApi.callCount > callsBefore && !controller.get().isChecking.get()
             }
         }
 
@@ -570,6 +599,18 @@ class LiveCheckServiceTest {
     private fun driveCheckUntil(controller: ServiceController<LiveCheckService>, what: String, cond: () -> Boolean) {
         waitFor(what, 15_000) {
             controller.startCommand(0, (1..999).random())
+            cond()
+        }
+    }
+
+    private fun driveActivityCheckUntil(
+        controller: ServiceController<LiveCheckService>,
+        what: String,
+        cond: () -> Boolean
+    ) {
+        waitFor(what, 15_000) {
+            controller.withIntent(Intent(LiveCheckService.ACTION_CHECK_DYNAMICS))
+                .startCommand(0, (1..999).random())
             cond()
         }
     }
@@ -744,6 +785,27 @@ class LiveCheckServiceTest {
             )
         )
 
+    private fun latestTextWithPinnedVideo(aid: Long, title: String) =
+        com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo(
+                id = "latest_text",
+                type = "DYNAMIC_TYPE_DRAW",
+                displayText = "最新图文动态",
+                avItem = null,
+                isTop = false,
+                pubTs = 1700000000L,
+                pinnedAvItem = com.bilibili.livemonitor.api.BilibiliActivityApi.AvItem(
+                    aid = aid,
+                    title = title,
+                    bvid = "BV$aid",
+                    durationText = "10:00",
+                    cover = "",
+                    playCount = 0,
+                    likeCount = 0
+                )
+            )
+        )
+
     /** 装配：fake live api（恒 NotLive 避免开播提醒干扰）+ fake activity api + fake 播放器 */
     private fun wireActivity(
         controller: ServiceController<LiveCheckService>,
@@ -772,7 +834,7 @@ class LiveCheckServiceTest {
         wireActivity(controller, activityApi, fakes)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        driveCheckUntil(controller, "video alert fired") { fakes.isNotEmpty() }
+        driveActivityCheckUntil(controller, "video alert fired") { fakes.isNotEmpty() }
 
         assertNotNull(
             "视频通知必须发出",
@@ -795,7 +857,7 @@ class LiveCheckServiceTest {
         val fakes = mutableListOf<FakeExoPlayer>()
         wireActivity(controller, activityApi, fakes)
 
-        driveCheckUntil(controller, "baseline recorded") { prefs.getLastVideoAid() == 300L }
+        driveActivityCheckUntil(controller, "baseline recorded") { prefs.getLastVideoAid() == 300L }
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         assertNull(
@@ -817,11 +879,11 @@ class LiveCheckServiceTest {
         fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        driveCheckUntil(controller, "first video notification") {
+        driveActivityCheckUntil(controller, "first video notification") {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO) != null
         }
         // 第二次检测：同 aid，不得再触发
-        driveCheckUntil(controller, "second check consumed") { activityApi.callCount >= 2 }
+        driveActivityCheckUntil(controller, "second check consumed") { activityApi.callCount >= 2 }
         Thread.sleep(300)
         assertEquals("同 aid 不得重复响铃", 1, fakes.size)
     }
@@ -837,7 +899,7 @@ class LiveCheckServiceTest {
         wireActivity(controller, activityApi, fakes)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        driveCheckUntil(controller, "dynamic notification") {
+        driveActivityCheckUntil(controller, "dynamic notification") {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC) != null
         }
 
@@ -921,7 +983,7 @@ class LiveCheckServiceTest {
         wireActivity(controller, activityApi, fakes)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        driveCheckUntil(controller, "dynamic notification after retry") {
+        driveActivityCheckUntil(controller, "dynamic notification after retry") {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC) != null
         }
 
@@ -943,7 +1005,7 @@ class LiveCheckServiceTest {
         wireActivity(controller, activityApi, fakes)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        driveCheckUntil(controller, "pinned-cancel notification") {
+        driveActivityCheckUntil(controller, "pinned-cancel notification") {
             shadowOf(nm).getNotification("白绮置顶已取消".hashCode()) != null
         }
     }
@@ -952,17 +1014,18 @@ class LiveCheckServiceTest {
     fun `A8 置顶新视频 发置顶视频变更通知且落盘`() {
         // 用户场景：UP 主置顶了一个新视频 → 用户要知道"置顶换了"
         prefs.setServiceRunning(true)
+        prefs.setMonitorDynamics(false)
         // 视频基线同 aid，避免新视频通知干扰；置顶基线 aid=500 → 换成 600
         prefs.setLastVideoAid(600L)
         prefs.setLastPinnedAid(500L)
         val activityApi = FakeActivityApi()
-        activityApi.enqueue(videoDynamic(600L, "新的置顶视频", isTop = true))
+        activityApi.enqueue(latestTextWithPinnedVideo(600L, "新的置顶视频"))
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
         val fakes = mutableListOf<FakeExoPlayer>()
         wireActivity(controller, activityApi, fakes)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        driveCheckUntil(controller, "pinned-change notification") {
+        driveActivityCheckUntil(controller, "pinned-change notification") {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO) != null
         }
 
@@ -972,6 +1035,46 @@ class LiveCheckServiceTest {
             notification?.extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()
         )
         assertEquals("新置顶必须落盘", 600L, prefs.getLastPinnedAid())
+    }
+
+    @Test
+    fun `A8a 首次观察置顶视频 只落基线不提醒`() {
+        prefs.setServiceRunning(true)
+        prefs.setMonitorVideos(false)
+        prefs.setMonitorDynamics(false)
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(latestTextWithPinnedVideo(600L, "历史置顶视频"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        driveActivityCheckUntil(controller, "pinned baseline recorded") {
+            prefs.getLastPinnedAid() == 600L
+        }
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        assertNull("首次置顶不得误报", shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO))
+        assertEquals("首次置顶不得响铃", 0, fakes.size)
+    }
+
+    @Test
+    fun `A8b 置顶视频也推进视频监控基线`() {
+        prefs.setServiceRunning(true)
+        prefs.setMonitorPinned(false)
+        prefs.setMonitorDynamics(false)
+        prefs.setLastVideoAid(100L)
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(latestTextWithPinnedVideo(200L, "新投稿后置顶"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        driveActivityCheckUntil(controller, "pinned video alert") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO) != null
+        }
+
+        assertEquals("置顶视频也必须更新视频基线", 200L, prefs.getLastVideoAid())
     }
 
     @Test
@@ -988,7 +1091,7 @@ class LiveCheckServiceTest {
         wireActivity(controller, activityApi, fakes)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        driveCheckUntil(controller, "video notification") {
+        driveActivityCheckUntil(controller, "video notification") {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO) != null
         }
 
@@ -1005,7 +1108,7 @@ class LiveCheckServiceTest {
         val fakes = mutableListOf<FakeExoPlayer>()
         wireActivity(controller, activityApi, fakes)
 
-        driveCheckUntil(controller, "activity api called") { activityApi.callCount >= 1 }
+        driveActivityCheckUntil(controller, "activity api called") { activityApi.callCount >= 1 }
         Thread.sleep(300)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -1104,6 +1207,28 @@ class LiveCheckServiceTest {
         assertTrue(
             "停止监控后不得重排动态闹钟",
             shadowOf(alarmManager).scheduledAlarms.isEmpty()
+        )
+    }
+
+    @Test
+    fun `D3 取消动态闹钟后撤销PendingIntent令下次会话可重排`() {
+        prefs.setServiceRunning(true)
+        prefs.setMonitorVideos(true)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val dynamicIntent = Intent(context, LiveCheckService::class.java).apply {
+            action = LiveCheckService.ACTION_CHECK_DYNAMICS
+        }
+        val flags = android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE
+        assertNotNull(
+            "启动时应建立动态闹钟 token",
+            android.app.PendingIntent.getService(context, 2002, dynamicIntent, flags)
+        )
+
+        LiveCheckService.cancelScheduledChecks(context)
+
+        assertNull(
+            "取消后不能留下 token，否则下次会话会误以为闹钟仍在",
+            android.app.PendingIntent.getService(context, 2002, dynamicIntent, flags)
         )
     }
 

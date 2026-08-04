@@ -6,14 +6,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.MainActivity
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.domain.MagicPeriodDecider
+import com.bilibili.livemonitor.service.MagicAlertService
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.MagicAlarmScheduler
 import com.bilibili.livemonitor.util.MagicPeriodStore
@@ -31,47 +28,23 @@ class MagicEndReceiver : BroadcastReceiver() {
         AppLogger.d(TAG, "MagicEndReceiver onReceive")
         val prefs = PreferenceManager(context)
 
-        // 响铃：复用开播提醒同一铃声源与音频属性（闹钟流，静音/勿扰下照响）
-        playAlertSound(context, prefs)
+        // Receiver 返回后系统可杀进程；响铃必须交给前台服务持有，不能靠延迟 Handler。
+        val alertStarted = try {
+            alertStarter(context)
+            true
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "start magic alert service failed", e)
+            false
+        }
 
         // 通知
-        sendNotification(context)
+        sendNotification(context, useSystemSoundFallback = !alertStarted)
 
         // 自排下一个未来结束
         rescheduleNext(context, prefs)
     }
 
-    private fun playAlertSound(context: Context, prefs: PreferenceManager) {
-        try {
-            val player = playerFactory(context)
-            val attrs = androidx.media3.common.AudioAttributes.Builder()
-                .setUsage(C.USAGE_ALARM)
-                .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)
-                .build()
-            player.setAudioAttributes(attrs, /* handleAudioFocus = */ false)
-            if (!alertSoundProvider.setupDataSource(context, player, prefs.getAlertSoundUri())) {
-                AppLogger.w(TAG, "all sound sources failed, skip magic alert sound")
-                player.release()
-                return
-            }
-            player.repeatMode = Player.REPEAT_MODE_ONE
-            player.playWhenReady = true
-            AppLogger.d(TAG, "magic alert sound playing")
-            // 10 秒后自动停（与开播提醒一致）
-            android.os.Handler(context.mainLooper).postDelayed({
-                try {
-                    player.stop()
-                    player.release()
-                } catch (e: Exception) {
-                    AppLogger.w(TAG, "stop magic alert sound failed", e)
-                }
-            }, 10_000L)
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "play magic alert sound failed", e)
-        }
-    }
-
-    private fun sendNotification(context: Context) {
+    private fun sendNotification(context: Context, useSystemSoundFallback: Boolean) {
         val pendingIntent = PendingIntent.getActivity(
             context, 0,
             Intent(context, MainActivity::class.java).apply {
@@ -79,15 +52,20 @@ class MagicEndReceiver : BroadcastReceiver() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_MAGIC_ID)
+        val builder = NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_MAGIC_ID)
             .setSmallIcon(R.drawable.img_on)
             .setContentTitle("魔法期结束！")
             .setContentText("白绮的魔法期已结束，快去看看她开播了没")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(if (useSystemSoundFallback) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .build()
+        if (useSystemSoundFallback) {
+            // 前台服务被系统拒绝时无法可靠持有自定义播放器，至少让系统通知通道
+            // 立即使用默认声音/震动提示用户，而不是静默丢失这次提醒。
+            builder.setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+        }
+        val notification = builder.build()
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(LiveMonitorApp.NOTIFICATION_ID_MAGIC, notification)
         AppLogger.d(TAG, "magic end notification posted")
@@ -106,11 +84,7 @@ class MagicEndReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "MagicEndReceiver"
 
-        // internal 便于测试注入 fake
-        internal var playerFactory: (Context) -> ExoPlayer = { context ->
-            ExoPlayer.Builder(context).build()
-        }
-        internal var alertSoundProvider: com.bilibili.livemonitor.util.AlertSoundProvider =
-            com.bilibili.livemonitor.util.AlertSoundProvider()
+        // internal 便于测试验证 Receiver 不再自行持有播放器。
+        internal var alertStarter: (Context) -> Unit = MagicAlertService::start
     }
 }

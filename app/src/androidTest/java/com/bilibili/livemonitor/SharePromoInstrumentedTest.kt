@@ -41,7 +41,8 @@ class SharePromoInstrumentedTest {
             val promo = PromoImageRenderer.render(
                 style, cover,
                 headline = "白绮开播啦！「失眠 无言」",
-                body = "白绮正在直播 · 11258892 · 「失眠 无言」"
+                body = "白绮正在直播 · 11258892 · 「失眠 无言」",
+                isLive = true
             )
             assertTrue("$style 宽度", promo.width == PromoImageRenderer.WIDTH)
             assertTrue("$style 高度", promo.height == PromoImageRenderer.HEIGHT)

@@ -57,6 +57,21 @@ class BilibiliApiTest {
     }
 
     @Test
+    fun `parseApiResponse success却缺live_status返回Error`() {
+        // 缺字段不能默认成未开播，否则会覆盖上一次确定状态并吞掉重试。
+        val result = BilibiliApi.parseApiResponse("""{"code":0,"data":{"room_id":11258892}}""")
+        assertTrue(result is BilibiliApi.LiveStatus.Error)
+    }
+
+    @Test
+    fun `parseApiResponse 非0 code即使带状态也返回Error`() {
+        val result = BilibiliApi.parseApiResponse(
+            """{"code":-352,"message":"风控","data":{"live_status":0}}"""
+        )
+        assertTrue(result is BilibiliApi.LiveStatus.Error)
+    }
+
+    @Test
     fun `parseApiResponse malformed json returns Error`() {
         val result = BilibiliApi.parseApiResponse("not a json")
         assertTrue(result is BilibiliApi.LiveStatus.Error)
@@ -87,6 +102,12 @@ class BilibiliApiTest {
     }
 
     @Test
+    fun `parseScriptContent status 带空白 returns Live`() {
+        val script = """{"status" : "LIVE","room_id":11258892}"""
+        assertEquals(BilibiliApi.LiveStatus.Live(), BilibiliApi.parseScriptContent(script))
+    }
+
+    @Test
     fun `parseScriptContent status 1 returns Live`() {
         val script = """{"status":1}"""
         assertEquals(BilibiliApi.LiveStatus.Live(), BilibiliApi.parseScriptContent(script))
@@ -103,6 +124,11 @@ class BilibiliApiTest {
         // 包含 live_status 字样但不构成 "live_status":N 模式
         val script = """var live_status = "unknown";"""
         assertNull(BilibiliApi.parseScriptContent(script))
+    }
+
+    @Test
+    fun `parseScriptContent 未知status不猜测未开播`() {
+        assertNull(BilibiliApi.parseScriptContent("""{"status":"PENDING"}"""))
     }
 
     @Test
