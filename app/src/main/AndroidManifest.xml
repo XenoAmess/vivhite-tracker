@@ -163,6 +163,18 @@
             android:name=".receiver.MagicEndReceiver"
             android:exported="false" />
 
+        <!-- 桌面小组件：系统/启动器需要绑定，exported=true -->
+        <receiver
+            android:name=".widget.LiveStatusWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/live_status_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

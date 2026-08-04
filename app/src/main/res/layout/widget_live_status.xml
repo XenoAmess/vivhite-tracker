@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widgetRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@color/widget_background"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <ImageView
+        android:id="@+id/ivWidgetIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@drawable/img_off"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="10dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvWidgetTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="牢白播了吗"
+            android:textSize="13sp"
+            android:textColor="@color/widget_text" />
+
+        <TextView
+            android:id="@+id/tvWidgetStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="未开播"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/widget_text" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnWidgetOpen"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="进入直播间"
+        android:textSize="13sp" />
+
+</LinearLayout>

@@ -337,8 +337,9 @@ class LiveCheckService : Service() {
         lastLiveStatus = isLive
         preferenceManager.setLastCheck(System.currentTimeMillis(), isLive, true)
 
-        // 更新通知栏图标
+        // 更新通知栏图标 + 桌面小组件
         updateNotification(isLive)
+        com.bilibili.livemonitor.widget.LiveStatusWidgetProvider.updateAll(this)
 
         // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播（静音期不提醒）
         val shouldAlert = LiveStateDecider.shouldAlert(lastStatus, isLive, suppressed)
