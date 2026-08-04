@@ -1,42 +1,37 @@
-# B 站全活动监控设计方案
+# B 站全活动监控设计
 
 ## 背景
 
-当前 App 只监控直播开播状态（`room/v1/Room/get_info`，单一布尔值）。本方案将其扩展为监控白绮在 B 站的所有公开活动：新视频投稿、置顶/代表作变化、动态（图文/专栏/转发/直播预告）。
+应用在直播开播监控之外，扩展监控白绮在 B 站的所有公开活动：新视频投稿、置顶/代表作变化、动态（图文/专栏/转发/直播预告）。
 
-## 调研结论（2026-07）
+**现状（2026-08）**：已落地。三个活动功能（视频 / 动态 / 置顶）统一由**一个**未登录可用的桌面端动态流端点驱动，不再需要 wbi 签名、buvid3 或登录态（早期方案的 wbi/风控管线已废弃，见「调研结论」）。
+
+## 调研结论（2026-07 实测，含废弃方案）
 
 ### B 站 API 能力矩阵
 
-| 活动类型 | 接口 | 未登录+无wbi | 必须 wbi | 必须 cookie/login | 可行性 |
-|---|---|---|---|---|---|
-| 直播开播状态 | `/room/v1/Room/get_info` | ✅ | | | ✅ 已实现 |
-| 投稿视频列表 | `/x/space/wbi/arc/search` | | ✅ | | ✅ 推荐首选 |
-| 置顶视频 | `/x/space/top/arc` | ✅ | | | ✅ 低成本补充 |
-| 代表作视频 | `/x/space/masterpiece` | ✅ | | | ✅ 低成本补充 |
-| 动态流 | `/x/polymer/web-dynamic/v1/feed/space` | | ✅ | 需 buvid3 + dm_img 风控套件（未登录）；登录则 SESSDATA | ⚠️ 脆弱 |
-| 专栏列表 | `/x/space/article/list` | ❌ 已废弃 | | | ❌ 走动态流 |
-| 评论监控 | 无"按 mid 查评论"接口 | | | | ❌ 放弃 |
+| 活动类型 | 接口 | 未登录 | 结论 |
+|---|---|---|---|
+| 直播开播状态 | `/room/v1/Room/get_info` | ✅ | ✅ 已实现 |
+| **视频/动态/置顶（合一）** | `/x/polymer/web-dynamic/desktop/v1/feed/space` | ✅（实测） | ✅ **当前采用** |
+| 投稿视频列表 | `/x/space/wbi/arc/search` | 需 wbi + dm_img | ❌ 已废弃 |
+| 动态流（移动端） | `/x/polymer/web-dynamic/v1/feed/space` | 需 buvid3 + wbi + dm_img，HTTP 412 | ❌ 已废弃 |
+| 置顶/代表作 | `/x/space/top/arc`、`/x/space/masterpiece` | ✅ | 已被桌面端 feed 的 `is_top`/`module_author` 覆盖 |
+| 专栏列表 | `/x/space/article/list` | 已废弃 | ❌ 走动态流 |
 
-### 动态流接口的动态类型
+**关键发现**：桌面端 `feed/space` 对未登录完全开放，一次请求同时返回：
+- 投稿视频（DYNAMIC_TYPE_AV / DYNAMIC_TYPE_ARCHIVE，含 aid/bvid/title/cover/play/like）
+- 图文动态（DYNAMIC_TYPE_DRAW）、转发（DYNAMIC_TYPE_FORWARD）、专栏（DYNAMIC_TYPE_ARTICLE）
+- 置顶标记（`module_author.is_top`）
 
-`feed/space` 返回的动态类型包括：`AV`（投稿视频）、`WORD`（纯文字）、`DRAW`（带图）、`ARTICLE`（专栏）、`OPUS`（图文新形态）、`FORWARD`（转发）、`LIVE_RCMD`（直播开播/预告）、`MUSIC`、`UGC_SEASON` 等。一条接口可覆盖视频/专栏/图文/直播预告，但风控"有运气成分"。
-
-### wbi 签名
-
-- 算法：① GET `/x/web-interface/nav` 拿 `img_key`/`sub_key`（全站统一，每日更替）② 用固定 64 长 `MIXIN_KEY_ENC_TAB` 置换表对 `img_key+sub_key` 重排取前 32 字符 → `mixin_key` ③ 参数加 `wts`=当前秒级时间戳，按 key 升序拼接为 query（百分号编码、大写、空格 `%20`、过滤 `!'()*`），末尾拼 `mixin_key`，MD5 取 hex → `w_rid`
-- 实现量：约 80-100 行 Kotlin，无第三方依赖（`java.security.MessageDigest` + `java.net.URLEncoder`）
-- key 缓存：每日更替，存 prefs，12 小时刷新一次，nav 接口挂了则降级
-
-### 合规风险
-
-原 `SocialSisterYi/bilibili-API-collect` 仓库已于 2026-01-28 因 B 站律师函永久关停。App 内**不内嵌 API 文档或接口列表**，只实现签名 + 调用。
+**废弃原因**：`wbi`/`buvid3`/`dm_img` 是登录/风控套件，未登录高频请求易被 -352/-412 风控；桌面端点免登录无此负担。原 `SocialSisterYi/bilibili-API-collect` 仓库已因律师函关停，App 内不内嵌 API 文档，只实现调用。
 
 ## 硬编码常量
 
 ```kotlin
-const val MONITOR_MID = 251990176L     // 白绮的 B 站 UID（从 room_id=11258892 的 get_info.uid 查得）
-const val MONITOR_ROOM_ID = 11258892L  // 现有
+// BilibiliActivityApi 伴生对象
+const val MONITOR_MID = 251990176L     // 白绮的 B 站 UID
+// 直播房间号 MONITOR_ROOM_ID = 11258892L 在 QqShare / LiveCheckService 等多处
 ```
 
 与房间号同策略：硬编码多处，改 mid 要全改。
@@ -44,36 +39,31 @@ const val MONITOR_ROOM_ID = 11258892L  // 现有
 ## 架构
 
 ```
-LiveCheckService 60s 周期（直播 + 视频 + 置顶）
-  ├─ checkLiveStatus()              [现有，不动]
-  ├─ if (prefs.monitorVideos)
-  │    checkNewVideos()              [新]
-  │     ├─ WbiSigner.sign → space/wbi/arc/search
-  │     ├─ 取列表第一个 avid
-  │     └─ ActivityDecider.shouldAlertVideo(newAid, lastAid)
-  ├─ if (prefs.monitorPinned)
-  │    checkPinnedVideo()            [新]
-  │     ├─ GET space/top/arc（无需 wbi）
-  │     └─ ActivityDecider.shouldAlertPinned(newAid, lastAid)
-  └─ triggerActivityAlert(type)
-       ├─ 通知（必发，点击跳对应页面）
-       └─ 响铃（仅当 prefs.alertRingOnActivity）
-
-独立 5min Alarm（动态流，风控脆弱，降频 + ±10s 抖动）
-  └─ if (prefs.monitorDynamics)
-       checkNewDynamics()            [新，实验]
-        ├─ buvid3 cookie + WbiSigner.sign → feed/space
-        ├─ 取第一条动态 id
-        └─ ActivityDecider.shouldAlertDynamic(newId, lastId)
+LiveCheckService（60s 直播检查，不动）
+   └─ 动态流独立 5min Alarm（±10s 抖动）→ ACTION_CHECK_DYNAMICS
+        └─ checkNewDynamics()
+             ├─ 前置：prefs.serviceRunning && 任一活动开关开启
+             ├─ fetchDynamicOnce() → BilibiliActivityApi.fetchLatestDynamic(MID)
+             │    └─ 桌面端 feed/space（未登录，无 wbi/buvid3）
+             ├─ Err/NoData → 等 15s 重试一次（对齐直播检测策略）
+             └─ handleDynamicResult(info)
+                  ├─ ① 视频基线：latestAvItem（置顶视频兜底）→ shouldAlertVideo → 视频提醒
+                  ├─ ② 动态基线：首条非置顶动态 id → shouldAlertDynamic → 动态提醒
+                  └─ ③ 置顶变化：pinnedAvItem → shouldAlertPinned → 置顶提醒
+                        └─ triggerActivityAlert(type)
+                             ├─ 通知（必发，点击跳对应页面）
+                             └─ 响铃（仅当 prefs.alert_ring_on_activity）
 ```
 
-### 为什么动态流单独 5min
+三个活动功能共用一次 feed 请求统一处理，而不是随直播检查每分钟打接口（防风控 + 省流量）。动态 Alarm 只在 `ACTION_CHECK_DYNAMICS` 完成后重排，避免 60s 直播检查把触发时间不断往后推。
 
-- 60s 轮询该接口偏激进，高频未登录请求来自同 IP 会触发 412/-352 风控
-- 5min + ±10s 随机抖动降低被识别为机器人的概率
-- 动态延迟 5min 可接受（不像开播需要秒级响应）
+## 为什么动态流单独 5min
 
-## 数据模型（PreferenceManager 新增 8 键）
+- 60s 轮询该接口偏激进，高频未登录请求易触发风控。
+- 5min + ±10s 随机抖动（`Math.random()*20s - 10s`）降低被识别为机器人的概率。
+- 动态延迟 5min 可接受（不像开播需要秒级响应）。
+
+## 数据模型（PreferenceManager，共 7 键）
 
 | 键 | 类型 | 默认 | 用途 |
 |---|---|---|---|
@@ -84,146 +74,96 @@ LiveCheckService 60s 周期（直播 + 视频 + 置顶）
 | `last_video_aid` | Long | -1 | 上次见到的最新视频 avid |
 | `last_pinned_aid` | Long | -1 | 上次见到的置顶视频 avid |
 | `last_dynamic_id` | String | "" | 上次见到的最新动态 id |
-| `wbi_img_key` | String | "" | wbi 签名 key 缓存 |
-| `wbi_sub_key` | String | "" | wbi 签名 key 缓存 |
-| `wbi_key_updated_at` | Long | 0 | wbi key 更新时间（12h 刷新） |
-| `buvid3` | String | "" | 动态流接口需要的 cookie |
 
-## 新增文件
+> 早期方案规划的 wbi_img_key / wbi_sub_key / wbi_key_updated_at / buvid3 4 个键，因桌面端点无需 wbi 已不落地。
 
-| 文件 | 职责 | 行数估 |
-|---|---|---|
-| `util/WbiSigner.kt` | wbi 签名 + key 缓存（每日更替，存 prefs） | ~100 |
-| `api/BilibiliActivityApi.kt` | 三源统一接口：视频列表 / 置顶视频 / 动态流 | ~200 |
-| `domain/ActivityDecider.kt` | 纯函数：比对 last_aid/last_dynamic_id 跳变 + 提醒决策 | ~60 |
-| `res/layout/dialog_activity_settings.xml` | 活动监控设置对话框 | ~50 |
+## 相关文件
 
-## 改动文件
-
-| 文件 | 改动 |
+| 文件 | 职责 |
 |---|---|
-| `PreferenceManager.kt` | +11 键 |
-| `LiveCheckService.kt` | 60s 周期加 `checkNewVideos()` + `checkPinnedVideo()`；新增独立 5min Alarm 调 `checkNewDynamics()` |
-| `LiveMonitorApp.kt` | 新通知通道 `video_alert`（MED）、`dynamic_alert`（LOW） |
-| `MainActivity.kt` | 新增「活动监控」按钮 + 设置对话框 + wbi key 初始化 + buvid3 获取 |
-| `activity_main.xml` | 新增「活动监控」按钮 |
-| `receiver/AlarmReceiver.kt` | 支持动态流 5min 独立 Alarm 的 action 区分 |
+| `api/BilibiliActivityApi.kt` | 桌面端 feed/space 拉取 + 解析（DynamicInfo 含 pinnedAvItem/latestAvItem） |
+| `domain/ActivityDecider.kt` | 纯函数：跳变检测 + 首次不提 |
+| `service/LiveCheckService.kt` | 5min Alarm + checkNewDynamics + handleDynamicResult + triggerActivityAlert |
+| `MainActivity.kt` + `dialog_activity_settings.xml` | 活动监控设置对话框（3 开关 + 响铃开关） |
+| `res/layout/expand_section_activity.xml` | 主界面「活动监控」折叠区 |
+| `LiveMonitorApp.kt` | 通知通道 `video_alert_v2` / `dynamic_alert_v2` |
 
-## wbi 签名实现要点
+## BilibiliActivityApi
 
-```kotlin
-object WbiSigner {
-    private val MIXIN_KEY_ENC_TAB = intArrayOf(
-        46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,
-        27,43,22,51,55,33,30,5,54,37,11,40,28,19,38,10,
-        // ... 共 64 个
-    )
+`fetchLatestDynamic(mid)` → `ActivityResult<DynamicInfo>`（Ok / NoData / Err）。
 
-    // 1. 拿 key（缓存到 prefs，12h 刷新）
-    suspend fun refreshKeysIfNeeded(prefs): Boolean
-
-    // 2. 签名
-    fun sign(params: Map<String, String>, imgKey: String, subKey: String): Map<String, String> {
-        val mixinKey = getMixinKey(imgKey + subKey)  // 置换取前32
-        val wts = (System.currentTimeMillis() / 1000).toString()
-        val signed = params + ("wts" to wts)
-        // 按 key 升序拼接，百分号编码（大写、空格%20、过滤!'()*）
-        // 末尾拼 mixinKey，MD5 取 hex → w_rid
-        return signed + ("w_rid" to wrid)
-    }
-}
-```
-
-## buvid3 cookie 获取（动态流专用）
-
-首次启动时访问 `https://www.bilibili.com/` 首页，从 Set-Cookie 头提取 `buvid3`。存 prefs，失效时重新获取。视频列表接口不需要 buvid3。
+- 端点：`/x/polymer/web-dynamic/desktop/v1/feed/space?host_mid=$mid&features=itemOpusStyle`。
+- `DynamicInfo`：`id`（去重）、`type`、`displayText`、`avItem`、`isTop`、`pubTs`，
+  另带 **`pinnedAvItem`**（当前置顶视频）与 **`latestAvItem`**（feed 中最新非置顶视频）两个独立字段——
+  最新动态为图文时，视频监控仍能正确推进投稿基线；置顶视频单独保留，避免被最新非置顶动态掩盖。
+- 解析兼容 `modules` 的 JSONObject / JSONArray 两种形态；`module_desc.text` 直挂与嵌套 `desc.text` 都兼容。
+- `parseDynamicFeed` 跳过置顶项（items[0] 恒为置顶），正常返回最新非置顶项；全是置顶时回退该项落基线。
 
 ## ActivityDecider（纯函数）
 
 ```kotlin
-object ActivityDecider {
-    sealed class ActivityType {
-        object Live : ActivityType()
-        data class Video(val aid: Long) : ActivityType()
-        data class Pinned(val aid: Long) : ActivityType()
-        data class Dynamic(val id: String, val displayText: String) : ActivityType()
-    }
-
-    // 首次启动策略：不提（只记录当前最新 id），避免装完就响一片
-    fun shouldAlertVideo(newAid: Long, lastAid: Long?): Boolean =
-        lastAid != null && newAid != lastAid
-
-    fun shouldAlertPinned(newAid: Long?, lastAid: Long?): Boolean =
-        lastAid != null && newAid != lastAid
-
-    fun shouldAlertDynamic(newId: String, lastId: String?): Boolean =
-        lastId != null && newId != lastId
+sealed class ActivityType {
+    object Live : ActivityType()
+    data class Video(val aid: Long, val title: String) : ActivityType()
+    data class Pinned(val aid: Long, val title: String) : ActivityType()
+    data class Dynamic(val id: String, val displayText: String) : ActivityType()
 }
+
+// 首次启动策略：不提（只记录当前最新 id），避免装完就响一片
+fun shouldAlertVideo(newAid: Long, lastAid: Long?): Boolean = lastAid != null && newAid != lastAid
+fun shouldAlertPinned(newAid: Long?, lastAid: Long?): Boolean = lastAid != null && newAid != lastAid
+fun shouldAlertDynamic(newId: String, lastId: String?): Boolean = lastId != null && newId != lastId
+fun longToNullable(value: Long): Long?     // -1 → null
+fun stringToNullable(value: String): String? // 空串 → null
 ```
 
-**关键设计：首次不提醒**——App 新装/升级后第一次检测只记录当前最新 id，不触发提醒。否则用户装完瞬间收到"新视频"通知（实际是历史视频）。
+**关键设计：首次不提醒**——App 新装/升级后第一次检测只记录当前最新 id，不触发提醒。否则用户装完瞬间收到"新视频"通知（实际是历史视频）。`Long?`/`String?` 让"未初始化"与"有效值"语义清晰。
 
 ## 提醒分级
 
 | 活动类型 | 通知通道 | 优先级 | 响铃 | 点击跳转 |
 |---|---|---|---|---|
 | 开播（现有） | `live_alert` (HIGH) | 高 | ✅ 默认 | AlertActivity → 直播间 |
-| 新视频 | `video_alert` (MED) | 中 | ⚙️ 可选（默认关） | `bilibili://video/{avid}` |
-| 置顶变化 | `video_alert` (MED) | 中 | ⚙️ 可选 | 跳新置顶视频 |
-| 新动态 | `dynamic_alert` (LOW) | 低 | ⚙️ 可选（默认关） | `bilibili://dynamic/{dynamic_id}` |
+| 新视频 | `video_alert_v2` (HIGH) | 高 | ⚙️ 可选（默认开） | `https://www.bilibili.com/video/av{aid}` |
+| 置顶变化 | `video_alert_v2` (HIGH) | 高 | ⚙️ 可选 | 跳新置顶视频 /「白绮置顶已取消」纯文本 |
+| 新动态 | `dynamic_alert_v2` (HIGH) | 高 | ⚙️ 可选（默认开） | `https://t.bilibili.com/{id}` |
 
-响铃复用 AlertSoundProvider（与开播提醒共享铃声源）。`alert_ring_on_activity=true` 时调 `playAlertSound()`，否则只发通知。
+要点：
+- **通道升 HIGH**：旧 `video_alert`/`dynamic_alert` 是 DEFAULT/LOW，被系统折叠无横幅（2026-08 用户反馈），
+  channel 重要性被系统记住后不可改，只能换新 id（`video_alert_v2`/`dynamic_alert_v2`），旧 id 在
+  LiveMonitorApp 启动时删除。
+- **点击跳转用官方 web 链接 + `setPackage` 强投递**到已装 B 站客户端；`bilibili://dynamic/{id}` 无路由、
+  `bilibili://dynamic/detail/{id}` 真机解析为空，均已废弃。未装客户端则浏览器兜底。
+- 响铃复用 AlertSoundProvider（与开播提醒共享铃声源），`alert_ring_on_activity=true` 时 `playAlertSound()`。
 
-## UI 设计
+## UI
 
-MainActivity 新增「活动监控」按钮 → 弹设置对话框：
+MainActivity「活动监控」折叠区 → 设置对话框（`dialog_activity_settings.xml`）：
 
 ```
 ┌─ 活动监控设置 ────────────────┐
-│                               │
 │  ☑ 监控新视频投稿             │
-│  ☐ 监控置顶视频变化           │
-│  ☐ 监控动态（实验，不稳定）    │
+│  ☑ 监控置顶视频变化           │
+│  ☑ 监控动态                   │
 │                               │
 │  ─────────────────            │
 │                               │
-│  ☐ 新视频/动态时也响铃         │
+│  ☑ 新视频/动态时也响铃         │
 │    （开播始终响铃，不受此控制） │
 │                               │
 │         [完成]                │
 └───────────────────────────────┘
 ```
 
-## 分阶段实施
+## 容错与已知坑
 
-| 阶段 | 内容 | 人日 |
-|---|---|---|
-| **阶段 1** | wbi 签名 + 新视频提醒（API + Decider + Service + 通知 + UI） | 3-4 |
-| **阶段 2** | 置顶/代表作变化（无 wbi，低成本） | 0.5 |
-| **阶段 3** | 动态流（buvid3 + dm_img + wbi + 5min 独立 Alarm + 踩坑） | 2-3 |
-| **测试** | 4-6 个新测试文件 | 1.5 |
-| **真机调试** | 风控踩坑 | 1-2 |
-| **合计** | | **8-10** |
+- 桌面端点间歇性返回 `code=0` 但 `items=[]`（2026-08-02 实测约 1/6 抽风率）：Err/NoData 统一等 15s 重试一次。
+- `activityCheckMutex` 防并发：上次检测未完成时跳过本次，避免重入。
+- 检测失败静默不扰 + AppLogger 记录，不阻塞直播监控。
 
-## 风险点
+## 测试
 
-1. **动态流接口"有运气成分"**：即便 wbi + buvid3 + dm_img 全做对，仍可能被 -352/-412 风控。UI 标注"实验功能"，检测失败时静默不扰 + AppLogger 记录
-2. **wbi key 每日更替**：缓存 + 失效重取，如果 nav 接口也挂了则降级到"仅直播监控"
-3. **B 站 API 随时可能变**：不内嵌 API 文档（合规风险），只实现签名 + 调用
-4. **60s 轮询视频列表**：比动态流稳定，但仍需关注风控。视频列表接口 `space/wbi/arc/search` 文档未标注频率限制，实测 60s 应可接受
-5. **动态流 5min Alarm**：Doze 下可能被节流到 15min，这是平台限制无法绕开
-
-## 测试计划
-
-| 测试文件 | 覆盖 |
-|---|---|
-| `domain/ActivityDeciderTest.kt`（新） | 纯函数：跳变检测、首次不提、各类型决策 |
-| `util/WbiSignerTest.kt`（新） | 签名算法正确性（固定 key → 固定 w_rid）、key 置换表 |
-| `api/BilibiliActivityApiTest.kt`（新） | JSON 解析、网络错误处理 |
-| `service/LiveCheckServiceTest.kt`（改） | 加：监控视频开关时周期检测调 API、不调 API |
-| `MainActivityTest.kt`（改） | 加：活动监控设置对话框、开关落 prefs |
-| `util/PreferenceManagerTest.kt`（改） | 加：11 个新键 round-trip + 默认值 |
-
-## Token 估算
-
-AI 辅助全流程约 **120-200 万 token**，动态流风控踩坑是变量。
+- `domain/ActivityDeciderTest.kt`：跳变检测、首次不提、各类型决策、null 转换。
+- `api/BilibiliActivityApiTest.kt`：桌面端 feed 解析（AV/DRAW/FORWARD/ARTICLE、置顶项跳过、两种 modules 形态）、错误处理。
+- `service/LiveCheckServiceTest.kt`：ACTION_CHECK_DYNAMICS 编排、15s 重试、三路提醒触发与去重、开关关闭时不调 API。
+- `api/BilibiliApiOrchestrationTest.kt` 等其他既有测试不破。
