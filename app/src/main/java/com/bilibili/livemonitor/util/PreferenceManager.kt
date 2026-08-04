@@ -239,6 +239,26 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_LAST_REMINDED_LIVE_DYNAMIC_ID, "") ?: ""
     }
 
+    // ========== 直播主题变化提醒 ==========
+
+    // 开播中标题变化时提醒，默认关
+    fun setNotifyTitleChange(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFY_TITLE_CHANGE, enabled).apply()
+    }
+
+    fun isNotifyTitleChange(): Boolean {
+        return prefs.getBoolean(KEY_NOTIFY_TITLE_CHANGE, false)
+    }
+
+    // 上次见到的直播标题（变化判定基线）
+    fun setLastLiveTitle(title: String) {
+        prefs.edit().putString(KEY_LAST_LIVE_TITLE, title).apply()
+    }
+
+    fun getLastLiveTitle(): String {
+        return prefs.getString(KEY_LAST_LIVE_TITLE, "") ?: ""
+    }
+
     // ========== B 站全活动监控 ==========
 
     // 监控新视频投稿，默认开
@@ -304,6 +324,18 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_LAST_DYNAMIC_ID, "") ?: ""
     }
 
+    // 动态类型过滤（勾选的类型才提醒），默认全开
+    fun setMonitorDynamicTypes(types: Set<String>) {
+        prefs.edit().putStringSet(KEY_MONITOR_DYNAMIC_TYPES, types).apply()
+    }
+
+    fun getMonitorDynamicTypes(): Set<String> {
+        return prefs.getStringSet(KEY_MONITOR_DYNAMIC_TYPES, DEFAULT_DYNAMIC_TYPES) ?: DEFAULT_DYNAMIC_TYPES
+    }
+
+    fun isDynamicTypeEnabled(type: String): Boolean =
+        type in getMonitorDynamicTypes()
+
     // 进程重启时恢复上次状态，避免重复提醒；超过10分钟视为过期（期间可能刚开播，应当提醒）
     fun getRecentLastStatus(maxAgeMillis: Long = 600_000L): Boolean? {
         return LiveStateDecider.restoreLastStatus(
@@ -356,6 +388,10 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_STREAM_END_TS = "last_stream_end_ts"
         private const val KEY_LAST_REMINDED_LIVE_DYNAMIC_ID = "last_reminded_live_dynamic_id"
 
+        // ===== 直播主题变化提醒 =====
+        private const val KEY_NOTIFY_TITLE_CHANGE = "notify_title_change"
+        private const val KEY_LAST_LIVE_TITLE = "last_live_title"
+
         // ===== B 站全活动监控 =====
         private const val KEY_MONITOR_VIDEOS = "monitor_videos"
         private const val KEY_MONITOR_PINNED = "monitor_pinned"
@@ -364,6 +400,10 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_VIDEO_AID = "last_video_aid"
         private const val KEY_LAST_PINNED_AID = "last_pinned_aid"
         private const val KEY_LAST_DYNAMIC_ID = "last_dynamic_id"
+        private const val KEY_MONITOR_DYNAMIC_TYPES = "monitor_dynamic_types"
+        private val DEFAULT_DYNAMIC_TYPES = setOf(
+            "DYNAMIC_TYPE_DRAW", "DYNAMIC_TYPE_FORWARD", "DYNAMIC_TYPE_ARTICLE"
+        )
 
         // ===== 宣传图 / 魔法期 =====
         private const val KEY_PROMO_STYLE = "promo_style"

@@ -324,6 +324,13 @@ class MainActivity : AppCompatActivity() {
                 onExpand = { view -> bindQuietSection(view) }
             ),
             SettingsEntry(
+                title = "直播提醒",
+                subtitle = "下播 / 标题变化",
+                iconRes = android.R.drawable.ic_lock_idle_lock,
+                expandLayoutRes = R.layout.expand_section_live_alerts,
+                onExpand = { view -> bindLiveAlertsSection(view) }
+            ),
+            SettingsEntry(
                 title = "更新设置",
                 subtitle = computeUpdateSubtitle(),
                 iconRes = android.R.drawable.ic_menu_manage,
@@ -793,6 +800,17 @@ class MainActivity : AppCompatActivity() {
         }, hour, minute, true).show()
     }
 
+    private fun bindLiveAlertsSection(view: android.view.View) {
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNotifyStreamEnd).apply {
+            isChecked = preferenceManager.isNotifyStreamEnd()
+            setOnCheckedChangeListener { _, c -> preferenceManager.setNotifyStreamEnd(c) }
+        }
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNotifyTitleChange).apply {
+            isChecked = preferenceManager.isNotifyTitleChange()
+            setOnCheckedChangeListener { _, c -> preferenceManager.setNotifyTitleChange(c) }
+        }
+    }
+
     private fun bindMaintenanceSection(view: android.view.View) {
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBackgroundSettings)
             .setOnClickListener { openBackgroundSettings() }
@@ -876,6 +894,20 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAlertRingOnActivity).apply {
             isChecked = preferenceManager.isAlertRingOnActivity()
             setOnCheckedChangeListener { _, c -> preferenceManager.setAlertRingOnActivity(c) }
+        }
+        bindDynamicTypeCheckbox(view, R.id.cbDynDraw, "DYNAMIC_TYPE_DRAW")
+        bindDynamicTypeCheckbox(view, R.id.cbDynForward, "DYNAMIC_TYPE_FORWARD")
+        bindDynamicTypeCheckbox(view, R.id.cbDynArticle, "DYNAMIC_TYPE_ARTICLE")
+    }
+
+    private fun bindDynamicTypeCheckbox(view: android.view.View, id: Int, type: String) {
+        view.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(id).apply {
+            isChecked = preferenceManager.isDynamicTypeEnabled(type)
+            setOnCheckedChangeListener { _, checked ->
+                val types = preferenceManager.getMonitorDynamicTypes().toMutableSet()
+                if (checked) types.add(type) else types.remove(type)
+                preferenceManager.setMonitorDynamicTypes(types)
+            }
         }
     }
 

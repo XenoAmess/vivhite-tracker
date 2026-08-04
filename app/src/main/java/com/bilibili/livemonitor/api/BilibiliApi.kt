@@ -9,7 +9,7 @@ import java.io.IOException
 open class BilibiliApi : LiveStatusChecker {
 
     sealed class LiveStatus {
-        data class Live(val liveStartTime: String? = null) : LiveStatus()
+        data class Live(val liveStartTime: String? = null, val title: String? = null) : LiveStatus()
         object NotLive : LiveStatus()
         data class Error(val reason: String) : LiveStatus()
     }
@@ -162,7 +162,11 @@ open class BilibiliApi : LiveStatusChecker {
                 when (val liveStatus = data.optInt("live_status", -1)) {
                     1 -> {
                         // live_start_time 用于"观播静音绑定本场直播"：新一场开播时自动解除静音
-                        LiveStatus.Live(data.optString("live_start_time").takeIf { it.isNotBlank() })
+                        // title 用于直播中主题变化提醒
+                        LiveStatus.Live(
+                            liveStartTime = data.optString("live_start_time").takeIf { it.isNotBlank() },
+                            title = parseRoomTitle(response)
+                        )
                     }
                     0, 2 -> LiveStatus.NotLive
                     else -> LiveStatus.Error("api response unknown live_status=$liveStatus")

@@ -299,6 +299,32 @@ class LiveCheckServiceTest {
     }
 
     @Test
+    fun `S17 直播中标题变化 开播超5分钟后提醒并记录基线`() {
+        prefs.setServiceRunning(true)
+        prefs.setNotifyTitleChange(true)
+        prefs.setLastLiveTitle("旧标题")
+        val now = System.currentTimeMillis()
+        // 直播从 10 分钟前开始
+        val startTs = ((now - 10 * 60_000) / 1000).toString()
+
+        fakeApi.enqueue(
+            BilibiliApi.LiveStatus.NotLive,
+            BilibiliApi.LiveStatus.Live(liveStartTime = startTs, title = "新标题")
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        controller.startCommand(0, 1) // NotLive
+        waitFor("check1 done") { fakeApi.callCount >= 1 && !service.isChecking.get() }
+        controller.startCommand(0, 2) // Live 新标题
+        waitFor("title change notif", 20_000) {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_TITLE_CHANGE) != null
+        }
+        assertNotNull(shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_TITLE_CHANGE))
+        assertEquals("标题基线必须更新", "新标题", prefs.getLastLiveTitle())
+    }
+
+    @Test
     fun `S16 开播记录场次 下播闭合并下发播提醒`() {
         prefs.setServiceRunning(true)
         fakeApi.enqueue(
@@ -968,6 +994,56 @@ class LiveCheckServiceTest {
         val before = shadowOf(nm).allNotifications.size
         driveActivityCheckUntil(controller, "second check done") { activityApi.callCount >= 2 }
         assertEquals("同一预告不得重复提醒", before, shadowOf(nm).allNotifications.size)
+    }
+
+    @Test
+    fun `A7 动态类型过滤 未勾选类型不提醒`() {
+        prefs.setServiceRunning(true)
+        prefs.setLastDynamicId("old")
+        prefs.setMonitorDynamicTypes(setOf("DYNAMIC_TYPE_DRAW")) // 只开图文
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok(
+                com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo(
+                    id = "fwd1", type = "DYNAMIC_TYPE_FORWARD", displayText = "转发内容",
+                    avItem = null, isTop = false, pubTs = 0
+                )
+            )
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        driveActivityCheckUntil(controller, "check done") { activityApi.callCount >= 1 }
+        assertNull("未勾选的 FORWARD 不得提醒", shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC))
+        // 基线仍推进（去重不依赖是否提醒）
+        assertEquals("fwd1", prefs.getLastDynamicId())
+    }
+
+    @Test
+    fun `A8 动态类型过滤 勾选类型才提醒`() {
+        prefs.setServiceRunning(true)
+        prefs.setLastDynamicId("old")
+        prefs.setMonitorDynamicTypes(setOf("DYNAMIC_TYPE_DRAW", "DYNAMIC_TYPE_FORWARD"))
+        val activityApi = FakeActivityApi()
+        activityApi.enqueue(
+            com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok(
+                com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo(
+                    id = "fwd1", type = "DYNAMIC_TYPE_FORWARD", displayText = "转发内容",
+                    avItem = null, isTop = false, pubTs = 0
+                )
+            )
+        )
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val fakes = mutableListOf<FakeExoPlayer>()
+        wireActivity(controller, activityApi, fakes)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        driveActivityCheckUntil(controller, "dynamic notified") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC) != null
+        }
+        assertNotNull("勾选的 FORWARD 应提醒", shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC))
     }
 
     @Test

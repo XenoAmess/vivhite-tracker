@@ -295,7 +295,7 @@ class LiveCheckService : Service() {
         AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
 
         when (status) {
-            is BilibiliApi.LiveStatus.Live -> handleResult(true, status.liveStartTime)
+            is BilibiliApi.LiveStatus.Live -> handleResult(true, status.liveStartTime, status.title)
             is BilibiliApi.LiveStatus.NotLive -> handleResult(false)
             is BilibiliApi.LiveStatus.Error -> {
                 // 错误不更新状态，由调用方决定是否重试
@@ -304,7 +304,7 @@ class LiveCheckService : Service() {
         return status
     }
 
-    private fun handleResult(isLive: Boolean, liveStartTime: String? = null) {
+    private fun handleResult(isLive: Boolean, liveStartTime: String? = null, liveTitle: String? = null) {
         // 记录本场直播的 live_start_time（供置静音时绑定参照）
         if (isLive && liveStartTime != null) {
             preferenceManager.setLastLiveStartTime(liveStartTime)
@@ -357,8 +357,61 @@ class LiveCheckService : Service() {
         if (!isLive && wasLive) {
             recordStreamEnd()
         }
+        // 直播中主题变化提醒（每次 Live 轮询都追踪）
+        if (isLive) {
+            trackTitleChange(liveTitle)
+        }
 
         lastStatus = isLive
+    }
+
+    // 直播中主题变化提醒（默认关）：标题变化且开播超 5 分钟才提醒；记录基线到 prefs 与 DB
+    private fun trackTitleChange(liveTitle: String?) {
+        if (liveTitle.isNullOrBlank()) return
+        val lastTitle = preferenceManager.getLastLiveTitle()
+        if (liveTitle == lastTitle) return
+        preferenceManager.setLastLiveTitle(liveTitle)
+        if (!preferenceManager.isNotifyTitleChange()) return
+        val startTs = parseLiveStartTime(preferenceManager.getLastLiveStartTime()) ?: return
+        if (System.currentTimeMillis() - startTs < TITLE_CHANGE_MIN_LIVE_MS) return
+        sendTitleChangeNotification(liveTitle)
+        val dao = com.bilibili.livemonitor.db.AppDatabase.get(this).streamSessionDao()
+        serviceScope.launch {
+            try {
+                dao.findOpenSession()?.let { open ->
+                    dao.insertTitleChange(
+                        com.bilibili.livemonitor.db.StreamTitleChangeEntity(
+                            sessionId = open.id,
+                            changedAt = System.currentTimeMillis(),
+                            oldTitle = lastTitle.ifBlank { null },
+                            newTitle = liveTitle
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "record title change failed", e)
+            }
+        }
+    }
+
+    private fun sendTitleChangeNotification(title: String) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_STREAM_LIFECYCLE_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle("白绮直播标题已改")
+            .setContentText("「$title」")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_TITLE_CHANGE, notification)
     }
 
     // ========== 直播场次记录（Room）与生命周期提醒 ==========
@@ -534,10 +587,12 @@ class LiveCheckService : Service() {
             }
         }
 
-        // 2) 动态变化（首条动态 id 变化，AV 类型已被上面覆盖）
+        // 2) 动态变化（首条动态 id 变化，AV 类型已被上面覆盖；按勾选的类型过滤）
         if (preferenceManager.isMonitorDynamics() && avItem == null) {
             preferenceManager.setLastDynamicId(dynamic.id)
-            if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertDynamic(dynamic.id, lastId)) {
+            if (preferenceManager.isDynamicTypeEnabled(dynamic.type) &&
+                com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertDynamic(dynamic.id, lastId)
+            ) {
                 AppLogger.d(TAG, "new dynamic: id=${dynamic.id} text=${dynamic.displayText.take(40)}")
                 triggerActivityAlert(
                     com.bilibili.livemonitor.domain.ActivityType.Dynamic(dynamic.id, dynamic.displayText)
@@ -1172,6 +1227,7 @@ class LiveCheckService : Service() {
         private const val ERROR_RETRY_DELAY = 15_000L // 错误后15秒重试
         private const val CHECK_WAKE_LOCK_TIMEOUT = 90_000L // 检测+重试全程锁（25s+15s+25s+余量）
         private const val REPLAY_WINDOW_MS = 6 * 3_600_000L // 下播后 6h 内的新视频视为回放
+        private const val TITLE_CHANGE_MIN_LIVE_MS = 5 * 60_000L // 开播至少 5 分钟后的标题变化才提醒
         private const val STATUS_RESTORE_MAX_AGE = 600_000L // 进程重启时恢复状态的新鲜度窗口（10分钟）
         private const val ALARM_REQUEST_CODE = 2001
         private const val DYNAMIC_ALARM_REQUEST_CODE = 2002

@@ -105,5 +105,6 @@ class LiveMonitorApp : Application() {
         const val NOTIFICATION_ID_DYNAMIC = 1004
         const val NOTIFICATION_ID_MAGIC = 1005
         const val NOTIFICATION_ID_STREAM_END = 1006
+        const val NOTIFICATION_ID_TITLE_CHANGE = 1007
     }
 }
