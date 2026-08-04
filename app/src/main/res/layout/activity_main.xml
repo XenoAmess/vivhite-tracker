@@ -262,8 +262,30 @@
             app:iconSize="14dp"
             app:iconPadding="4dp"
             app:iconGravity="textStart"
-            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/btnStats"
             app:layout_constraintStart_toEndOf="@id/btnSettings"
+            app:layout_constraintTop_toBottomOf="@id/btnMagicRecord" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnStats"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginStart="4dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingStart="0dp"
+            android:paddingEnd="0dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="场次"
+            android:textSize="14sp"
+            app:icon="@android:drawable/ic_menu_agenda"
+            app:iconSize="14dp"
+            app:iconPadding="4dp"
+            app:iconGravity="textStart"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/btnOpenGithub"
             app:layout_constraintTop_toBottomOf="@id/btnMagicRecord" />
 
         <LinearLayout

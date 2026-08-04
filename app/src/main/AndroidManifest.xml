@@ -103,6 +103,10 @@
             android:name=".AboutActivity"
             android:exported="false"
             android:label="关于" />
+        <activity
+            android:name=".StatsActivity"
+            android:exported="false"
+            android:label="场次记录" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

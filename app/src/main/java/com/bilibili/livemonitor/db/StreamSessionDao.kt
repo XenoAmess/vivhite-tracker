@@ -22,6 +22,10 @@ interface StreamSessionDao {
     @Query("UPDATE stream_sessions SET end_ts = :endTs WHERE end_ts IS NULL")
     suspend fun closeOpenSessions(endTs: Long)
 
+    /** 清空（测试用） */
+    @Query("DELETE FROM stream_sessions")
+    suspend fun deleteAll()
+
     @Query("SELECT * FROM stream_sessions ORDER BY start_ts DESC LIMIT :limit")
     suspend fun recentSessions(limit: Int): List<StreamSessionEntity>
 

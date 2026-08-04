@@ -239,6 +239,10 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
+            btnStats.setOnClickListener {
+                startActivity(Intent(this@MainActivity, StatsActivity::class.java))
+            }
+
             btnShare.setOnClickListener {
                 showShareOptions()
             }
