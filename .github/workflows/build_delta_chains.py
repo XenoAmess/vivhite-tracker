@@ -70,7 +70,11 @@ def apk_has_native_lib(apk_path):
 def main():
     new_apk = sorted(glob.glob("vivhite-tracker-*.apk"))[0]
     cur_tag = git("describe", "--tags", "--abbrev=0", "--match", "v*")
-    new_vc = int(git("rev-list", "--count", "HEAD"))
+    # versionCode 单一来源：version.json（由 workflow 从 build.gradle 推导的
+    # version-info.properties 写入），与客户端比对一致
+    with open("version.json", encoding="utf-8") as f:
+        vj = json.load(f)
+    new_vc = int(vj["versionCode"])
     new_sha = sha256(new_apk)
     new_size = os.path.getsize(new_apk)
 
@@ -150,9 +154,7 @@ def main():
         }
         print(f"chain {vc} -> {new_vc}: 1 hop, {p['size']} bytes")
 
-    # 合并写回 version.json（apkSha256/apkSize 必须指向前述发布包）
-    with open("version.json", encoding="utf-8") as f:
-        vj = json.load(f)
+    # 合并写回 version.json（apkSha256/apkSize 必须指向前述发布包；vj 已在 main 顶部加载）
     vj["apkSha256"] = new_sha
     vj["apkSize"] = new_size
     vj["patches"] = {str(k): v for k, v in patches.items()}

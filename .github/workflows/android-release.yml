@@ -97,12 +97,13 @@ jobs:
 
     # App 内更新检查依赖：APK 文件名带 versionName 供展示，version.json 供精确 versionCode 比较
     # changelog 字段为两通道统一的更新说明（App 端优先于 release body 展示）
+    # versionCode/versionName/gitHash 单一来源：build.gradle.kts 推导后写 version-info.properties
     - name: Prepare versioned artifacts
       run: |
-        VERSION_CODE=$(git rev-list --count HEAD)
-        # versionName 从 tag 取，和 build.gradle.kts 逻辑一致
+        # versionCode/versionName 单一来源：build.gradle.kts 推导后写 version-info.properties
+        VERSION_CODE=$(sed -n 's/^versionCode=//p' app/build/outputs/version-info.properties)
+        VERSION_NAME=$(sed -n 's/^versionName=//p' app/build/outputs/version-info.properties)
         TAG=$(git describe --tags --abbrev=0 --match 'v*')
-        VERSION_NAME="${TAG#v}"
         cp app-published.apk "vivhite-tracker-${VERSION_NAME}.apk"
         # 更新说明：上一个 tag 到本 tag 的提交摘要（首个 tag 则全部历史，取前 20 条）
         PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' "${TAG}^" 2>/dev/null || echo "")

@@ -7,6 +7,43 @@ jacoco {
     toolVersion = "0.8.12"
 }
 
+// ========== 版本推导（单一来源，供 Gradle 与 CI workflow 共用）==========
+// versionCode：Git commit 数，单调递增，保证 CI 构建可覆盖安装
+val gitVersionCode = providers.exec {
+    commandLine("git", "rev-list", "--count", "HEAD")
+}.standardOutput.asText.get().trim().toInt()
+// versionName：从最近 tag 推导，让 tag 与显示对齐。
+// HEAD 在 tag 上 → "1.1.2"；tag 后有 N commit → "1.1.2+N"；无 tag → "0.0.0+N"
+val gitVersionName = run {
+    val describe = providers.exec {
+        commandLine("git", "describe", "--tags", "--long", "--match", "v*")
+    }.standardOutput.asText.get().trim()
+    val match = Regex("v(.+)-(\\d+)-g[0-9a-f]+").matchEntire(describe)
+    if (match != null) {
+        val base = match.groupValues[1]
+        val ahead = match.groupValues[2].toInt()
+        if (ahead == 0) base else "$base+$ahead"
+    } else {
+        "0.0.0+$gitVersionCode"
+    }
+}
+// 8 位 git 哈希，用于首页版本信息展示
+val gitHash = providers.exec {
+    commandLine("git", "rev-parse", "--short=8", "HEAD")
+}.standardOutput.asText.get().trim()
+
+// 把版本信息写进 build/outputs/version-info.properties，CI workflow 从这里读取，
+// 消除 android-release.yml / android-ci.yml / 增量脚本 里各自复刻的版本推导。
+val writeVersionInfo = tasks.register("writeVersionInfo") {
+    val outFile = layout.buildDirectory.file("outputs/version-info.properties")
+    outputs.file(outFile)
+    doLast {
+        outFile.get().asFile.writeText(
+            "versionCode=$gitVersionCode\nversionName=$gitVersionName\ngitHash=$gitHash\n"
+        )
+    }
+}
+
 android {
     namespace = "com.bilibili.livemonitor"
     compileSdk = 36
@@ -16,29 +53,13 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // versionCode：Git commit 数，单调递增，保证 CI 构建可覆盖安装
-        versionCode = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
-        // versionName：从最近 tag 推导，让 tag 与显示对齐。
-        // HEAD 在 tag 上 → "1.1.2"；tag 后有 N commit → "1.1.2+N"；
-        // 无 tag → "0.0.0+${commit数}"（首次构建前边界）
-        versionName = run {
-            val describe = providers.exec {
-                commandLine("git", "describe", "--tags", "--long", "--match", "v*")
-            }.standardOutput.asText.get().trim()
-            val match = Regex("v(.+)-(\\d+)-g[0-9a-f]+").matchEntire(describe)
-            if (match != null) {
-                val base = match.groupValues[1]
-                val ahead = match.groupValues[2].toInt()
-                if (ahead == 0) base else "$base+$ahead"
-            } else {
-                "0.0.0+$versionCode"
-            }
-        }
+        versionCode = gitVersionCode
+        versionName = gitVersionName
         // 8 位 git 哈希，用于首页版本信息展示
         buildConfigField(
             "String",
             "GIT_HASH",
-            "\"${providers.exec { commandLine("git", "rev-parse", "--short=8", "HEAD") }.standardOutput.asText.get().trim()}\""
+            "\"$gitHash\""
         )
     }
 
@@ -164,7 +185,10 @@ val generateChangelog = tasks.register("generateChangelog") {
     }
 }
 android.sourceSets.getByName("main").assets.srcDir(changelogDir.get())
-tasks.named("preBuild").configure { dependsOn(generateChangelog) }
+tasks.named("preBuild").configure {
+    dependsOn(generateChangelog)
+    dependsOn(writeVersionInfo)
+}
 
 tasks.register<JacocoReport>("jacocoUnitTestReport") {
     dependsOn("testDebugUnitTest")
