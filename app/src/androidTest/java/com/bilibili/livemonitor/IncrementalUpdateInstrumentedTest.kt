@@ -60,7 +60,7 @@ class IncrementalUpdateInstrumentedTest {
     fun 真实底包跑通单跳链() = runBlocking {
         // 用注入的中等大小合成底包跑完整编排（真 41MB 包在测试进程里处理过重；
         // 生产路径用已安装 APK 作为底包，同为此模型）
-        val common = java.util.Random(42).nextBytes(2 * 1024 * 1024)
+        val common = kotlin.random.Random(42).nextBytes(2 * 1024 * 1024)
         val baseBytes = common + byteArrayOf(1, 2, 3, 4)
         val targetBytes = common + byteArrayOf(9, 9, 9, 9)
         val baseFile = File(context.filesDir, "inst-base.apk").apply { writeBytes(baseBytes) }
