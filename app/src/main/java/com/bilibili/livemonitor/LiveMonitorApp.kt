@@ -17,7 +17,8 @@ class LiveMonitorApp : Application() {
         createNotificationChannels()
 
         // 如果监控应该在运行，注册WorkManager兜底任务
-        // 服务自己的onCreate也会注册，这里是保险（如服务从未启动但偏好标记为运行）
+        // 服务自己的onCreate也会注册（LiveCheckService.kt），这里是进程冷启动保险：
+        // ExistingPeriodicWorkPolicy.KEEP 保证重复注册幂等，不会起两份周期任务。
         if (PreferenceManager(this).isServiceRunning()) {
             LiveCheckWorker.schedulePeriodic(this)
         }

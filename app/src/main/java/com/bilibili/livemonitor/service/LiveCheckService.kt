@@ -263,7 +263,12 @@ class LiveCheckService : Service() {
         try {
             val result = checkLiveStatusOnce()
             if (LiveStateDecider.shouldRetry(result)) {
-                AppLogger.w(TAG, "first check failed: ${(result as BilibiliApi.LiveStatus.Error).reason}, retry in ${ERROR_RETRY_DELAY / 1000}s")
+                // shouldRetry 保证 result 是 Error，但用 when 而非强转，避免逻辑变更时 ClassCastException
+                val reason = when (result) {
+                    is BilibiliApi.LiveStatus.Error -> result.reason
+                    else -> "unknown"
+                }
+                AppLogger.w(TAG, "first check failed: $reason, retry in ${ERROR_RETRY_DELAY / 1000}s")
                 delay(ERROR_RETRY_DELAY)
                 val retryResult = checkLiveStatusOnce()
                 if (retryResult is BilibiliApi.LiveStatus.Error) {
@@ -354,7 +359,7 @@ class LiveCheckService : Service() {
 
     // 由 ACTION_CHECK_DYNAMICS 单独触发（5min 周期）。三个活动功能共用 feed，
     // 所以一次请求统一处理视频、动态和置顶，而不是随直播检查每分钟打接口。
-    suspend fun checkNewDynamics() {
+    private suspend fun checkNewDynamics() {
         if (!preferenceManager.isServiceRunning() || !isActivityMonitoringEnabled()) return
         checkDynamicFeed()
     }
