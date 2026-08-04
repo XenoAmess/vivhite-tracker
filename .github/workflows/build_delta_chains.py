@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""生成 bsdiff 增量补丁并构建跨版本升级链，拍平写进 version.json。
+"""生成 ApkDiffPatch 增量补丁（单跳直达）并写进 version.json。
 
-规则：
-- 对历史第 1,2,4,8... 个 release 生成直达补丁（bsdiff），每个都 bspatch 回打自验
-- 其余历史版本按二进制分解组成多跳链（跳数 = 距离二进制中 1 的个数）
-- version.json 新增：
-    apkSha256/apkSize   本版全量 APK 校验
-    patches             本 release 托管的补丁（供未来 release 构建链时引用）
-    chains              拍平的升级链：fromVersionCode -> {fromApkSha256,totalSize,hops[]}
-- 任何一步失败只丢对应条目，绝不阻断发布（客户端对缺失条目回退全量下载）
+ApkDiffPatch（sisong/ApkDiffPatch，MIT）服务端生成：
+- 对历史 release 的「已发布签名 APK」生成直达补丁（ZipDiff）
+- 回打自验（ZipPatch + 逐字节 cmp），不一致丢弃
+- 只对「已装包内含 libapkpatch.so」的 from-version 生成（jbsdiff-only 旧客户端
+  打不了 ZiPat1 补丁，跳过 → 自动全量下载，保证「检查更新」按钮始终可用）
+- 补丁不小于发布包一半 → 丢弃（省流量无意义）
+- 单跳直达，不构建多跳链（ApkDiffPatch 补丁足够小）
+- 任何失败只丢对应条目，绝不阻断发布（客户端对缺失条目回退全量）
+
+依赖（环境变量）：
+  APKDIFF_BIN  含 ZipDiff/ZipPatch/ApkNormalized 的目录（默认 "."）
 """
 
 import filecmp
@@ -18,8 +21,14 @@ import json
 import os
 import subprocess
 import sys
+import zipfile
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "XenoAmess/vivhite-tracker")
+APKDIFF_BIN = os.environ.get("APKDIFF_BIN", ".")
+ZIPDIFF = os.path.join(APKDIFF_BIN, "ZipDiff")
+ZIPPATCH = os.path.join(APKDIFF_BIN, "ZipPatch")
+MAX_KEEP = 8          # 只对最近 N 个历史 release 生成
+MIN_PATCH_RATIO = 0.5 # 补丁不小于全量一半则丢弃
 
 
 def sha256(path):
@@ -45,62 +54,63 @@ def gh_download(release_tag, pattern, dest):
     return r.returncode == 0
 
 
+def apk_has_native_lib(apk_path):
+    """判断该版本 APK 是否内置 ApkDiffPatch 客户端（libapkpatch.so）。
+
+    只有带它的客户端才能打 ZiPat1 补丁；否则（历史 jbsdiff-only 版本）跳过，
+    让客户端走全量下载，避免一次注定失败的补丁下载。
+    """
+    try:
+        with zipfile.ZipFile(apk_path) as zf:
+            return any(n.endswith("libapkpatch.so") for n in zf.namelist())
+    except Exception:
+        return False
+
+
 def main():
+    if not os.path.exists(ZIPDIFF) or not os.path.exists(ZIPPATCH):
+        print("ZipDiff/ZipPatch 缺失（APKDIFF_BIN 未就绪），跳过增量补丁生成")
+        return 0
+
     new_apk = sorted(glob.glob("vivhite-tracker-*.apk"))[0]
     cur_tag = git("describe", "--tags", "--abbrev=0", "--match", "v*")
     new_vc = int(git("rev-list", "--count", "HEAD"))
     new_sha = sha256(new_apk)
     new_size = os.path.getsize(new_apk)
 
-    # 历史 release（tag）按 versionCode 升序，排除当前
+    # 历史 release（tag）按 versionCode 升序，排除当前，只留最近 MAX_KEEP 个
     history = []
     for tag in git("tag", "-l", "v*").splitlines():
         if tag == cur_tag:
             continue
         history.append((int(git("rev-list", "--count", tag)), tag))
     history.sort()
-    n = len(history)
-    print(f"current: {cur_tag} vc={new_vc}; history={n} releases")
+    history = history[-MAX_KEEP:]
+    print(f"current: {cur_tag} vc={new_vc}; candidates={[t for _, t in history]}")
 
-    # 历史 version.json（含 apkSha256/patches 元数据；老版本没有则为 None）
-    meta = {}
+    patches = {}
     for vc, tag in history:
-        d = f"meta/{vc}"
-        if gh_download(tag, "version.json", d):
-            try:
-                meta[vc] = json.load(open(f"{d}/version.json", encoding="utf-8"))
-            except Exception:
-                meta[vc] = None
-        else:
-            meta[vc] = None
-
-    # 指数回退直达补丁：倒数第 1,2,4,8... 个 release
-    patches = {}   # from_vc -> {file,size,patchSha256}
-    apk_hash = {}  # 已下载旧 APK 的 sha256
-    back = 1
-    while back <= n:
-        vc, tag = history[n - back]
         d = f"old/{vc}"
-        old_apks = []
-        if gh_download(tag, "vivhite-tracker-*.apk", d):
-            old_apks = glob.glob(f"{d}/vivhite-tracker-*.apk")
-        if not old_apks:
+        if not gh_download(tag, "vivhite-tracker-*.apk", d):
             print(f"skip {tag}: old apk unavailable")
-            back *= 2
+            continue
+        old_apks = glob.glob(f"{d}/vivhite-tracker-*.apk")
+        if not old_apks:
             continue
         old_apk = old_apks[0]
-        apk_hash[vc] = sha256(old_apk)
-        pf = f"patch-{vc}-to-{new_vc}.bspatch"
+        old_sha = sha256(old_apk)
+        if not apk_has_native_lib(old_apk):
+            print(f"skip {tag}({vc}): 旧客户端无 libapkpatch.so（jbsdiff-only），走全量")
+            continue
+
+        pf = f"patch-{vc}-to-{new_vc}.patch"
         try:
-            run(["bsdiff", old_apk, new_apk, pf])
-            run(["bspatch", old_apk, "verify.apk", pf])
-            if not filecmp.cmp("verify.apk", new_apk, shallow=False):
-                os.remove(pf)
+            run([ZIPDIFF, old_apk, new_apk, pf])
+            run([ZIPPATCH, old_apk, pf, "verify.apk"])
+            if not filecmp.cmp(new_apk, "verify.apk", shallow=False):
                 print(f"patch {tag}({vc}) -> {new_vc}: VERIFY FAILED, dropped")
-            elif os.path.getsize(pf) >= new_size:
-                # 补丁比全量还大就没存在意义（远古版本跨度太大时会发生）
-                os.remove(pf)
-                print(f"patch {tag}({vc}) -> {new_vc}: larger than full apk, dropped")
+            elif os.path.getsize(pf) >= new_size * MIN_PATCH_RATIO:
+                print(f"patch {tag}({vc}) -> {new_vc}: >= {int(MIN_PATCH_RATIO*100)}% of full apk, dropped")
             else:
                 patches[vc] = {
                     "file": pf,
@@ -110,78 +120,31 @@ def main():
                 print(f"patch {tag}({vc}) -> {new_vc}: {patches[vc]['size']} bytes OK")
         except Exception as e:
             print(f"patch {tag}({vc}) -> {new_vc}: error {e}, dropped")
-            if os.path.exists(pf):
-                os.remove(pf)
         finally:
             if os.path.exists("verify.apk"):
                 os.remove("verify.apk")
-        back *= 2
+            if pf not in [p["file"] for p in patches.values()] and os.path.exists(pf):
+                os.remove(pf)
 
-    # 链构建：索引 0..n-1 为历史，n 为当前
-    def vc_of(i):
-        return history[i][0] if i < n else new_vc
-
-    def tag_of(i):
-        return history[i][1] if i < n else cur_tag
-
-    def known_apk_sha(vc):
-        if vc == new_vc:
-            return new_sha
-        if vc in apk_hash:
-            return apk_hash[vc]
-        m = meta.get(vc)
-        return (m or {}).get("apkSha256")
-
-    def hop_patch(from_i, to_i):
-        """from_i -> to_i 的补丁元数据（存在才返回）。"""
-        fvc = vc_of(from_i)
-        if to_i == n:
-            return patches.get(fvc)
-        m = meta.get(vc_of(to_i))
-        return ((m or {}).get("patches") or {}).get(str(fvc))
-
+    # 单跳直达链：from 版本 → 当前版本
     chains = {}
-    for i in range(n):
-        from_sha = known_apk_sha(vc_of(i))
-        if not from_sha:
-            continue  # 无法校验底包，不出链（客户端走全量）
-        hops = []
-        cur = i
-        ok = True
-        while cur < n:
-            # 贪心跳最大 2 的幂步长
-            step = None
-            s = 1
-            while cur + s <= n:
-                if hop_patch(cur, cur + s):
-                    step = s
-                s *= 2
-            if step is None:
-                ok = False
-                break
-            tgt = cur + step
-            pm = hop_patch(cur, tgt)
-            rsha = known_apk_sha(vc_of(tgt))
-            if not rsha:
-                ok = False
-                break
-            hops.append({
-                "toVersionCode": vc_of(tgt),
-                "url": f"https://github.com/{REPO}/releases/download/{tag_of(tgt)}/{pm['file']}",
-                "size": pm["size"],
-                "patchSha256": pm["patchSha256"],
-                "resultSha256": rsha,
-            })
-            cur = tgt
-        if ok and hops:
-            chains[str(vc_of(i))] = {
-                "fromApkSha256": from_sha,
-                "totalSize": sum(h["size"] for h in hops),
-                "hops": hops,
-            }
-            print(f"chain {vc_of(i)} -> {new_vc}: {len(hops)} hop(s), {chains[str(vc_of(i))]['totalSize']} bytes")
+    for vc, p in patches.items():
+        chains[str(vc)] = {
+            "fromApkSha256": sha256(glob.glob(f"old/{vc}/vivhite-tracker-*.apk")[0]),
+            "totalSize": p["size"],
+            "hops": [
+                {
+                    "toVersionCode": new_vc,
+                    "url": f"https://github.com/{REPO}/releases/download/{cur_tag}/{p['file']}",
+                    "size": p["size"],
+                    "patchSha256": p["patchSha256"],
+                    "resultSha256": new_sha,
+                }
+            ],
+        }
+        print(f"chain {vc} -> {new_vc}: 1 hop, {p['size']} bytes")
 
-    # 合并写回 version.json
+    # 合并写回 version.json（apkSha256/apkSize 必须指向前述发布包）
     with open("version.json", encoding="utf-8") as f:
         vj = json.load(f)
     vj["apkSha256"] = new_sha

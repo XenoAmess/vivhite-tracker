@@ -103,11 +103,12 @@ vivhite-tracker-<versionName>.apk
 
 ### 发布资产
 
-随后工作流安装 `bsdiff` 并运行 `build_delta_chains.py`，最后创建 GitHub Release，上传：
+发布物 = `ApkNormalized`（确定性打包）+ `apksigner 34.0.0` 重签（字节一致性硬要求，v35+ 破坏）。
+随后工作流下载 ApkDiffPatch v1.8.1 工具链并运行 `build_delta_chains.py`，最后创建 GitHub Release，上传：
 
-- `vivhite-tracker-<versionName>.apk`：完整 release APK。
-- `version.json`：版本和更新元数据。
-- `patch-<fromVersionCode>-to-<toVersionCode>.bspatch`：可用的稳定版增量补丁。
+- `vivhite-tracker-<versionName>.apk`：完整 release APK（归一化+重签的发布物）。
+- `version.json`：版本和更新元数据（`apkSha256/apkSize` 对发布物计算）。
+- `patch-<fromVersionCode>-to-<toVersionCode>.patch`：可用的稳定版增量补丁（ApkDiffPatch）。
 
 `softprops/action-gh-release` 会生成 GitHub Release notes。客户端的更新说明则优先使用 `version.json` 中的 `changelog`。
 
@@ -246,18 +247,24 @@ APK 下载网络异常时会删除未完成文件并返回失败。
 
 ## 增量更新
 
-### 生成策略
+### 生成策略（稳定版：ApkDiffPatch）
 
-稳定版脚本 `build_delta_chains.py` 和 Beta 脚本 `build_beta_chains.py` 使用相同的核心策略：
+稳定版 `build_delta_chains.py` 使用 ApkDiffPatch（`sisong/ApkDiffPatch` v1.8.1，MIT）：
 
-1. 选择指数回退距离的历史版本，即倒数第 1、2、4、8... 个版本；Beta 限定为 1、2、4 且只保留最近 8 个底包。
-2. 用 `bsdiff` 从历史 APK 生成到新 APK 的补丁。
-3. 用 `bspatch` 回打并逐字节比较新 APK，验证失败则丢弃补丁。
-4. 若补丁大小不小于完整 APK，也丢弃该补丁。
-5. 把通过验证的补丁 SHA-256、大小和目标 APK SHA-256 写入元数据。
-6. 将可用直达补丁按二进制分解组合成从旧版本到最新版本的多跳链。
+1. 发布物 = `ApkNormalized(新APK)` + `apksigner 34.0.0` 重签（**apksigner v35+ 破坏字节一致性，必须钉 34**，上游 issue #96/#107）。
+2. 对最近 8 个历史 release 的**已发布签名 APK** 生成直达补丁：`ZipDiff(old.apk, 发布物, patch)`。
+3. 回打自验：`ZipPatch(old.apk, patch, verify.apk)` 与发布物逐字节 `cmp`，不一致丢弃。
+4. 补丁不小于发布物一半也丢弃；单跳直达，不构建多跳链。
+5. **过渡安全**：只对「已装包内含 `libapkpatch.so`」的 from-version 生成补丁；jbsdiff-only 旧客户端自动全量下载，「检查更新」按钮始终可用（首个带新客户端的 release 无任何链，全员全量）。
+6. 把通过验证的补丁 SHA-256、大小和目标 APK SHA-256 写入元数据。
+
+实测（v1.7.0→v1.8.0）：ApkDiffPatch 补丁 **0.58MB**，原 jbsdiff 为 **6.74MB**（缩小 11.6 倍，仅全量 1.5%）。
 
 发布或补丁生成失败不会阻断完整 APK 的发布；缺少补丁或链条时客户端仅下载整包。
+
+### 生成策略（Beta：仍为 jbsdiff，待迁移）
+
+Beta 脚本 `build_beta_chains.py` 暂保留 jbsdiff（客户端 ApkPatcher 仍兼容 `BSDIFF40`，两格式并存无碍）。迁移到 ApkDiffPatch 是后续项。
 
 ### 客户端执行和回退
 
@@ -266,11 +273,11 @@ APK 下载网络异常时会删除未完成文件并返回失败。
 1. 找到当前已安装 APK，计算 SHA-256，必须匹配 `fromApkSha256`。
 2. 下载每一跳补丁。
 3. 校验补丁 SHA-256。
-4. 调用 `ApkPatcher.applyPatch()` 生成下一跳 APK。
+4. 调用 `ApkPatcher.applyPatch()` 生成下一跳 APK。`ApkPatcher` 按补丁头分派：`ZiPat1`→ApkDiffPatch（`libapkpatch.so`），`BSDIFF40`→jbsdiff（存量兼容）。
 5. 校验每一步输出 APK 的 SHA-256。
 6. 最后一跳输出到普通整包下载路径，并交由既有安装流程安装。
 
-底包不可读、底包哈希不匹配、网络失败、补丁哈希不匹配、打补丁异常或结果哈希不匹配时，都会删除临时文件并返回 `null`。调用方应继续执行完整 APK 下载，增量更新本身不应成为用户更新的阻塞点。
+底包不可读、底包哈希不匹配、网络失败、补丁哈希不匹配、打补丁异常（含 native 缺失）或结果哈希不匹配时，都会删除临时文件并返回 `null`。调用方应继续执行完整 APK 下载，增量更新本身不应成为用户更新的阻塞点。
 
 ## 维护约束
 

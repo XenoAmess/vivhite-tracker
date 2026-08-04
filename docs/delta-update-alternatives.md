@@ -83,7 +83,11 @@ README 明确：「ApkDiffPatch can't be used by Android app store, because it r
 - `app/src/main/java/com/github/sisong/ApkPatch.java`：官方 JNI 包装 + `System.loadLibrary`
 - `util/ApkPatcher.kt`：按补丁头分派（`ZiPat1`→ApkDiffPatch / `BSDIFF40`→jbsdiff），native 失败包成普通异常回退全量
 - 单测 `util/ApkPatcherTest.kt`：分派/格式/失败降级全覆盖
-- 服务端（`build_delta_chains.py` + `android-release.yml`）切换为 ZipDiff 生成 **未完成**，见下节
+- 服务端（`build_delta_chains.py` + `android-release.yml`）切换为 ZipDiff 生成 **已完成**：
+  - release workflow：下载 ApkDiffPatch v1.8.1 linux64 → `ApkNormalized` + `apksigner34` 重签 → 发布物
+  - `build_delta_chains.py`：对最近 8 个 release 生成单跳直达补丁，`ZipPatch` 回打逐字节 `cmp` 自验，
+    只对含 `libapkpatch.so` 的 from-版本生成（旧客户端自动全量）
+  - Beta 通道（`build_beta_chains.py`）暂留 jbsdiff，客户端两格式并存，迁移留作后续
 
 ## 3. 方案对比
 
@@ -184,10 +188,10 @@ ops[]:  tag u8
 
 ## 6. 决策建议（阶段化）
 
-1. **阶段 0（近期，零成本）**：维持 jbsdiff，但收紧补丁窗口——只对最近 8 个 release 生成**单跳直达**补丁，删除多跳链与远古补丁（64 版之外 83% 毫无价值）；`ChainPlanner` 保留。
-2. **阶段 1（试点）**：在 CI 用 ApkDiffPatch 对真实 APK 做 `ZipDiff/ZipPatch` 回打自验，确认：字节一致、v2/v3 签名有效、真机可覆盖安装。产出实测补丁大小对比。
-3. **阶段 2（切换）**：按方案 A 集成（服务端 normalize+重签 → 客户端 .so+JNI → 单测/instrumented），灰度一版观察。
-4. **CDC（方案 B）**：仅当不接受 NDK/.so 且仍想保留增量时启用；否则以方案 A 为准。
+1. **阶段 0（近期，零成本）**：维持 jbsdiff，但收紧补丁窗口。 —— **已由 ApkDiffPatch 全面取代，不再需要**
+2. **阶段 1（试点）**：在 CI 用 ApkDiffPatch 对真实 APK 做 `ZipDiff/ZipPatch` 回打自验。 —— **已完成**：v1.7.0→v1.8.0 字节一致、v2/v3 可验证、补丁 0.58MB（11.6x）
+3. **阶段 2（切换）**：按方案 A 集成。 —— **已落地**：客户端（4 ABI jniLibs + 分派）+ 服务端（normalize+apksigner34+ZipDiff+回打自验+过渡安全）。首个新 release 全员全量，下一 release 起为已升级用户出增量。
+4. **CDC（方案 B）**：仅当不接受 NDK/.so 且仍想保留增量时启用；否则以方案 A 为准。 —— 维持「不采用」。
 
 ## 7. 参考
 

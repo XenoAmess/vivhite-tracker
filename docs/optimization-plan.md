@@ -80,7 +80,7 @@
 
 - **MainActivity 整体拆分**（ShareController/UpdateController/MagicPeriodDialogFragment/设置抽屉 BottomSheet）：收益大但需连带迁移 2278 行测试，留作后续专项。
 - **PromoImageRenderer 拆分/参数化**：自包含、已有测试、行为即视觉，改动风险高。
-- **jbsdiff 替换**：2013 未维护库，但工作正常，替换需重做增量更新链路验证。
+- **jbsdiff 替换**：~~2013 未维护库~~ —— **已落地**（见「执行状态」增量更新专项）：客户端集成 ApkDiffPatch（jbsdiff 保留为兼容分支），稳定版发布侧切 ZipDiff 生成，补丁 6.74MB→0.58MB。
 - **文案全部迁移 strings.xml**：52 处 Toast 工程量大收益低；仅新建文案用资源。
 - **version catalog（G1）**：单模块依赖版本已集中在一个 build.gradle.kts，引入 libs.versions.toml 收益边际。
 - **合并 git exec（G2）**：需 shell 拼接命令，Windows 不可移植、可读性差，三处 git 调用开销可忽略。
@@ -97,6 +97,9 @@
 | E MainActivity 低风险抽取 | ✅ 已落地 | `5954505` |
 | F PreferenceManager 收敛 | ✅ 已落地 | `bcbeb43` |
 | G 依赖与构建 | ⏭️ 跳过（见「明确不做」） | — |
+| **增量更新专项（ApkDiffPatch）** | ✅ 已落地（客户端 `a19e061` + 服务端本次） | 见 `docs/delta-update-alternatives.md` |
+
+增量更新专项要点：客户端打入 4 ABI `libapkpatch.so`、`ApkPatcher` 按补丁头分派（ZiPat1/BSDIFF40）；发布侧 `ApkNormalized + apksigner34 重签 + ZipDiff` 生成，回打自验，旧客户端自动全量。**Beta 通道仍为 jbsdiff（客户端兼容），迁移留待后续。**
 
 B/E/F 落地时发现并修复的额外问题：
 - `ShareImageFactory` KDoc 中 `image/*` 会构成嵌套块注释（Kotlin 块注释可嵌套），吞掉 `*/` 导致解析错乱——改为措辞规避。

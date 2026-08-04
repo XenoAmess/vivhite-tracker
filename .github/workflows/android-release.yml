@@ -48,6 +48,53 @@ jobs:
         ALIAS: ${{ secrets.ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
+    # ========== ApkDiffPatch 增量补丁（v1.8.1，字节一致性需 apksigner 34）==========
+    - name: Install ApkDiffPatch toolchain
+      run: |
+        mkdir -p apkdiff && cd apkdiff
+        gh release download v1.8.1 -R sisong/ApkDiffPatch -p '*bin_linux64*' --clobber
+        unzip -o -q ApkDiffPatch_v1.8.1_bin_linux64.zip
+        mv -f linux64/ApkNormalized linux64/ZipDiff linux64/ZipPatch ./
+        chmod +x ApkNormalized ZipDiff ZipPatch
+        echo "APKDIFF_BIN=$PWD" >> "$GITHUB_ENV"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # apksigner v35+ 会往首个 entry 插 padding extra field，ZipPatch 不还原 → 字节不一致
+    # → 签名失效（上游 issue #96/#107）。必须钉 build-tools 34.0.0，绝不能升级。
+    - name: Ensure apksigner 34
+      run: |
+        APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+        if [ ! -x "$APKSIGNER" ]; then
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null 2>&1 || true
+        fi
+        if [ ! -x "$APKSIGNER" ]; then
+          echo "::warning::build-tools 34.0.0 不可用：本次仅发布全量 APK，跳过增量补丁生成"
+          echo "APKSIGNER_OK=0" >> "$GITHUB_ENV"
+        else
+          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+          echo "APKSIGNER_OK=1" >> "$GITHUB_ENV"
+        fi
+
+    # 发布物 = ApkNormalized（确定性打包）+ apksigner34 重签。这是客户端实际安装的字节，
+    # apkSha256 必须对它计算。apksigner34 缺失时回退发布 AGP 签名原包（仍可安装，只是无增量）。
+    - name: Normalize and re-sign published APK
+      run: |
+        if [ "${APKSIGNER_OK:-0}" = "1" ]; then
+          "$APKDIFF_BIN/ApkNormalized" app/build/outputs/apk/release/app-release.apk app-normalized.apk
+          "$APKSIGNER" sign --ks app/release.keystore \
+            --ks-pass "pass:${KEY_STORE_PASSWORD}" --key-pass "pass:${KEY_PASSWORD}" \
+            --ks-key-alias "${ALIAS}" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out app-published.apk app-normalized.apk
+        else
+          cp app/build/outputs/apk/release/app-release.apk app-published.apk
+        fi
+      env:
+        KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+        ALIAS: ${{ secrets.ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
     # App 内更新检查依赖：APK 文件名带 versionName 供展示，version.json 供精确 versionCode 比较
     # changelog 字段为两通道统一的更新说明（App 端优先于 release body 展示）
     - name: Prepare versioned artifacts
@@ -56,7 +103,7 @@ jobs:
         # versionName 从 tag 取，和 build.gradle.kts 逻辑一致
         TAG=$(git describe --tags --abbrev=0 --match 'v*')
         VERSION_NAME="${TAG#v}"
-        cp app/build/outputs/apk/release/app-release.apk "vivhite-tracker-${VERSION_NAME}.apk"
+        cp app-published.apk "vivhite-tracker-${VERSION_NAME}.apk"
         # 更新说明：上一个 tag 到本 tag 的提交摘要（首个 tag 则全部历史，取前 20 条）
         PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' "${TAG}^" 2>/dev/null || echo "")
         if [ -n "$PREV_TAG" ]; then RANGE="$PREV_TAG..$TAG"; else RANGE="$TAG"; fi
@@ -69,15 +116,13 @@ jobs:
         PY
         cat version.json
 
-    # 增量更新（bsdiff）：对历史第 1,2,4,8... 个 release 生成直达补丁并回打自验；
-    # 其余历史版本按二进制分解组成多跳链，全部拍平写进 version.json 的 chains 字段。
-    # 补丁/链任一环节失败只丢该条目（客户端自然回退全量），绝不阻塞发布。
-    - name: Install bsdiff
-      run: sudo apt-get update && sudo apt-get install -y bsdiff
-
+    # 增量更新（ApkDiffPatch）：对最近 N 个 release 生成直达补丁并回打自验；
+    # 旧客户端（无 libapkpatch.so）自动全量，保证「检查更新」按钮始终可用。
+    # 任一环节失败只丢该条目（客户端自然回退全量），绝不阻塞发布。
     - name: Generate delta patches and build upgrade chains
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        APKDIFF_BIN: ${{ env.APKDIFF_BIN }}
       run: |
         python3 .github/workflows/build_delta_chains.py
         cat version.json
@@ -87,7 +132,7 @@ jobs:
       with:
         files: |
           vivhite-tracker-*.apk
-          patch-*.bspatch
+          patch-*.patch
           version.json
         generate_release_notes: true
       env:
