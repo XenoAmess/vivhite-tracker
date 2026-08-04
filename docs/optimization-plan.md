@@ -82,6 +82,25 @@
 - **PromoImageRenderer 拆分/参数化**：自包含、已有测试、行为即视觉，改动风险高。
 - **jbsdiff 替换**：2013 未维护库，但工作正常，替换需重做增量更新链路验证。
 - **文案全部迁移 strings.xml**：52 处 Toast 工程量大收益低；仅新建文案用资源。
+- **version catalog（G1）**：单模块依赖版本已集中在一个 build.gradle.kts，引入 libs.versions.toml 收益边际。
+- **合并 git exec（G2）**：需 shell 拼接命令，Windows 不可移植、可读性差，三处 git 调用开销可忽略。
+- **AppLogger readAll/trim（G3）**：1MB 主线程读约几毫秒；改异步会让 LogActivityTest 全部改等待逻辑，收益不成比例。写入/截断已在单线程 executor 上，无 UX 风险。
+
+## 执行状态
+
+| Batch | 状态 | 提交 |
+|---|---|---|
+| A 死代码清理 | ✅ 已落地 | `c69ebcf` |
+| B LiveCheckService 并发/状态 | ✅ 已落地 | `12b3ef4` |
+| C 网络层统一 | ✅ 已落地 | `4a8178a` |
+| D 精确闹钟排程统一 | ✅ 已落地 | `e51d27a` |
+| E MainActivity 低风险抽取 | ✅ 已落地 | `5954505` |
+| F PreferenceManager 收敛 | ✅ 已落地 | `bcbeb43` |
+| G 依赖与构建 | ⏭️ 跳过（见「明确不做」） | — |
+
+B/E/F 落地时发现并修复的额外问题：
+- `ShareImageFactory` KDoc 中 `image/*` 会构成嵌套块注释（Kotlin 块注释可嵌套），吞掉 `*/` 导致解析错乱——改为措辞规避。
+- Kotlin 命名参数 lambda 无隐式 return 标签（`return@onXXX` 编译失败），QQ 回调守卫改用 `guardActivity` 内联 helper。
 
 ## 验证方式
 
