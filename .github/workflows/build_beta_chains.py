@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""beta 通道增量更新：维护 beta-archive 滚动 release（最近 8 个内测包 + 补丁），
-生成指数回退补丁与多跳链，把元数据写进 version.json（随后部署到 Pages）。
+"""beta 通道增量更新（ApkDiffPatch）：维护 beta-archive 滚动 release（最近 8 个内测包 + 补丁），
+生成单跳直达补丁，把元数据写进 version.json（随后部署到 Pages）。
 
 - beta-archive release 常驻，资产命名：
-    beta-<versionCode>.apk                存档内测包
-    patch-beta-<from>-to-<to>.bspatch     补丁
+    beta-<versionCode>.apk                存档内测包（归一化+apksigner34 重签的发布物）
+    patch-beta-<from>-to-<to>.patch       补丁（ApkDiffPatch）
     beta-history.json                     滚动元数据（供下次构建引用）
-- 回退窗口 1,2,4（存档上限 8 个包）；补丁回打自验，比全量还大直接丢弃
-- 链构建规则与 stable（build_delta_chains.py）一致：二进制分解多跳
+- 回退窗口 1,2,4（存档上限 8 个包）；补丁回打自验，不小于全量一半直接丢弃
+- 只对「已装包内含 libapkpatch.so」的 from-版本生成（jbsdiff-only 旧客户端自动全量）
+- 单跳直达，不构建多跳链
 - 任何失败只丢对应条目，绝不阻断 beta 发布
+
+依赖（环境变量）：
+  APKDIFF_BIN  含 ZipDiff/ZipPatch/ApkNormalized 的目录（默认 "."）
 """
 
 import filecmp
@@ -18,12 +22,17 @@ import json
 import os
 import subprocess
 import sys
+import zipfile
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "XenoAmess/vivhite-tracker")
 ARCHIVE_TAG = "beta-archive"
 HISTORY_FILE = "beta-history.json"
+APKDIFF_BIN = os.environ.get("APKDIFF_BIN", ".")
+ZIPDIFF = os.path.join(APKDIFF_BIN, "ZipDiff")
+ZIPPATCH = os.path.join(APKDIFF_BIN, "ZipPatch")
 MAX_KEEP = 8          # 存档内测包上限
 BACKOFF = (1, 2, 4)   # 指数回退窗口
+MIN_PATCH_RATIO = 0.5 # 补丁不小于全量一半则丢弃
 
 
 def sha256(path):
@@ -65,24 +74,35 @@ def download_asset(name, dest):
     return r.returncode == 0 and os.path.exists(os.path.join(dest, name))
 
 
-def list_assets():
-    r = gh("release", "view", ARCHIVE_TAG, "--json", "assets")
-    return [a["name"] for a in json.loads(r.stdout)["assets"]]
-
-
 def delete_asset(name):
     gh("release", "delete-asset", ARCHIVE_TAG, name, "--yes", check=False)
     print(f"pruned asset {name}")
 
 
+def apk_has_native_lib(apk_path):
+    try:
+        with zipfile.ZipFile(apk_path) as zf:
+            return any(n.endswith("libapkpatch.so") for n in zf.namelist())
+    except Exception:
+        return False
+
+
 def main():
-    # 当前构建产物（Prepare beta channel files 步骤已生成）
+    # 当前构建产物（Prepare beta channel files 步骤已生成 = 归一化+重签的发布物）
     new_apk = "vivhite-tracker-beta.apk"
     with open("version.json", encoding="utf-8") as f:
         vj = json.load(f)
     new_vc = int(vj["versionCode"])
     new_sha = sha256(new_apk)
     new_size = os.path.getsize(new_apk)
+
+    if not os.path.exists(ZIPDIFF) or not os.path.exists(ZIPPATCH):
+        print("ZipDiff/ZipPatch 缺失（APKDIFF_BIN 未就绪），仅回填 apkSha256/apkSize，跳过补丁生成")
+        vj["apkSha256"] = new_sha
+        vj["apkSize"] = new_size
+        with open("version.json", "w", encoding="utf-8") as f:
+            json.dump(vj, f, ensure_ascii=False)
+        return 0
 
     ensure_archive()
 
@@ -96,7 +116,7 @@ def main():
             print(f"history file broken, starting fresh: {e}")
             history = {}
 
-    # 指数回退生成补丁
+    # 指数回退生成补丁（只对含 libapkpatch.so 的底包）
     vcs = sorted(history)
     patches = {}  # from_vc -> {file,size,patchSha256}
     for back in BACKOFF:
@@ -109,16 +129,19 @@ def main():
             print(f"skip {from_vc}: archived apk missing")
             continue
         old_apk = os.path.join(d, entry["apk"])
-        pf = f"patch-beta-{from_vc}-to-{new_vc}.bspatch"
+        if not apk_has_native_lib(old_apk):
+            print(f"skip {from_vc}: 旧客户端无 libapkpatch.so（jbsdiff-only），走全量")
+            continue
+        pf = f"patch-beta-{from_vc}-to-{new_vc}.patch"
         try:
-            run(["bsdiff", old_apk, new_apk, pf])
-            run(["bspatch", old_apk, "verify.apk", pf])
+            run([ZIPDIFF, old_apk, new_apk, pf])
+            run([ZIPPATCH, old_apk, pf, "verify.apk"])
             ok = filecmp.cmp("verify.apk", new_apk, shallow=False)
-            too_big = ok and os.path.getsize(pf) >= new_size
+            too_big = ok and os.path.getsize(pf) >= new_size * MIN_PATCH_RATIO
             if not ok:
                 print(f"patch {from_vc} -> {new_vc}: VERIFY FAILED, dropped")
             elif too_big:
-                print(f"patch {from_vc} -> {new_vc}: larger than full apk, dropped")
+                print(f"patch {from_vc} -> {new_vc}: >= {int(MIN_PATCH_RATIO*100)}% of full apk, dropped")
             else:
                 patches[from_vc] = {
                     "file": pf, "size": os.path.getsize(pf),
@@ -153,47 +176,23 @@ def main():
             delete_asset(p["file"])
         del history[vc]
 
-    # 链构建：索引 0..m-1 为历史（含当前的最后一个），目标 = 当前
-    ordered = sorted(history)
-    m = len(ordered)
-    target = ordered.index(new_vc)
-
-    def hop_patch(from_i, to_i):
-        return (history[ordered[to_i]].get("patches") or {}).get(str(ordered[from_i]))
-
+    # 单跳直达链：from 版本 → 当前版本
     chains = {}
-    for i in range(target):
-        from_sha = history[ordered[i]]["sha256"]
-        hops = []
-        cur = i
-        ok = True
-        while cur < target:
-            step = None
-            s = 1
-            while cur + s <= target:
-                if hop_patch(cur, cur + s):
-                    step = s
-                s *= 2
-            if step is None:
-                ok = False
-                break
-            tgt = cur + step
-            pm = hop_patch(cur, tgt)
-            hops.append({
-                "toVersionCode": ordered[tgt],
-                "url": f"https://github.com/{REPO}/releases/download/{ARCHIVE_TAG}/{pm['file']}",
-                "size": pm["size"],
-                "patchSha256": pm["patchSha256"],
-                "resultSha256": history[ordered[tgt]]["sha256"],
-            })
-            cur = tgt
-        if ok and hops:
-            chains[str(ordered[i])] = {
-                "fromApkSha256": from_sha,
-                "totalSize": sum(h["size"] for h in hops),
-                "hops": hops,
-            }
-            print(f"chain {ordered[i]} -> {new_vc}: {len(hops)} hop(s)")
+    for from_vc, p in patches.items():
+        chains[str(from_vc)] = {
+            "fromApkSha256": history[from_vc]["sha256"],
+            "totalSize": p["size"],
+            "hops": [
+                {
+                    "toVersionCode": new_vc,
+                    "url": f"https://github.com/{REPO}/releases/download/{ARCHIVE_TAG}/{p['file']}",
+                    "size": p["size"],
+                    "patchSha256": p["patchSha256"],
+                    "resultSha256": new_sha,
+                }
+            ],
+        }
+        print(f"chain {from_vc} -> {new_vc}: 1 hop, {p['size']} bytes")
 
     # 写回 version.json（部署到 Pages）+ 滚动历史（存档）
     vj["apkSha256"] = new_sha

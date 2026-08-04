@@ -68,15 +68,21 @@ def apk_has_native_lib(apk_path):
 
 
 def main():
-    if not os.path.exists(ZIPDIFF) or not os.path.exists(ZIPPATCH):
-        print("ZipDiff/ZipPatch 缺失（APKDIFF_BIN 未就绪），跳过增量补丁生成")
-        return 0
-
     new_apk = sorted(glob.glob("vivhite-tracker-*.apk"))[0]
     cur_tag = git("describe", "--tags", "--abbrev=0", "--match", "v*")
     new_vc = int(git("rev-list", "--count", "HEAD"))
     new_sha = sha256(new_apk)
     new_size = os.path.getsize(new_apk)
+
+    if not os.path.exists(ZIPDIFF) or not os.path.exists(ZIPPATCH):
+        print("ZipDiff/ZipPatch 缺失（APKDIFF_BIN 未就绪），仅回填 apkSha256/apkSize，跳过补丁生成")
+        with open("version.json", encoding="utf-8") as f:
+            vj = json.load(f)
+        vj["apkSha256"] = new_sha
+        vj["apkSize"] = new_size
+        with open("version.json", "w", encoding="utf-8") as f:
+            json.dump(vj, f, ensure_ascii=False)
+        return 0
 
     # 历史 release（tag）按 versionCode 升序，排除当前，只留最近 MAX_KEEP 个
     history = []

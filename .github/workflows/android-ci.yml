@@ -77,6 +77,52 @@ jobs:
         ALIAS: ${{ secrets.ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
+    # ========== beta 增量更新（ApkDiffPatch，与稳定版同一套）==========
+    - name: Install ApkDiffPatch toolchain
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      run: |
+        mkdir -p apkdiff && cd apkdiff
+        gh release download v1.8.1 -R sisong/ApkDiffPatch -p '*bin_linux64*' --clobber
+        unzip -o -q ApkDiffPatch_v1.8.1_bin_linux64.zip
+        mv -f linux64/ApkNormalized linux64/ZipDiff linux64/ZipPatch ./
+        chmod +x ApkNormalized ZipDiff ZipPatch
+        echo "APKDIFF_BIN=$PWD" >> "$GITHUB_ENV"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Ensure apksigner 34
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      run: |
+        APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+        if [ ! -x "$APKSIGNER" ]; then
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null 2>&1 || true
+        fi
+        if [ ! -x "$APKSIGNER" ]; then
+          echo "::warning::build-tools 34.0.0 不可用：本次 beta 仅全量，跳过增量补丁"
+          echo "APKSIGNER_OK=0" >> "$GITHUB_ENV"
+        else
+          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+          echo "APKSIGNER_OK=1" >> "$GITHUB_ENV"
+        fi
+
+    - name: Normalize and re-sign beta APK
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      run: |
+        if [ "${APKSIGNER_OK:-0}" = "1" ]; then
+          "$APKDIFF_BIN/ApkNormalized" app/build/outputs/apk/release/app-release.apk app-normalized.apk
+          "$APKSIGNER" sign --ks app/release.keystore \
+            --ks-pass "pass:${KEY_STORE_PASSWORD}" --key-pass "pass:${KEY_PASSWORD}" \
+            --ks-key-alias "${ALIAS}" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out app-published.apk app-normalized.apk
+        else
+          cp app/build/outputs/apk/release/app-release.apk app-published.apk
+        fi
+      env:
+        KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+        ALIAS: ${{ secrets.ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
     # 内测版尝鲜通道：master 最新构建 → GitHub Pages /beta/
     # （App 内「内测版尝鲜」按钮比对这里的 version.json）
     - name: Prepare beta channel files
@@ -98,8 +144,8 @@ jobs:
         LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
         if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..HEAD"; else RANGE="HEAD"; fi
         git log --oneline --no-decorate "$RANGE" | head -20 > changelog.txt
-        # release 构建与 debug 共用 keystore，内测包可覆盖安装
-        cp app/build/outputs/apk/release/app-release.apk vivhite-tracker-beta.apk
+        # 发布物 = 归一化+重签的 beta 包（与稳定版同 keystore，可覆盖安装）
+        cp app-published.apk vivhite-tracker-beta.apk
         python3 - "$VERSION_CODE" "$VERSION_NAME" <<'PY'
         import json, sys
         changelog = open("changelog.txt", encoding="utf-8").read().strip()
@@ -108,16 +154,13 @@ jobs:
         PY
         cat version.json
 
-    # beta 增量更新：滚动存档 beta-archive（最近 8 个内测包）+ 指数回退补丁
-    # + 多跳链元数据写进 version.json（失败只丢条目，不阻断发布）
-    - name: Install bsdiff
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      run: sudo apt-get update && sudo apt-get install -y bsdiff
-
+    # beta 增量更新：滚动存档 beta-archive（最近 8 个内测包）+ ApkDiffPatch 单跳补丁
+    # （失败只丢条目，不阻断发布；旧客户端自动全量）
     - name: Build beta delta patches and update beta-archive
       if: github.ref == 'refs/heads/master' && github.event_name == 'push'
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        APKDIFF_BIN: ${{ env.APKDIFF_BIN }}
       run: python3 .github/workflows/build_beta_chains.py
 
     - name: Upload beta channel artifact
