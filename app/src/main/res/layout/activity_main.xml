@@ -218,7 +218,7 @@
             app:iconGravity="textStart"
             app:layout_constraintEnd_toStartOf="@id/btnSettings"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnMagicRecord"
+            app:layout_constraintTop_toBottomOf="@id/btnStats"
             app:layout_constraintHorizontal_chainStyle="spread" />
 
         <com.google.android.material.button.MaterialButton
@@ -242,7 +242,7 @@
             app:iconGravity="textStart"
             app:layout_constraintEnd_toStartOf="@id/btnOpenGithub"
             app:layout_constraintStart_toEndOf="@id/btnViewLog"
-            app:layout_constraintTop_toBottomOf="@id/btnMagicRecord" />
+            app:layout_constraintTop_toBottomOf="@id/btnStats" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenGithub"
@@ -264,7 +264,7 @@
             app:iconGravity="textStart"
             app:layout_constraintEnd_toStartOf="@id/btnStats"
             app:layout_constraintStart_toEndOf="@id/btnSettings"
-            app:layout_constraintTop_toBottomOf="@id/btnMagicRecord" />
+            app:layout_constraintTop_toBottomOf="@id/btnStats" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnStats"
@@ -272,21 +272,22 @@
             android:layout_height="46dp"
             android:layout_marginTop="8dp"
             android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:paddingStart="0dp"
             android:paddingEnd="0dp"
             android:maxLines="1"
             android:ellipsize="end"
-            android:text="场次"
+            android:text="场次记录"
             android:textSize="14sp"
             app:icon="@android:drawable/ic_menu_agenda"
             app:iconSize="14dp"
             app:iconPadding="4dp"
             app:iconGravity="textStart"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/btnOpenGithub"
-            app:layout_constraintTop_toBottomOf="@id/btnMagicRecord" />
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/btnStats" />
 
         <LinearLayout
             android:id="@+id/qqGroupRow"

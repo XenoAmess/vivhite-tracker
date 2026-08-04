@@ -14,20 +14,21 @@
         android:orientation="horizontal">
 
         <TextView
-            android:id="@+id/tvSessionDate"
+            android:id="@+id/tvSessionTime"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:text="08-04 20:00" />
+            android:text="14:00 ~ 17:23" />
 
         <TextView
             android:id="@+id/tvSessionDuration"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="13sp"
-            android:text="1h23m" />
+            android:textColor="?android:attr/textColorSecondary"
+            android:text="3h23m" />
     </LinearLayout>
 
     <TextView
