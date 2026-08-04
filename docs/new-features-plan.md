@@ -97,3 +97,21 @@ stream_title_changes(id PK auto, session_id FK, changed_at, old_title, new_title
 | P2 | Widget+StatsActivity | 2 天 |
 | P3 | 回放+预告（含调研） | 1.5 天 |
 | P4 | 主题/过滤/深色 | 1.5 天 |
+
+## 执行状态（2026-08-04 全部落地）
+
+| 项 | 状态 | 要点 |
+|---|---|---|
+| 前置 Room+KSP | ✅ | KSP 2.3.11 + Room 2.8.4（AGP9 内置 Kotlin 验证通过），表 v1 |
+| P1.1 勿扰时段 | ✅ | 默认关/静音通知；`QuietHoursDecider` + 抽屉「勿扰时段」 |
+| P1.2 下播提醒 | ✅ | `notify_stream_end`(默认开)，含时长；抽屉「直播提醒」开关 |
+| P1.3 场次记录 | ✅ | Room 开→下 闭合 + 进程死亡补闭合；S16 |
+| P2.1 桌面 Widget | ✅ | `LiveStatusWidgetProvider` 直播中/未开播/已停止 + 一键进直播间；handleResult 刷新 |
+| P2.2 StatsActivity | ✅ | 最近 50 场 + 周/月/平均/最长；主界面「场次」入口 |
+| P3.1 回放上线提醒 | ✅ | 下播 6h 窗口内新视频标「本场回放」直达；不打铃 |
+| P3.2 开播预告 | ✅ | LIVE_RCMD 防御式解析（字段形态待有预约直播时实测）；24h 窗口 + 去重 |
+| P4.1 主题变化提醒 | ✅ | Live 带 title；变化且开播>5min 提醒（默认关）+ 记 DB |
+| P4.2 动态类型过滤 | ✅ | `monitor_dynamic_types`（图文/转发/专栏 多选） |
+| P4.3 深色主题 | ✅ | DayNight + `dark_mode`（跟随系统/浅/深） |
+
+**遗留验证项**：P3.2 LIVE_RCMD 的真实字段形态需等白绮有预约直播时在 beta 实测确认（防御式解析取不到会安全降级不提醒，不破坏功能）。
