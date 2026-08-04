@@ -95,13 +95,7 @@ class LiveCheckService : Service() {
         }
 
         // 进程重启时恢复上次状态（10分钟内），避免直播中进程死亡导致重复提醒
-        lastStatus = LiveStateDecider.restoreLastStatus(
-            lastCheckTime = preferenceManager.getLastCheckTime(),
-            lastCheckSuccess = preferenceManager.isLastCheckSuccess(),
-            lastCheckLive = preferenceManager.isLastCheckLive(),
-            now = System.currentTimeMillis(),
-            maxAgeMillis = STATUS_RESTORE_MAX_AGE
-        )
+        lastStatus = preferenceManager.getRecentLastStatus(STATUS_RESTORE_MAX_AGE)
         // 用恢复值同步静态 lastLiveStatus，避免重启后 Worker/UI 读到 stale 值
         // （onDestroy 只重置静态而不重置 prefs 的 lastCheckLive，两者曾可漂移）
         lastLiveStatus = lastStatus ?: false
