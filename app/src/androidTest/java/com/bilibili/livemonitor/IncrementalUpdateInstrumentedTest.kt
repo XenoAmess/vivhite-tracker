@@ -49,7 +49,7 @@ class IncrementalUpdateInstrumentedTest {
         val patchFile = File(dir, "art.patch").apply { writeBytes(patchOut.toByteArray()) }
         val outFile = File(dir, "art-new.bin")
 
-        ApkPatcher.applyPatch(oldFile, patchFile, outFile)
+        ApkPatcher.applyPatch(context, oldFile, patchFile, outFile)
 
         assertTrue(
             "ART 上打补丁结果必须与目标字节一致",

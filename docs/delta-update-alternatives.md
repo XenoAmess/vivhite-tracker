@@ -61,9 +61,29 @@ README 明确：「ApkDiffPatch can't be used by Android app store, because it r
 ### 风险点
 
 1. **工具链必须固定**：README 警告「You should not modify the zlib version」，否则客户端打补丁用的 deflate 输出与发布端不一致 → 字节不匹配 → 签名失效。需在 CI 里钉死 ApkDiffPatch 版本与 zlib。
-2. **发布产物字节会变**：归一化+重签后的新 APK 与当前直接 `assembleRelease` 的产物不同（同 keystore，仍可覆盖安装）。切换发布流程后，旧版本用户的增量底包要用 release 资产里的旧签名 APK。
-3. **.so 体积**：4 ABI 的 `libapkpatch.so` 增加 APK 体积 ~1-2MB（可按 ABI 拆分只打 arm 两档）。
-4. **需实测**：在真实项目 APK（41.7MB，含 v2 签名）上验证 patch 后字节一致性 + 可安装，再切换。
+2. **apksigner 版本有硬约束**（2026-08-04 实测 + issue #96/#80/#107）：**build-tools 34.0.0 的 apksigner 下字节一致、v2 校验通过；v35/v36 起 apksigner 会往首个 entry 的 local header 插 padding extra field，ZipPatch 不还原 → 字节不一致 → verify 失败**。CI 必须用 34.0.0 签名，不能升级。
+3. **部分旧/新组合要求旧包也归一化**（issue #107）：实测「发布版旧包 + 归一化签名新包」在 34.0.0 下成立；个别组合可能仍需两侧归一化。**靠 CI 的「ZipPatch 回打后逐字节 cmp」兜底**——失败的组合直接不发布该补丁（客户端回退全量），绝不阻断发布。
+4. **发布产物字节会变**：归一化+重签后的新 APK 与当前直接 `assembleRelease` 的产物不同（同 keystore，仍可覆盖安装）。切换发布流程后，旧版本用户的增量底包要用 release 资产里的旧签名 APK。
+5. **.so 体积**：4 ABI 的 `libapkpatch.so` + `libc++_shared.so` 约 4.1MB（已全部打入，兼容优先）。
+
+### 试点验证结果（2026-08-04，真实发布 APK）
+
+对「released v1.7.0（164）→ released v1.8.0（168）」用 `ApkNormalized(v1.8.0) + apksigner34 重签` 作为新包：
+
+| 指标 | 结果 |
+|---|---|
+| ZipPatch 回打 | **字节一致**（cmp 通过） |
+| apksigner verify | **v2 校验通过**（可安装） |
+| 补丁大小 | **0.58 MB**（jbsdiff 同链路为 6.74 MB，**缩小 11.6 倍**，仅全量 1.5%） |
+| 耗时 | ApkNormalized 1.2s / ZipDiff+ZipPatch <1s |
+
+### 客户端集成状态（2026-08-04 已落地）
+
+- `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86,x86_64}/`：`libapkpatch.so` + `libc++_shared.so`（4 ABI，共 4.1MB）
+- `app/src/main/java/com/github/sisong/ApkPatch.java`：官方 JNI 包装 + `System.loadLibrary`
+- `util/ApkPatcher.kt`：按补丁头分派（`ZiPat1`→ApkDiffPatch / `BSDIFF40`→jbsdiff），native 失败包成普通异常回退全量
+- 单测 `util/ApkPatcherTest.kt`：分派/格式/失败降级全覆盖
+- 服务端（`build_delta_chains.py` + `android-release.yml`）切换为 ZipDiff 生成 **未完成**，见下节
 
 ## 3. 方案对比
 
@@ -80,9 +100,9 @@ README 明确：「ApkDiffPatch can't be used by Android app store, because it r
 
 1. release workflow 构建后追加：
    - `ApkNormalized app-release-unsigned.apk` → `normalized.apk`（确定性 zip 打包）
-   - `apksigner sign --ks release.keystore ... normalized.apk` → 发布用 `new.apk`
-   - 用 release 资产的上一版签名 APK 作为 `old.apk`，`ZipDiff(old.apk, new.apk, patch-<oldVC>-to-<newVC>.bspatch)`（产物可仍叫 .bspatch 或改名 .patch）
-   - `bspatch` 回打自验 + 与 `new.apk` 逐字节比较；失败丢弃补丁不阻断发布
+   - `apksigner sign`（**必须 build-tools 34.0.0**，v35+ 破坏字节一致性）→ 发布用 `new.apk`
+   - 用 release 资产的上一版签名 APK 作为 `old.apk`，`ZipDiff(old.apk, new.apk, patch-<oldVC>-to-<newVC>.patch)`
+   - **回打自验**：`ZipPatch(old.apk, patch) → verify.apk`，与 `new.apk` 逐字节 `cmp`；失败丢弃该补丁不阻断发布（客户端自动回退全量）
 2. `version.json`：`apkSha256/apkSize` 指向发布用的 `new.apk`；`chains[fromVc]` 只出**单跳直达**（补丁够小，多跳链不再需要）。
 3. 移除指数回退多跳链逻辑（`build_delta_chains.py` 简化），只对最近 N 个 release（建议 8）生成直达补丁。
 

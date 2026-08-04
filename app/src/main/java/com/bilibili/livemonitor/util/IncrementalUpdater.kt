@@ -18,7 +18,7 @@ class IncrementalUpdater(
     internal var downloader: suspend (url: String, dest: File, onProgress: (Int) -> Unit) -> Boolean =
         { url, dest, onProgress -> com.bilibili.livemonitor.api.UpdateChecker().downloadApk(url, dest, onProgress) },
     internal var patcher: (base: File, patch: File, out: File) -> Unit =
-        { base, patch, out -> ApkPatcher.applyPatch(base, patch, out) },
+        { base, patch, out -> ApkPatcher.applyPatch(context, base, patch, out) },
     // internal 注入位：测试指向 fixture 底包（Robolectric 改不动 context.applicationInfo）
     internal var installedApkProvider: (Context) -> File? = { ApkPatcher.installedApkFile(it) }
 ) {
