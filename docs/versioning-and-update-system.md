@@ -156,7 +156,7 @@ Beta 的历史底包不能由 Pages 获得，所以 `.github/workflows/build_bet
   "apkSize": 12345678,
   "patches": {
     "122": {
-      "file": "patch-122-to-123.bspatch",
+      "file": "patch-122-to-123.patch",
       "size": 456789,
       "patchSha256": "..."
     }
@@ -168,7 +168,7 @@ Beta 的历史底包不能由 Pages 获得，所以 `.github/workflows/build_bet
       "hops": [
         {
           "toVersionCode": 122,
-          "url": "https://.../patch-120-to-122.bspatch",
+          "url": "https://.../patch-120-to-122.patch",
           "size": 400000,
           "patchSha256": "...",
           "resultSha256": "..."
@@ -273,7 +273,7 @@ Beta 脚本 `build_beta_chains.py` 与稳定版同一套 ApkDiffPatch 管线（�
 1. 找到当前已安装 APK，计算 SHA-256，必须匹配 `fromApkSha256`。
 2. 下载每一跳补丁。
 3. 校验补丁 SHA-256。
-4. 调用 `ApkPatcher.applyPatch()` 生成下一跳 APK。`ApkPatcher` 按补丁头分派：`ZiPat1`→ApkDiffPatch（`libapkpatch.so`），`BSDIFF40`→jbsdiff（存量兼容）。
+4. 调用 `ApkPatcher.applyPatch()` 生成下一跳 APK。`ApkPatcher` 仅支持 ApkDiffPatch `ZiPat1` 格式（`libapkpatch.so`），其他格式一律抛异常回退全量。
 5. 校验每一步输出 APK 的 SHA-256。
 6. 最后一跳输出到普通整包下载路径，并交由既有安装流程安装。
 

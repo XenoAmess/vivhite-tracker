@@ -72,7 +72,7 @@
 
 - **MainActivity 整体拆分**（ShareController/UpdateController/MagicPeriodDialogFragment/设置抽屉 BottomSheet）：收益大但需连带迁移 2278 行测试，留作后续专项。
 - **PromoImageRenderer 拆分/参数化**：自包含、已有测试、行为即视觉，改动风险高。
-- **jbsdiff 替换**：~~2013 未维护库~~ —— **已落地**（见「执行状态」增量更新专项）：客户端集成 ApkDiffPatch（jbsdiff 保留为兼容分支），稳定版发布侧切 ZipDiff 生成，补丁 6.74MB→0.58MB。
+- **jbsdiff 替换**：~~2013 未维护库~~ —— **已落地**（见「执行状态」增量更新专项）：客户端集成 ApkDiffPatch（jbsdiff 已移除），稳定版/Beta 发布侧均切 ZipDiff 生成，补丁 6.74MB→0.58MB。
 - **文案全部迁移 strings.xml**：52 处 Toast 工程量大收益低；仅新建文案用资源。
 
 ## 执行状态

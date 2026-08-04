@@ -172,7 +172,7 @@ ops[]:  tag u8
 ### 5.5 客户端
 
 - 新增 `util/CdcPatcher.kt`（纯 JVM）：解析 `VTDC1`，copy+解压重组，输出 sha256 校验。
-- `ApkPatcher.applyPatch` 按 magic 分派（`.patch` 走 CdcPatcher，兼容期 `.bspatch` 走 jbsdiff）。
+- `ApkPatcher.applyPatch` 按 magic 分派（`.patch` 走 CdcPatcher；方案 B 未采用，故无 jbsdiff 兼容分支）。
 - `version.json`/`ChainPlanner`/`IncrementalUpdater` 改动与方案 A 相同。
 
 ### 5.6 测试

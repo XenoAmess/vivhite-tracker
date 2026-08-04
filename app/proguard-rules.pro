@@ -7,9 +7,6 @@
 -keep class com.tencent.open.** { *; }
 -dontwarn com.tencent.**
 
-# jbsdiff（io.sigpipe，2013 未维护库，靠反射实例化）
--keep class io.sigpipe.** { *; }
--dontwarn io.sigpipe.**
 
 # jsoup 通过反射访问 DOM
 -keep class org.jsoup.** { *; }
