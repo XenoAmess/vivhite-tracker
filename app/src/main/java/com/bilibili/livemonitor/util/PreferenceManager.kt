@@ -181,6 +181,35 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_MAGIC_PERIODS, "[]") ?: "[]"
     }
 
+    // ========== 勿扰时段 ==========
+
+    // 勿扰总开关，默认关闭（用户手动开启）
+    fun setQuietHoursEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_QUIET_HOURS_ENABLED, enabled).apply()
+    }
+
+    fun isQuietHoursEnabled(): Boolean {
+        return prefs.getBoolean(KEY_QUIET_HOURS_ENABLED, false)
+    }
+
+    // 勿扰开始（距 0 点分钟数，默认 23:00）
+    fun setQuietStartMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_QUIET_START_MINUTES, minutes).apply()
+    }
+
+    fun getQuietStartMinutes(): Int {
+        return prefs.getInt(KEY_QUIET_START_MINUTES, DEFAULT_QUIET_START_MINUTES)
+    }
+
+    // 勿扰结束（距 0 点分钟数，默认 07:00）
+    fun setQuietEndMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_QUIET_END_MINUTES, minutes).apply()
+    }
+
+    fun getQuietEndMinutes(): Int {
+        return prefs.getInt(KEY_QUIET_END_MINUTES, DEFAULT_QUIET_END_MINUTES)
+    }
+
     // ========== B 站全活动监控 ==========
 
     // 监控新视频投稿，默认开
@@ -285,6 +314,13 @@ class PreferenceManager(context: Context) {
         // ===== 提醒铃声 =====
         private const val KEY_ALERT_SOUND_URI = "alert_sound_uri"
         private const val KEY_ALERT_SOUND_TITLE = "alert_sound_title"
+
+        // ===== 勿扰时段 =====
+        private const val KEY_QUIET_HOURS_ENABLED = "quiet_hours_enabled"
+        private const val KEY_QUIET_START_MINUTES = "quiet_start_minutes"
+        private const val KEY_QUIET_END_MINUTES = "quiet_end_minutes"
+        private const val DEFAULT_QUIET_START_MINUTES = 23 * 60
+        private const val DEFAULT_QUIET_END_MINUTES = 7 * 60
 
         // ===== B 站全活动监控 =====
         private const val KEY_MONITOR_VIDEOS = "monitor_videos"

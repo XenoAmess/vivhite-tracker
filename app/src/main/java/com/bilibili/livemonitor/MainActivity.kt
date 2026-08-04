@@ -313,6 +313,13 @@ class MainActivity : AppCompatActivity() {
                 onExpand = { view -> bindActivitySection(view) }
             ),
             SettingsEntry(
+                title = "勿扰时段",
+                subtitle = computeQuietSubtitle(),
+                iconRes = android.R.drawable.ic_lock_idle_alarm,
+                expandLayoutRes = R.layout.expand_section_quiet,
+                onExpand = { view -> bindQuietSection(view) }
+            ),
+            SettingsEntry(
                 title = "更新设置",
                 subtitle = computeUpdateSubtitle(),
                 iconRes = android.R.drawable.ic_menu_manage,
@@ -721,6 +728,65 @@ class MainActivity : AppCompatActivity() {
         val check = if (preferenceManager.isAutoCheckUpdate()) "开" else "关"
         val dl = if (preferenceManager.isAutoDownloadUpdate()) "开" else "关"
         return "自动检查: $check  自动下载: $dl"
+    }
+
+    private fun computeQuietSubtitle(): String {
+        if (!preferenceManager.isQuietHoursEnabled()) return "未开启"
+        val start = formatMinutes(preferenceManager.getQuietStartMinutes())
+        val end = formatMinutes(preferenceManager.getQuietEndMinutes())
+        return "$start → $end"
+    }
+
+    private fun formatMinutes(minutes: Int): String {
+        val h = (minutes / 60).toString().padStart(2, '0')
+        val m = (minutes % 60).toString().padStart(2, '0')
+        return "$h:$m"
+    }
+
+    private fun bindQuietSection(view: android.view.View) {
+        val switch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchQuietHours)
+        val btnStart = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnQuietStart)
+        val btnEnd = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnQuietEnd)
+
+        fun refreshTimes() {
+            btnStart.text = formatMinutes(preferenceManager.getQuietStartMinutes())
+            btnEnd.text = formatMinutes(preferenceManager.getQuietEndMinutes())
+        }
+        fun setEnabled(enabled: Boolean) {
+            btnStart.isEnabled = enabled
+            btnEnd.isEnabled = enabled
+        }
+
+        switch.isChecked = preferenceManager.isQuietHoursEnabled()
+        setEnabled(switch.isChecked)
+        refreshTimes()
+        switch.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.setQuietHoursEnabled(isChecked)
+            setEnabled(isChecked)
+            updateUI()
+        }
+        btnStart.setOnClickListener {
+            pickQuietTime(preferenceManager.getQuietStartMinutes()) { minutes ->
+                preferenceManager.setQuietStartMinutes(minutes)
+                refreshTimes()
+                updateUI()
+            }
+        }
+        btnEnd.setOnClickListener {
+            pickQuietTime(preferenceManager.getQuietEndMinutes()) { minutes ->
+                preferenceManager.setQuietEndMinutes(minutes)
+                refreshTimes()
+                updateUI()
+            }
+        }
+    }
+
+    private fun pickQuietTime(initialMinutes: Int, onPicked: (Int) -> Unit) {
+        val hour = initialMinutes / 60
+        val minute = initialMinutes % 60
+        android.app.TimePickerDialog(this, { _, h, m ->
+            onPicked(h * 60 + m)
+        }, hour, minute, true).show()
     }
 
     private fun bindMaintenanceSection(view: android.view.View) {

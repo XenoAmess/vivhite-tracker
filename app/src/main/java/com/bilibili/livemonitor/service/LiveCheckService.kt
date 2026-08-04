@@ -472,10 +472,11 @@ class LiveCheckService : Service() {
     }
 
     private fun triggerActivityAlert(type: com.bilibili.livemonitor.domain.ActivityType) {
+        val ring = preferenceManager.isAlertRingOnActivity() && !isInQuietHours()
         when (type) {
             is com.bilibili.livemonitor.domain.ActivityType.Video -> {
                 sendVideoNotification(type.aid, type.title, "新视频投稿")
-                if (preferenceManager.isAlertRingOnActivity()) playAlertSound()
+                if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Pinned -> {
                 if (type.aid == 0L) {
@@ -484,16 +485,29 @@ class LiveCheckService : Service() {
                 } else {
                     sendVideoNotification(type.aid, type.title, "置顶视频变更")
                 }
-                if (preferenceManager.isAlertRingOnActivity()) playAlertSound()
+                if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Dynamic -> {
                 sendDynamicNotification(type.id, type.displayText)
-                if (preferenceManager.isAlertRingOnActivity()) playAlertSound()
+                if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Live -> {
                 // 不应走到这里，开播提醒走 triggerAlert()
             }
         }
+    }
+
+    // 勿扰时段：起止分钟数来自 prefs（默认 23:00 → 07:00，跨午夜），开关默认关
+    private fun isInQuietHours(): Boolean {
+        val cal = java.util.Calendar.getInstance()
+        val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+            cal.get(java.util.Calendar.MINUTE)
+        return com.bilibili.livemonitor.domain.QuietHoursDecider.isInQuietHours(
+            nowMinutes,
+            preferenceManager.getQuietStartMinutes(),
+            preferenceManager.getQuietEndMinutes(),
+            preferenceManager.isQuietHoursEnabled()
+        )
     }
 
     private fun sendTextNotification(channelId: String, title: String, text: String?) {
@@ -604,12 +618,40 @@ class LiveCheckService : Service() {
     }
 
     private fun triggerAlert() {
+        // 勿扰时段：不响铃/不震动/不全屏，只发静音通知（醒来能看到「开播了」）
+        if (isInQuietHours()) {
+            AppLogger.w(TAG, "quiet hours active, silent alert only")
+            sendSilentAlertNotification()
+            return
+        }
         // 服务是铃声的唯一所有者；全屏页只负责展示，避免两套 ExoPlayer 叠音。
         playAlertSound()
         vibrate()
         // Android 10+ 不保证后台 startActivity 成功，交给高优先级通知的
         // fullScreenIntent 处理锁屏/前台展示。
         sendAlertNotification()
+    }
+
+    // 勿扰时段内的静音开播通知：无 fullScreenIntent、setSilent 覆盖通道 HIGH 的默认声音
+    private fun sendSilentAlertNotification() {
+        val contentIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, contentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_ALERT_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle("🎉 白绮开播啦！")
+            .setContentText("直播间 $DEFAULT_ROOM_ID 正在直播中（勿扰时段已静音）")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setSilent(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_ALERT, notification)
     }
 
     // 提醒铃声播放器引用（internal 便于测试）。此前是局部变量：
