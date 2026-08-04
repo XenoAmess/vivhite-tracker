@@ -398,7 +398,7 @@ class LiveCheckService : Service() {
 
     private suspend fun fetchDynamicOnce(): com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult<com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo> {
         return activityApi.fetchLatestDynamic(
-            com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID
+            com.bilibili.livemonitor.util.BiliTargets.MONITOR_MID
         )
     }
 
@@ -766,7 +766,7 @@ class LiveCheckService : Service() {
             .setSmallIcon(R.drawable.img_on)
             .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.img_on))
             .setContentTitle("🎉 白绮开播啦！")
-            .setContentText("直播间 11258892 正在直播中，快去看看吧！")
+            .setContentText("直播间 $DEFAULT_ROOM_ID 正在直播中，快去看看吧！")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
@@ -971,7 +971,7 @@ class LiveCheckService : Service() {
         const val ACTION_RESTART_SERVICE = "com.bilibili.livemonitor.RESTART_SERVICE"
         const val ACTION_CHECK_DYNAMICS = "com.bilibili.livemonitor.CHECK_DYNAMICS"
         const val EXTRA_MONITORING_GENERATION = "monitoring_generation"
-        private const val DEFAULT_ROOM_ID = 11258892L
+        private const val DEFAULT_ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
         private const val NO_MONITORING_GENERATION = -1L
         private const val CHECK_INTERVAL = 60_000L // 60秒
         private const val DYNAMIC_CHECK_INTERVAL = 5 * 60_000L // 5分钟

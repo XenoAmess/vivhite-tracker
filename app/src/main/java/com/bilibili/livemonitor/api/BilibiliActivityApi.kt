@@ -216,7 +216,7 @@ open class BilibiliActivityApi {
     companion object {
         private const val TAG = "BilibiliActivityApi"
 
-        // 白绮的 B 站 UID（与房间号 11258892 同策略：硬编码多处，改 mid 要全改）
-        const val MONITOR_MID = 251990176L
+        // 白绮的 B 站 UID（单一来源见 util/BiliTargets）
+        const val MONITOR_MID = com.bilibili.livemonitor.util.BiliTargets.MONITOR_MID
     }
 }

@@ -85,13 +85,13 @@ class AlertActivity : AppCompatActivity() {
     private fun setupUI() {
         binding.apply {
             tvAlertTitle.text = "🎉 白绮开播啦！"
-            tvAlertMessage.text = "直播间 11258892 正在直播中\n快去看看吧！"
-            
+            tvAlertMessage.text = "直播间 ${com.bilibili.livemonitor.util.BiliTargets.ROOM_ID} 正在直播中\n快去看看吧！"
+
             btnGoToLive.setOnClickListener {
                 notifyLiveService(LiveCheckService.ACTION_WATCH_LIVE)
                 // 打开直播间
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                    data = android.net.Uri.parse("https://live.bilibili.com/11258892")
+                    data = android.net.Uri.parse("https://live.bilibili.com/${com.bilibili.livemonitor.util.BiliTargets.ROOM_ID}")
                 }
                 startActivity(intent)
                 finish()

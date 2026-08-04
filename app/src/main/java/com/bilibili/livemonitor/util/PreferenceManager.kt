@@ -286,6 +286,6 @@ class PreferenceManager(context: Context) {
         private const val KEY_PROMO_STYLE = "promo_style"
         private const val DEFAULT_PROMO_STYLE = "LIGHT_CARD"
         private const val KEY_MAGIC_PERIODS = "magic_periods"
-        private const val DEFAULT_ROOM_ID = 11258892L
+        private const val DEFAULT_ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
     }
 }

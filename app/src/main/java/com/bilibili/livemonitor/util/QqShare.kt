@@ -28,7 +28,8 @@ import com.tencent.connect.share.QQShare
  */
 object QqShare {
 
-    const val ROOM_ID = 11258892L
+    // 监控目标房间号（单一来源见 util/BiliTargets）
+    const val ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
 
     // QQ 互联 APPID（open.qq.com 注册应用）
     const val QQ_APP_ID = "1905299138"

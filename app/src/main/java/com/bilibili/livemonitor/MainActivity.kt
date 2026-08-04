@@ -1202,7 +1202,7 @@ class MainActivity : AppCompatActivity() {
                 roomInfo.cover
             } else {
                 withTimeoutOrNull(3000) {
-                    faceFetcher(com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID)
+                    faceFetcher(com.bilibili.livemonitor.util.BiliTargets.MONITOR_MID)
                 } ?: QqShare.FALLBACK_COVER_URL
             }
             AppLogger.d("MainActivity", "share cover=$cover title=$title live=$isLive")
@@ -1620,7 +1620,7 @@ class MainActivity : AppCompatActivity() {
     internal fun openSpace() {
         // 复用 openLiveRoom 的选择器模式：https 主 intent（浏览器列表）+
         // EXTRA_INITIAL_INTENTS 注入 bilibili://space 排最前
-        val mid = com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID
+        val mid = com.bilibili.livemonitor.util.BiliTargets.MONITOR_MID
         val chooser = Intent.createChooser(com.bilibili.livemonitor.util.BilibiliDeepLinks.spaceWebIntent(mid), "打开空间主页").apply {
             putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(com.bilibili.livemonitor.util.BilibiliDeepLinks.spaceAppIntent(mid)))
         }
@@ -1770,7 +1770,7 @@ class MainActivity : AppCompatActivity() {
         }
         ContextCompat.startForegroundService(this, serviceIntent)
 
-        Toast.makeText(this, "已开始监控直播间 11258892", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "已开始监控直播间 $ROOM_ID", Toast.LENGTH_SHORT).show()
 
         // 使用延迟来确保Service有足够时间启动，然后清除过渡状态
         binding.root.postDelayed({
@@ -1968,7 +1968,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val ROOM_ID = 11258892L
+        private const val ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
         private const val GITHUB_URL = "https://github.com/XenoAmess/vivhite-tracker"
 
         // 自动检查更新的最小间隔：24 小时
