@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 
 /**
  * 魔法期结束闹钟排程：setExactAndAllowWhileIdle(RTC_WAKEUP)，
@@ -19,23 +18,7 @@ object MagicAlarmScheduler {
 
     fun schedule(context: Context, triggerAtMs: Long) {
         try {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val pendingIntent = pendingIntent(context)
-            when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() -> {
-                    AppLogger.w(TAG, "exact alarm not granted, fallback to inexact")
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
-                }
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
-                }
-                else -> {
-                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
-                }
-            }
-            AppLogger.d(TAG, "magic end alarm scheduled at $triggerAtMs")
-        } catch (e: SecurityException) {
-            AppLogger.e(TAG, "schedule magic alarm SecurityException", e)
+            AlarmScheduler.schedule(context, triggerAtMs, pendingIntent(context), "magic end alarm")
         } catch (e: Exception) {
             AppLogger.e(TAG, "schedule magic alarm failed", e)
         }

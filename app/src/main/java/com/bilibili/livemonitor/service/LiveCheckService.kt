@@ -896,7 +896,6 @@ class LiveCheckService : Service() {
 
     private fun scheduleNextCheckAlarm() {
         try {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(this, AlarmReceiver::class.java)
             val pendingIntent = PendingIntent.getBroadcast(
                 this, ALARM_REQUEST_CODE, intent,
@@ -904,34 +903,9 @@ class LiveCheckService : Service() {
             )
 
             val triggerAt = System.currentTimeMillis() + CHECK_INTERVAL
-            when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() -> {
-                    AppLogger.w(TAG, "exact alarm not granted, fallback to inexact")
-                    // 未授权精确闹钟权限，回退到非精确版本
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAt,
-                        pendingIntent
-                    )
-                }
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAt,
-                        pendingIntent
-                    )
-                }
-                else -> {
-                    alarmManager.setExact(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAt,
-                        pendingIntent
-                    )
-                }
-            }
-            AppLogger.d(TAG, "scheduleNextCheckAlarm at $triggerAt")
-        } catch (e: SecurityException) {
-            AppLogger.e(TAG, "scheduleNextCheckAlarm SecurityException", e)
+            com.bilibili.livemonitor.util.AlarmScheduler.schedule(
+                this, triggerAt, pendingIntent, "scheduleNextCheckAlarm"
+            )
         } catch (e: Exception) {
             AppLogger.e(TAG, "scheduleNextCheckAlarm failed", e)
         }
@@ -960,7 +934,6 @@ class LiveCheckService : Service() {
             return
         }
         try {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(this, LiveCheckService::class.java).apply {
                 action = ACTION_CHECK_DYNAMICS
             }
@@ -971,18 +944,9 @@ class LiveCheckService : Service() {
             // 5min ± 10s 抖动
             val jitter = (Math.random() * 20_000 - 10_000).toLong()
             val triggerAt = System.currentTimeMillis() + DYNAMIC_CHECK_INTERVAL + jitter
-            when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() -> {
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-                }
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-                }
-                else -> {
-                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-                }
-            }
-            AppLogger.d(TAG, "scheduleNextDynamicAlarm at $triggerAt")
+            com.bilibili.livemonitor.util.AlarmScheduler.schedule(
+                this, triggerAt, pendingIntent, "scheduleNextDynamicAlarm"
+            )
         } catch (e: Exception) {
             AppLogger.e(TAG, "scheduleNextDynamicAlarm failed", e)
         }
