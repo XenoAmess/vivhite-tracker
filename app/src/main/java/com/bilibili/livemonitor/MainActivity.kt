@@ -434,13 +434,13 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
             val uri = shareImageLoader.shareableUri(this@MainActivity, file)
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "image/png"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_TEXT, com.bilibili.livemonitor.domain.MagicPeriodDecider.imageText(latestEnd, System.currentTimeMillis()))
-                clipData = android.content.ClipData.newUri(contentResolver, "magic", uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+            val intent = com.bilibili.livemonitor.util.ShareImageFactory.buildImageShareIntent(
+                uri = uri,
+                contentResolver = contentResolver,
+                clipLabel = "magic",
+                mimeType = "image/png",
+                extraText = com.bilibili.livemonitor.domain.MagicPeriodDecider.imageText(latestEnd, System.currentTimeMillis())
+            )
             startActivity(Intent.createChooser(intent, "分享魔法期图片"))
         }
     }
@@ -1030,6 +1030,8 @@ class MainActivity : AppCompatActivity() {
     private val alertSoundProvider = AlertSoundProvider()
     // 当前分享用的直播标题（fetchRoomInfo 拿到，供 fallbackToSystemShare 使用）
     private var currentShareTitle: String? = null
+    // 分享面板防抖：连点不弹多个 BottomSheet
+    private var shareOptionsSheetShowing = false
 
     // 试听播放器（internal 便于测试断言释放）。试听播放器若泄漏会一直在后台循环响
     internal var previewPlayer: ExoPlayer? = null
@@ -1126,6 +1128,10 @@ class MainActivity : AppCompatActivity() {
     internal var roomInfoFetcher: suspend (Long) -> com.bilibili.livemonitor.api.BilibiliApi.RoomInfo? =
         { roomId -> com.bilibili.livemonitor.api.BilibiliApi().fetchRoomInfo(roomId) }
 
+    // 分享入口统一取直播间信息：3s 超时兜底（超时只是丢弃结果，见 roomInfoFetcher 注释）
+    private suspend fun fetchShareRoomInfo(): com.bilibili.livemonitor.api.BilibiliApi.RoomInfo? =
+        withTimeoutOrNull(3000) { roomInfoFetcher(QqShare.ROOM_ID) }
+
     // internal：白绮头像获取 seam（未开播时卡片缩略图用方形头像，见 shareLiveRoom）
     internal var faceFetcher: suspend (Long) -> String? =
         { mid -> com.bilibili.livemonitor.api.BilibiliApi().fetchAnchorFace(mid) }
@@ -1146,6 +1152,8 @@ class MainActivity : AppCompatActivity() {
 
     /** 分享入口：三选一（QQ 卡片 / 图文 / 长宣传图），BottomSheet 与设置抽屉同风格 */
     internal fun showShareOptions() {
+        if (shareOptionsSheetShowing) return
+        shareOptionsSheetShowing = true
         val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
         val view = layoutInflater.inflate(R.layout.dialog_share_options, null)
         view.findViewById<android.view.View>(R.id.rowShareQq).setOnClickListener {
@@ -1165,6 +1173,7 @@ class MainActivity : AppCompatActivity() {
             shareAsPromoImage()
         }
         sheet.setContentView(view)
+        sheet.setOnDismissListener { shareOptionsSheetShowing = false }
         sheet.show()
     }
 
@@ -1184,9 +1193,7 @@ class MainActivity : AppCompatActivity() {
         // 注入 applicationContext 给 DefaultQqSdkSharer（isAuthorized/login 需要）
         (qqSdkSharer as? com.bilibili.livemonitor.util.DefaultQqSdkSharer)?.bind(applicationContext)
         shareScope.launch {
-            val roomInfo = withTimeoutOrNull(3000) {
-                roomInfoFetcher(QqShare.ROOM_ID)
-            }
+            val roomInfo = fetchShareRoomInfo()
             val title = roomInfo?.title
             val isLive = resolveShareLiveState(roomInfo)
             // 缩略图策略：开播=直播封面（内容优先）；
@@ -1215,7 +1222,7 @@ class MainActivity : AppCompatActivity() {
     internal fun shareAsImageText() {
         Toast.makeText(this, "正在准备图文分享…", Toast.LENGTH_SHORT).show()
         shareScope.launch {
-            val roomInfo = withTimeoutOrNull(3000) { roomInfoFetcher(QqShare.ROOM_ID) }
+            val roomInfo = fetchShareRoomInfo()
             val isLive = resolveShareLiveState(roomInfo)
             val title = roomInfo?.title
             currentShareTitle = title
@@ -1243,15 +1250,14 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
             val uri = shareImageLoader.shareableUri(this@MainActivity, file)
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "image/*"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, decider.title(isLive, title))
-                putExtra(Intent.EXTRA_TEXT, "$caption ${QqShare.buildShareUrl()}")
-                // ClipData 授权：部分目标只认它（不认 intent flag）才读得到图片流
-                clipData = android.content.ClipData.newUri(contentResolver, "cover", uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+            val intent = com.bilibili.livemonitor.util.ShareImageFactory.buildImageShareIntent(
+                uri = uri,
+                contentResolver = contentResolver,
+                clipLabel = "cover",
+                mimeType = "image/*",
+                extraSubject = decider.title(isLive, title),
+                extraText = "$caption ${QqShare.buildShareUrl()}"
+            )
             startActivity(Intent.createChooser(intent, "图文分享（部分应用可能只发图片）"))
         }
     }
@@ -1264,7 +1270,7 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "正在准备说说…", Toast.LENGTH_SHORT).show()
         (qqSdkSharer as? com.bilibili.livemonitor.util.DefaultQqSdkSharer)?.bind(applicationContext)
         shareScope.launch {
-            val roomInfo = withTimeoutOrNull(3000) { roomInfoFetcher(QqShare.ROOM_ID) }
+            val roomInfo = fetchShareRoomInfo()
             val isLive = resolveShareLiveState(roomInfo)
             val title = roomInfo?.title
             // QzoneShare 只收本地路径，封面先下载落盘
@@ -1288,18 +1294,22 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             params = params,
             onComplete = {
-                Toast.makeText(this, "已分享到 QQ 空间", Toast.LENGTH_SHORT).show()
+                guardActivity {
+                    Toast.makeText(this, "已分享到 QQ 空间", Toast.LENGTH_SHORT).show()
+                }
             },
             onCancel = {
                 AppLogger.d("MainActivity", "qzone share cancelled by user")
             },
             onError = { code, msg ->
-                AppLogger.e("MainActivity", "qzone share onError: code=$code msg=$msg")
-                if (code == com.bilibili.livemonitor.util.QQ_ERR_USER_NOT_AUTHORIZED) {
-                    // session 过期：重新弹授权引导
-                    showQqAuthGuideDialog(params) { doQzoneShareAfterAuthorized(params) }
-                } else {
-                    Toast.makeText(this, "说说分享失败：$msg", Toast.LENGTH_LONG).show()
+                guardActivity {
+                    AppLogger.e("MainActivity", "qzone share onError: code=$code msg=$msg")
+                    if (code == com.bilibili.livemonitor.util.QQ_ERR_USER_NOT_AUTHORIZED) {
+                        // session 过期：重新弹授权引导
+                        showQqAuthGuideDialog(params) { doQzoneShareAfterAuthorized(params) }
+                    } else {
+                        Toast.makeText(this, "说说分享失败：$msg", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         )
@@ -1313,7 +1323,7 @@ class MainActivity : AppCompatActivity() {
     internal fun shareAsPromoImage() {
         Toast.makeText(this, "正在生成宣传图…", Toast.LENGTH_SHORT).show()
         shareScope.launch {
-            val roomInfo = withTimeoutOrNull(3000) { roomInfoFetcher(QqShare.ROOM_ID) }
+            val roomInfo = fetchShareRoomInfo()
             val isLive = resolveShareLiveState(roomInfo)
             val title = roomInfo?.title
             val coverBitmap = roomInfo?.cover?.let {
@@ -1452,13 +1462,13 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
             val uri = shareImageLoader.shareableUri(this@MainActivity, file)
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "image/png"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_TEXT, "$body ${QqShare.buildShareUrl()}")
-                clipData = android.content.ClipData.newUri(contentResolver, "promo", uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+            val intent = com.bilibili.livemonitor.util.ShareImageFactory.buildImageShareIntent(
+                uri = uri,
+                contentResolver = contentResolver,
+                clipLabel = "promo",
+                mimeType = "image/png",
+                extraText = "$body ${QqShare.buildShareUrl()}"
+            )
             startActivity(Intent.createChooser(intent, "分享宣传图"))
         }
     }
@@ -1472,6 +1482,13 @@ class MainActivity : AppCompatActivity() {
             // 未授权：弹引导对话框让用户选「去授权」或「普通分享」
             showQqAuthGuideDialog(params)
         }
+    }
+
+    // SDK 回调守卫：QQ 授权/分享回调不受 scope 管理，Activity 可能已被销毁（转屏/返回）。
+    // 内联使 return 非局部返回；isFinishing/isDestroyed 解析到当前 Activity。
+    private inline fun guardActivity(block: () -> Unit) {
+        if (isFinishing || isDestroyed) return
+        block()
     }
 
     private fun showQqAuthGuideDialog(
@@ -1490,18 +1507,24 @@ class MainActivity : AppCompatActivity() {
                 qqSdkSharer.login(
                     activity = this,
                     onAuthorized = {
-                        AppLogger.d("MainActivity", "qq auth completed, proceed to share")
-                        Toast.makeText(this, "QQ 授权成功", Toast.LENGTH_SHORT).show()
-                        onAuthorizedProceed()
+                        guardActivity {
+                            AppLogger.d("MainActivity", "qq auth completed, proceed to share")
+                            Toast.makeText(this, "QQ 授权成功", Toast.LENGTH_SHORT).show()
+                            onAuthorizedProceed()
+                        }
                     },
                     onCancelled = {
-                        Toast.makeText(this, "已取消授权", Toast.LENGTH_SHORT).show()
+                        guardActivity {
+                            Toast.makeText(this, "已取消授权", Toast.LENGTH_SHORT).show()
+                        }
                     },
                     onError = { code, msg ->
-                        AppLogger.e("MainActivity", "qq auth failed: code=$code msg=$msg")
-                        Toast.makeText(this, "QQ 授权失败：$msg", Toast.LENGTH_LONG).show()
-                        // 授权失败也兜底走系统分享，用户至少能分享出去
-                        fallbackToSystemShare()
+                        guardActivity {
+                            AppLogger.e("MainActivity", "qq auth failed: code=$code msg=$msg")
+                            Toast.makeText(this, "QQ 授权失败：$msg", Toast.LENGTH_LONG).show()
+                            // 授权失败也兜底走系统分享，用户至少能分享出去
+                            fallbackToSystemShare()
+                        }
                     }
                 )
             }
@@ -1518,22 +1541,26 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             params = params,
             onComplete = {
-                Toast.makeText(this, "已分享到 QQ", Toast.LENGTH_SHORT).show()
+                guardActivity {
+                    Toast.makeText(this, "已分享到 QQ", Toast.LENGTH_SHORT).show()
+                }
             },
             onCancel = {
                 AppLogger.d("MainActivity", "qq share cancelled by user")
             },
             onError = { code, msg ->
-                AppLogger.e("MainActivity", "qq share onError: code=$code msg=$msg")
-                when (code) {
-                    com.bilibili.livemonitor.util.QQ_ERR_USER_NOT_AUTHORIZED -> {
-                        // session 过期/失效（罕见，但可能发生）：重新弹引导
-                        AppLogger.w("MainActivity", "qq session expired unexpectedly, re-prompt")
-                        showQqAuthGuideDialog(params)
-                    }
-                    else -> {
-                        Toast.makeText(this, "分享失败：$msg", Toast.LENGTH_LONG).show()
-                        fallbackToSystemShare()
+                guardActivity {
+                    AppLogger.e("MainActivity", "qq share onError: code=$code msg=$msg")
+                    when (code) {
+                        com.bilibili.livemonitor.util.QQ_ERR_USER_NOT_AUTHORIZED -> {
+                            // session 过期/失效（罕见，但可能发生）：重新弹引导
+                            AppLogger.w("MainActivity", "qq session expired unexpectedly, re-prompt")
+                            showQqAuthGuideDialog(params)
+                        }
+                        else -> {
+                            Toast.makeText(this, "分享失败：$msg", Toast.LENGTH_LONG).show()
+                            fallbackToSystemShare()
+                        }
                     }
                 }
             }
@@ -1590,38 +1617,18 @@ class MainActivity : AppCompatActivity() {
         return OemHelper.installedBilibiliVariants(packageManager).isNotEmpty()
     }
 
-    internal fun liveRoomAppIntent(pkg: String?): Intent {
-        return Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://live/$ROOM_ID")).apply {
-            // setPackage 强制投递给指定客户端，绕开 resolveActivity 的
-            // 包可见性不确定性（荣耀真机实测已装 bilibili 但解析为 null）
-            if (!pkg.isNullOrEmpty()) setPackage(pkg)
-        }
-    }
-
-    internal fun liveRoomWebIntent(pkg: String? = null): Intent {
-        return Intent(Intent.ACTION_VIEW, Uri.parse("https://live.bilibili.com/$ROOM_ID")).apply {
-            // 用户显式选择某个浏览器时强制用它打开；空包名=系统自选
-            if (!pkg.isNullOrEmpty()) setPackage(pkg)
-        }
-    }
-
-    internal fun spaceAppIntent(): Intent =
-        Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://space/${com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID}"))
-
-    internal fun spaceWebIntent(): Intent =
-        Intent(Intent.ACTION_VIEW, Uri.parse("https://space.bilibili.com/${com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID}"))
-
     internal fun openSpace() {
         // 复用 openLiveRoom 的选择器模式：https 主 intent（浏览器列表）+
         // EXTRA_INITIAL_INTENTS 注入 bilibili://space 排最前
-        val chooser = Intent.createChooser(spaceWebIntent(), "打开空间主页").apply {
-            putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(spaceAppIntent()))
+        val mid = com.bilibili.livemonitor.api.BilibiliActivityApi.MONITOR_MID
+        val chooser = Intent.createChooser(com.bilibili.livemonitor.util.BilibiliDeepLinks.spaceWebIntent(mid), "打开空间主页").apply {
+            putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(com.bilibili.livemonitor.util.BilibiliDeepLinks.spaceAppIntent(mid)))
         }
         try {
             startActivity(chooser)
         } catch (e: Exception) {
             AppLogger.w("MainActivity", "space chooser failed, fallback to web", e)
-            startActivity(spaceWebIntent())
+            startActivity(com.bilibili.livemonitor.util.BilibiliDeepLinks.spaceWebIntent(mid))
         }
     }
 
@@ -1647,8 +1654,8 @@ class MainActivity : AppCompatActivity() {
         }
         // 主 intent：https（浏览器列表）
         // EXTRA_INITIAL_INTENTS：bilibili:// 注入，排在系统选择器最前
-        val httpsIntent = liveRoomWebIntent()
-        val bilibiliIntent = liveRoomAppIntent(null)
+        val httpsIntent = com.bilibili.livemonitor.util.BilibiliDeepLinks.liveRoomWebIntent(ROOM_ID)
+        val bilibiliIntent = com.bilibili.livemonitor.util.BilibiliDeepLinks.liveRoomAppIntent(ROOM_ID, null)
         val chooser = Intent.createChooser(httpsIntent, "打开直播间").apply {
             putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(bilibiliIntent))
         }
@@ -1657,7 +1664,7 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             // 极端情况：chooser 无法启动，兜底不带包的 https
             AppLogger.w("MainActivity", "chooser failed, fallback to plain https", e)
-            startActivity(liveRoomWebIntent())
+            startActivity(com.bilibili.livemonitor.util.BilibiliDeepLinks.liveRoomWebIntent(ROOM_ID))
         }
         updateUI()
     }
@@ -1767,8 +1774,10 @@ class MainActivity : AppCompatActivity() {
 
         // 使用延迟来确保Service有足够时间启动，然后清除过渡状态
         binding.root.postDelayed({
-            isServiceStarting = false
-            updateUI()
+            if (!isDestroyed) {
+                isServiceStarting = false
+                updateUI()
+            }
         }, 500)
     }
 
@@ -1791,8 +1800,10 @@ class MainActivity : AppCompatActivity() {
 
         // 使用延迟来确保Service有足够时间停止，然后清除过渡状态
         binding.root.postDelayed({
-            isServiceStopping = false
-            updateUI()
+            if (!isDestroyed) {
+                isServiceStopping = false
+                updateUI()
+            }
         }, 500)
     }
 
