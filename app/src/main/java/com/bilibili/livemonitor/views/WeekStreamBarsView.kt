@@ -22,6 +22,19 @@ class WeekStreamBarsView @JvmOverloads constructor(
     private val muted = 0x666750A4.toInt()
     private val labelColor = 0xFF999999.toInt()
 
+    // 字段级画笔，避免 onDraw 里反复分配（lint DrawAllocation）
+    private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = accent
+        textAlign = Paint.Align.CENTER
+    }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = labelColor
+        textAlign = Paint.Align.CENTER
+    }
+    // 复用的柱矩形，避免 onDraw 里反复分配（lint DrawAllocation）
+    private val barRect = RectF()
+
     fun setData(counts: List<Int>, labels: List<String>) {
         require(counts.size == BAR_COUNT && labels.size == BAR_COUNT)
         counts.forEachIndexed { i, v -> this.counts[i] = v }
@@ -38,33 +51,23 @@ class WeekStreamBarsView @JvmOverloads constructor(
         val chartBottom = height - labelH
         val barW = (width - gap * (BAR_COUNT + 1)) / BAR_COUNT
 
-        val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        countPaint.textSize = dp(12).toFloat()
+        labelPaint.textSize = dp(11).toFloat()
         val corner = dp(3).toFloat()
 
         counts.forEachIndexed { i, count ->
             val x = gap + i * (barW + gap)
             val h = if (count == 0) dp(3).toFloat() else (chartBottom - countH) * count / max
             barPaint.color = if (count == 0) muted else accent
-            canvas.drawRoundRect(
-                RectF(x, chartBottom - countH - h, x + barW, chartBottom - countH), corner, corner, barPaint
-            )
+            barRect.set(x, chartBottom - countH - h, x + barW, chartBottom - countH)
+            canvas.drawRoundRect(barRect, corner, corner, barPaint)
             // 柱顶场次数
-            val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = dp(12).toFloat()
-                color = accent
-                textAlign = Paint.Align.CENTER
-            }
             if (count > 0) {
                 canvas.drawText(
                     count.toString(), x + barW / 2, chartBottom - countH - h - dp(2), countPaint
                 )
             }
             // 底部标签
-            val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = dp(11).toFloat()
-                color = labelColor
-                textAlign = Paint.Align.CENTER
-            }
             canvas.drawText(labels[i], x + barW / 2, (height - dp(2)).toFloat(), labelPaint)
         }
     }

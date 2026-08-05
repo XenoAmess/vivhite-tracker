@@ -1,6 +1,7 @@
 package com.bilibili.livemonitor
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
@@ -1665,6 +1666,9 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // 本应用核心是直播监控（需要不被 Doze 杀掉），向用户请求电池白名单是功能必需，
+    // 非 Play 商店违规用途：官方申诉渠道是 ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+    @SuppressLint("BatteryLife")
     private fun openBatterySettings() {
         val intent = Intent().apply {
             when {

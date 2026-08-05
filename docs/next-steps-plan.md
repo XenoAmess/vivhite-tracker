@@ -26,6 +26,8 @@
 
 ## P1 — 功能补全（中价值）
 
+> 状态：✅ 已完成 #5/#6/#7/#8（2026-08-05，commit `7b3f640`，487 例单测 0 失败 / lint 0 error）；#4 仍待真实样本
+
 | # | 项 | 说明 | 动作 | 估 |
 |---|---|---|---|---|
 | 4 | **LIVE_RCMD 实测校准** | 预告解析是防御式，字段未验证 | 固定 `parseLiveRcmd` fixture + 测试（已有）；待白绮有预约直播时抓真实 feed 校准并替换 fixture | 待样本 |
@@ -36,6 +38,8 @@
 
 ## P2 — 工程优化（长期收益）
 
+> 状态：✅ #11/#13 已完成；#12 判定不启用（原因见下）。#9/#10 拆分专项留待单独排期。
+
 | # | 项 | 现状 | 动作 | 估 |
 |---|---|---|---|---|
 | 9 | **LiveCheckService 拆分** | 1259 行（通知/场次/活动监控/提醒/排程集中） | 抽 `NotificationBuilder`、`StreamSessionTracker`（场次记录决策可单测），收敛 `recordStreamStart/End`+`trackTitleChange` | 1天 |
@@ -43,6 +47,12 @@
 | 11 | **lint 清零** | 1 error + 若干警告 | `tools:ignore` 豁免 BatteryLife（功能必需）；清 Locale.getDefault 与个别 KTX 提示 | 0.5天 |
 | 12 | **configuration cache 启用** | 构建每轮 ~1.5min | 启用后跑全量验证（KSP/Room 兼容则保留） | 0.5天 |
 | 13 | **测试补强** | Widget 27%、Room 无迁移测试、日历交互无专门测试 | Widget 渲染 instrumented、Room 空库/多场次边界、StatsActivity 日历点选测试 | 0.5天 |
+
+### P2 落地记录（2026-08-05）
+
+- **#11 ✅**：lint 0 error。`MainActivity.openBatterySettings` 加 `@SuppressLint("BatteryLife")`（请求电池白名单是本应用监控功能的必要用途）；新建 `WeekStreamBarsView` 的 Paint/RectF 提升为字段消除 DrawAllocation。
+- **#12 ❌ 判定不启用**：`--configuration-cache` 实测 AGP 9.3.1 内部读取 Gradle 属性 `android.injected.build.model.only.advanced` 时无法序列化（trace 指向 `plugin 'com.android.internal.application'`），属 AGP 层限制、仓库脚本无法修复，按「KSP/Room 兼容则保留」准则不启用。**顺手保留的脚本卫生改进**：`generateChangelog` doLast 改 `ProcessBuilder`（不再捕获 `providers`/Project）、`writeVersionInfo` 配置期预计算目标 File、`assets.srcDir` → `directories`（AGP9 去弃用 API）。后续若 AGP 修复可重新评估。
+- **#13 ✅**：`LiveStatusWidgetProvider.computeContent` 抽纯函数 + 4 组断言（直播展示标题/空标题隐藏/未开播隐藏/停止隐藏）；`StreamSessionDaoTest` 补 空库、多场次下 `closeOpenSessions` 只闭合残留、标题变化按 session 隔离且升序；`StatsActivityTest` 补 日历点选空日（清空列表+「无直播」+空态隐藏）、选中日主题变化时间线展示。487 → 493 例。
 
 ## 明确不做（维持原判）
 

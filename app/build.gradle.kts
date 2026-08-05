@@ -35,11 +35,12 @@ val gitHash = providers.exec {
 
 // 把版本信息写进 build/outputs/version-info.properties，CI workflow 从这里读取，
 // 消除 android-release.yml / android-ci.yml / 增量脚本 里各自复刻的版本推导。
+// 目标 File 在配置期算成 java.io.File 再进 doLast，避免捕获 Provider 破坏 configuration cache
+val versionInfoFile = layout.buildDirectory.file("outputs/version-info.properties").get().asFile
 val writeVersionInfo = tasks.register("writeVersionInfo") {
-    val outFile = layout.buildDirectory.file("outputs/version-info.properties")
-    outputs.file(outFile)
+    outputs.file(versionInfoFile)
     doLast {
-        outFile.get().asFile.writeText(
+        versionInfoFile.writeText(
             "versionCode=$gitVersionCode\nversionName=$gitVersionName\ngitHash=$gitHash\n"
         )
     }
@@ -168,8 +169,16 @@ val generateChangelog = tasks.register("generateChangelog") {
     outputs.upToDateWhen { false } // git 历史每次构建都可能变
     doLast {
         outFile.parentFile.mkdirs()
+        // 不用 providers.exec（捕获 Project 引用破坏 configuration cache），
+        // 改用 ProcessBuilder 在任务动作内跑 git
         fun git(vararg args: String): String = runCatching {
-            providers.exec { commandLine("git", *args) }.standardOutput.asText.get().trim()
+            val pb = ProcessBuilder(listOf("git", *args))
+            pb.redirectErrorStream(true)
+            val proc = pb.start()
+            proc.outputStream.close()
+            val output = proc.inputStream.readBytes().toString(Charsets.UTF_8)
+            proc.waitFor()
+            output.trim()
         }.getOrDefault("")
         val tags = git("tag", "-l", "v*", "--sort=-creatordate")
             .lines().filter { it.isNotBlank() }
@@ -190,7 +199,7 @@ val generateChangelog = tasks.register("generateChangelog") {
         outFile.writeText(sb.toString(), Charsets.UTF_8)
     }
 }
-android.sourceSets.getByName("main").assets.srcDir(changelogDir.get())
+android.sourceSets.getByName("main").assets.directories.add(changelogDir.get().asFile.absolutePath)
 tasks.named("preBuild").configure {
     dependsOn(generateChangelog)
     dependsOn(writeVersionInfo)

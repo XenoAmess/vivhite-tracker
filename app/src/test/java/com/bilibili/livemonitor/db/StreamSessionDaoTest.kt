@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -67,5 +68,36 @@ class StreamSessionDaoTest {
         val changes = dao.titleChanges(sid)
         assertEquals(1, changes.size)
         assertEquals("b", changes[0].newTitle)
+    }
+
+    @Test
+    fun `空库边界 全部空结果`() = runBlocking {
+        assertEquals(null, dao.findOpenSession())
+        assertEquals(0, dao.closedSessionsSince(0).size)
+        assertEquals(0, dao.recentSessions(10).size)
+        assertEquals(0, dao.titleChanges(999).size)
+    }
+
+    @Test
+    fun `多场次下 closeOpenSessions 只闭合残留开着的`() = runBlocking {
+        dao.insertSession(StreamSessionEntity(startTs = 1000, endTs = 2000)) // 已闭合
+        dao.insertSession(StreamSessionEntity(startTs = 3000))               // 开着的
+        dao.closeOpenSessions(4000)
+        val closed = dao.closedSessionsSince(0)
+        assertEquals("闭合 2 场", 2, closed.size)
+        assertTrue("残留场次被补闭合", closed.any { it.startTs == 3000L && it.endTs == 4000L })
+        assertEquals(null, dao.findOpenSession())
+    }
+
+    @Test
+    fun `标题变化按 session 隔离且时间升序`() = runBlocking {
+        val a = dao.insertSession(StreamSessionEntity(startTs = 1000))
+        val b = dao.insertSession(StreamSessionEntity(startTs = 2000))
+        dao.insertTitleChange(StreamTitleChangeEntity(sessionId = a, changedAt = 1500, newTitle = "b2"))
+        dao.insertTitleChange(StreamTitleChangeEntity(sessionId = a, changedAt = 1200, newTitle = "b1"))
+        dao.insertTitleChange(StreamTitleChangeEntity(sessionId = b, changedAt = 2100, newTitle = "b场"))
+        val changesA = dao.titleChanges(a)
+        assertEquals(listOf("b1", "b2"), changesA.map { it.newTitle })
+        assertEquals(listOf("b场"), dao.titleChanges(b).map { it.newTitle })
     }
 }
