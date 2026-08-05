@@ -56,12 +56,11 @@ stream_title_changes(id PK auto, session_id FK, changed_at, old_title, new_title
 - 聚合逻辑 `domain/StreamStats`（纯函数）；UI 薄壳
 - 主界面「场次记录」入口
 
-## Phase 3 — 回放 + 预告
+## Phase 3 — 开播预告
 
-### 3.1 回放上线提醒
-- prefs：`last_stream_end_ts`
-- `handleDynamicResult`：新视频 `pubTs` ∈ (下播, 下播+6h] → 通知「本场回放已上线」直达 av（复用 `CHANNEL_VIDEO`）
-- 测试：注入 endTs 窗口判定
+### 3.1 回放上线提醒 —— **已移除（无法准确识别回放）**
+
+> 2026-08-05 用户反馈该功能无法准确识别回放（下播窗口内的新视频不一定是本场回放），已回退为普通新视频提醒。
 
 ### 3.2 开播预告（LIVE_RCMD）⚠️ 前置调研
 - 先抓真实 desktop feed 确认 `LIVE_RCMD` 字段形态（预告开播时间/标题）
@@ -86,7 +85,7 @@ stream_title_changes(id PK auto, session_id FK, changed_at, old_title, new_title
 ## 横切关注点
 - 新 prefs 键全进 `PreferenceManager`
 - 纯决策逻辑一律 `domain/` + 单测
-- 通知通道收敛：下播/回放/预告合并新 `stream_lifecycle`(MED) 通道；勿扰不新建通道
+- 通知通道收敛：下播/预告合并新 `stream_lifecycle`(MED) 通道；勿扰不新建通道
 - 每期结束 `lintDebug + testDebugUnitTest + assembleDebug`，可打 `v*` tag
 
 ## 工作量估算
@@ -95,7 +94,7 @@ stream_title_changes(id PK auto, session_id FK, changed_at, old_title, new_title
 | 前置 | Room+KSP 集成（含风险验证） | 0.5 天 |
 | P1 | 勿扰+下播+场次记录 | 2 天 |
 | P2 | Widget+StatsActivity | 2 天 |
-| P3 | 回放+预告（含调研） | 1.5 天 |
+| P3 | 开播预告（含调研） | 1 天 |
 | P4 | 主题/过滤/深色 | 1.5 天 |
 
 ## 执行状态（2026-08-04 全部落地）
@@ -108,7 +107,7 @@ stream_title_changes(id PK auto, session_id FK, changed_at, old_title, new_title
 | P1.3 场次记录 | ✅ | Room 开→下 闭合 + 进程死亡补闭合；S16 |
 | P2.1 桌面 Widget | ✅ | `LiveStatusWidgetProvider` 直播中/未开播/已停止 + 一键进直播间；handleResult 刷新 |
 | P2.2 StatsActivity | ✅ | 最近 50 场 + 周/月/平均/最长；主界面「场次」入口 |
-| P3.1 回放上线提醒 | ✅ | 下播 6h 窗口内新视频标「本场回放」直达；不打铃 |
+| P3.1 回放上线提醒 | ❌ 已移除 | 无法准确识别回放（2026-08-05） |
 | P3.2 开播预告 | ✅ | LIVE_RCMD 防御式解析（字段形态待有预约直播时实测）；24h 窗口 + 去重 |
 | P4.1 主题变化提醒 | ✅ | Live 带 title；变化且开播>5min 提醒（默认关）+ 记 DB |
 | P4.2 动态类型过滤 | ✅ | `monitor_dynamic_types`（图文/转发/专栏 多选） |

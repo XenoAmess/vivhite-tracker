@@ -96,13 +96,13 @@ class LiveMonitorApp : Application() {
                     enableVibration(true)
                     enableLights(true)
                 },
-                // 下播/回放上线/开播预告 共用一个 MED 通道，避免通道爆炸
+                // 下播/开播预告 共用一个 MED 通道，避免通道爆炸
                 NotificationChannel(
                     CHANNEL_STREAM_LIFECYCLE_ID,
                     "直播动态",
                     NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
-                    description = "下播 / 回放上线 / 开播预告提醒"
+                    description = "下播 / 开播预告提醒"
                 }
             )
 

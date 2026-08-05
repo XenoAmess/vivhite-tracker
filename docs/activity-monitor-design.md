@@ -114,8 +114,9 @@ UI 在「活动监控」折叠区以 3 个复选框呈现。
   `live_start_time` 兼容毫秒/秒级时间戳；字段形态随 B 站可能变化，取不到时**防御式降级不提醒**（需在有预约直播时实测校准）。
 - `domain/LiveReminderDecider.shouldRemind`：预告时间在 `(now, now+24h]` 且按动态 id 去重 → 提醒一次。
 - 通知走 `stream_lifecycle`（MED）通道：「白绮直播预告」+ 预计开播时间。
-- 下播提醒（`notify_stream_end`）、回放上线（下播 6h 窗口内新视频标「本场回放」）、直播中标题变化
-  （`notify_title_change`，默认关）同用 `stream_lifecycle` 通道，见 `docs/new-features-plan.md`。
+- 下播提醒（`notify_stream_end`）、直播中标题变化（`notify_title_change`，默认关）同用
+  `stream_lifecycle` 通道，见 `docs/new-features-plan.md`。
+  （注：曾尝试「回放上线提醒」（下播 6h 窗口内新视频标回放），无法准确识别回放，2026-08-05 已移除。）
 
 ## ActivityDecider（纯函数）
 

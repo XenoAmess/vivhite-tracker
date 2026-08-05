@@ -221,15 +221,6 @@ class PreferenceManager(context: Context) {
         return prefs.getBoolean(KEY_NOTIFY_STREAM_END, true)
     }
 
-    // 最近一次下播时间戳（回放上线提醒窗口基准）
-    fun setLastStreamEndTs(ts: Long) {
-        prefs.edit().putLong(KEY_LAST_STREAM_END_TS, ts).apply()
-    }
-
-    fun getLastStreamEndTs(): Long {
-        return prefs.getLong(KEY_LAST_STREAM_END_TS, 0L)
-    }
-
     // 已提醒过的开播预告动态 id（按 id_str 去重）
     fun setLastRemindedLiveDynamicId(id: String) {
         prefs.edit().putString(KEY_LAST_REMINDED_LIVE_DYNAMIC_ID, id).apply()
@@ -396,7 +387,6 @@ class PreferenceManager(context: Context) {
 
         // ===== 直播生命周期提醒 =====
         private const val KEY_NOTIFY_STREAM_END = "notify_stream_end"
-        private const val KEY_LAST_STREAM_END_TS = "last_stream_end_ts"
         private const val KEY_LAST_REMINDED_LIVE_DYNAMIC_ID = "last_reminded_live_dynamic_id"
 
         // ===== 直播主题变化提醒 =====

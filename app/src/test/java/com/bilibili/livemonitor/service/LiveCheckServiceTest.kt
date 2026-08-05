@@ -929,29 +929,6 @@ class LiveCheckServiceTest {
     }
 
     @Test
-    fun `A5 下播窗口内的新视频 判定为本场回放单独通知不打铃`() {
-        // 用户场景：下播后 6h 内出现的新视频 = 本场回放，直达提示而非普通新视频提醒
-        prefs.setServiceRunning(true)
-        prefs.setLastVideoAid(100L)
-        // 与 videoDynamic 的 pubTs=1700000000(秒) 对齐：pubTs*1000 == lastStreamEndTs
-        prefs.setLastStreamEndTs(1700000000000L)
-        val activityApi = FakeActivityApi()
-        activityApi.enqueue(videoDynamic(200L, "【回放】整场直播"))
-        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
-        val fakes = mutableListOf<FakeExoPlayer>()
-        wireActivity(controller, activityApi, fakes)
-
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        driveActivityCheckUntil(controller, "replay notified") {
-            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO) != null
-        }
-        val notif = shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_VIDEO)!!
-        val title = notif.extras.getString(android.app.Notification.EXTRA_TITLE).orEmpty()
-        assertTrue("应标为回放: $title", title.contains("回放"))
-        assertEquals("回放通知不响铃", 0, fakes.size)
-    }
-
-    @Test
     fun `A6 开播预告24h内 提醒一次且去重`() {
         prefs.setServiceRunning(true)
         // 预告动态 id 含 pubTs 相关；构造一个 1h 后开播的预告
