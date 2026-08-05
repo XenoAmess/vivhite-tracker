@@ -70,6 +70,7 @@ LiveCheckService（60s 直播检查，不动）
 | `monitor_videos` | Boolean | **true** | 监控新视频开关 |
 | `monitor_pinned` | Boolean | **true** | 监控置顶变化开关 |
 | `monitor_dynamics` | Boolean | **true** | 监控动态开关 |
+| `monitor_dynamic_types` | Set\<String\> | 图文/转发/专栏 | 动态类型过滤（勾选的类型才提醒） |
 | `alert_ring_on_activity` | Boolean | **true** | 新视频/动态时是否响铃（开播不受此控制） |
 | `last_video_aid` | Long | -1 | 上次见到的最新视频 avid |
 | `last_pinned_aid` | Long | -1 | 上次见到的置顶视频 avid |
@@ -81,12 +82,12 @@ LiveCheckService（60s 直播检查，不动）
 
 | 文件 | 职责 |
 |---|---|
-| `api/BilibiliActivityApi.kt` | 桌面端 feed/space 拉取 + 解析（DynamicInfo 含 pinnedAvItem/latestAvItem） |
+| `api/BilibiliActivityApi.kt` | 桌面端 feed/space 拉取 + 解析（DynamicInfo 含 pinnedAvItem/latestAvItem/liveRcmd） |
 | `domain/ActivityDecider.kt` | 纯函数：跳变检测 + 首次不提 |
+| `domain/LiveReminderDecider.kt` | 纯函数：开播预告（LIVE_RCMD）24h 窗口 + 去重 |
 | `service/LiveCheckService.kt` | 5min Alarm + checkNewDynamics + handleDynamicResult + triggerActivityAlert |
-| `MainActivity.kt` + `dialog_activity_settings.xml` | 活动监控设置对话框（3 开关 + 响铃开关） |
-| `res/layout/expand_section_activity.xml` | 主界面「活动监控」折叠区 |
-| `LiveMonitorApp.kt` | 通知通道 `video_alert_v2` / `dynamic_alert_v2` |
+| `res/layout/expand_section_activity.xml` | 主界面「活动监控」折叠区（3 开关 + 动态类型复选框 + 响铃开关） |
+| `LiveMonitorApp.kt` | 通知通道 `video_alert_v2` / `dynamic_alert_v2` / `stream_lifecycle` |
 
 ## BilibiliActivityApi
 
@@ -94,10 +95,27 @@ LiveCheckService（60s 直播检查，不动）
 
 - 端点：`/x/polymer/web-dynamic/desktop/v1/feed/space?host_mid=$mid&features=itemOpusStyle`。
 - `DynamicInfo`：`id`（去重）、`type`、`displayText`、`avItem`、`isTop`、`pubTs`，
-  另带 **`pinnedAvItem`**（当前置顶视频）与 **`latestAvItem`**（feed 中最新非置顶视频）两个独立字段——
+  另带 **`pinnedAvItem`**（当前置顶视频）、**`latestAvItem`**（feed 中最新非置顶视频）与
+  **`liveRcmd`**（本页直播开播/预告条目）三个独立字段——
   最新动态为图文时，视频监控仍能正确推进投稿基线；置顶视频单独保留，避免被最新非置顶动态掩盖。
 - 解析兼容 `modules` 的 JSONObject / JSONArray 两种形态；`module_desc.text` 直挂与嵌套 `desc.text` 都兼容。
 - `parseDynamicFeed` 跳过置顶项（items[0] 恒为置顶），正常返回最新非置顶项；全是置顶时回退该项落基线。
+- `DYNAMIC_TYPE_LIVE_RCMD` 只参与开播预告提取，**不计入动态基线**（避免触发"新动态"误报）。
+
+## 动态类型过滤
+
+`monitor_dynamic_types`（Set）控制哪些动态类型提醒：图文（DRAW）/ 转发（FORWARD）/ 专栏（ARTICLE），
+默认全开。`handleDynamicResult` 只对勾选类型触发提醒；基线（last_dynamic_id）始终推进，不受过滤影响。
+UI 在「活动监控」折叠区以 3 个复选框呈现。
+
+## 开播预告提醒（LIVE_RCMD）
+
+- `BilibiliActivityApi.parseLiveRcmd` 解析 `DYNAMIC_TYPE_LIVE_RCMD` → `LiveRcmdInfo`（dynamicId / liveStartMs / title / contentText）。
+  `live_start_time` 兼容毫秒/秒级时间戳；字段形态随 B 站可能变化，取不到时**防御式降级不提醒**（需在有预约直播时实测校准）。
+- `domain/LiveReminderDecider.shouldRemind`：预告时间在 `(now, now+24h]` 且按动态 id 去重 → 提醒一次。
+- 通知走 `stream_lifecycle`（MED）通道：「白绮直播预告」+ 预计开播时间。
+- 下播提醒（`notify_stream_end`）、回放上线（下播 6h 窗口内新视频标「本场回放」）、直播中标题变化
+  （`notify_title_change`，默认关）同用 `stream_lifecycle` 通道，见 `docs/new-features-plan.md`。
 
 ## ActivityDecider（纯函数）
 
@@ -138,20 +156,24 @@ fun stringToNullable(value: String): String? // 空串 → null
 
 ## UI
 
-MainActivity「活动监控」折叠区 → 设置对话框（`dialog_activity_settings.xml`）：
+主界面设置抽屉「活动监控」折叠区（`expand_section_activity.xml`）：
 
 ```
-┌─ 活动监控设置 ────────────────┐
+┌─ 活动监控 ────────────────────┐
 │  ☑ 监控新视频投稿             │
 │  ☑ 监控置顶视频变化           │
+│  ☑ 监控动态                   │
+│  ─────────────────            │
+│  动态类型（勾选的才提醒）      │
+│  ☑ 图文  ☑ 转发  ☑ 专栏        │
+│  ─────────────────            │
+│  ☑ 新视频/动态时也响铃         │
 │  ☑ 监控动态                   │
 │                               │
 │  ─────────────────            │
 │                               │
 │  ☑ 新视频/动态时也响铃         │
 │    （开播始终响铃，不受此控制） │
-│                               │
-│         [完成]                │
 └───────────────────────────────┘
 ```
 

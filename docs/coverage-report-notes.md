@@ -87,3 +87,14 @@ Android Gradle 变体对本 skill 是新材料，已回写到 SKILL.md（Pitfall
   魔法期（MagicPeriodDecider / MagicPeriodStore / MagicAlarmScheduler）、
   分享（ShareTextDecider / QqShare / QqGroups）等。
 - 实测命令：`JAVA_HOME=~/.jdks/jbr-17.0.14 ./gradlew jacocoUnitTestReport`（本机默认 GraalVM 会构建失败，见 AGENTS.md）。
+
+## 2026-08-04 追加（五）：新功能期（勿扰/场次/Widget/统计/回放/预告/主题）
+
+- **总覆盖率保持 86%**（INSTRUCTION），单测 **485 例 / 45 文件**（新增 8 文件、约 33 例）。
+- 新增包：`controller` 83%（ShareController）、`db` 77%（Room DAO/实体）、`widget` 27%（LiveStatusWidgetProvider，
+  Robolectric 只覆盖纯渲染决策 `buildStatus`，RemoteViews 组装留给真机）。
+- 既有包上升：api 72%→81%（LIVE_RCMD 解析）、receiver 91%→93%、service 85%→87%。
+- 新覆盖对象：QuietHoursDecider / StreamStats / LiveReminderDecider / LiveStatusWidgetProvider.buildStatus /
+  StreamSessionDao（Room in-memory）/ StatsActivity / 服务状态机 S15-S17 + A5-A8（勿扰静音/场次闭合/回放/预告/动态类型过滤/标题变化）。
+- 新 prefs 默认值/round-trip 并入 PreferenceManagerTest。
+- 覆盖缺口（真机/系统行为，非数值能补）：Widget RemoteViews 渲染、日历点选交互、Room 生产库迁移、LIVE_RCMD 真实字段形态。

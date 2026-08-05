@@ -81,7 +81,7 @@ README 明确：「ApkDiffPatch can't be used by Android app store, because it r
 
 - `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86,x86_64}/`：`libapkpatch.so` + `libc++_shared.so`（4 ABI，共 4.1MB）
 - `app/src/main/java/com/github/sisong/ApkPatch.java`：官方 JNI 包装 + `System.loadLibrary`
-- `util/ApkPatcher.kt`：按补丁头分派（`ZiPat1`→ApkDiffPatch / `BSDIFF40`→jbsdiff），native 失败包成普通异常回退全量
+- `util/ApkPatcher.kt`：仅支持 ApkDiffPatch（`ZiPat1` 头），其他格式拒绝回退全量；native 失败包成普通异常回退全量
 - 单测 `util/ApkPatcherTest.kt`：分派/格式/失败降级全覆盖
 - 服务端（`build_delta_chains.py` + `android-release.yml`）切换为 ZipDiff 生成 **已完成**：
   - release workflow：下载 ApkDiffPatch v1.8.1 linux64 → `ApkNormalized` + `apksigner34` 重签 → 发布物
@@ -198,4 +198,4 @@ ops[]:  tag u8
 - `github.com/sisong/ApkDiffPatch`（MIT，release 附 Android SDK + CLI）
 - `github.com/sisong/HDiffPatch`（ApkDiffPatch 的底层通用库，Android libhpatchz.so）
 - `github.com/sisong/sfpatcher` / `google/archive-patcher`（应用商店场景，需持有密钥的重签名，模型与本项目侧载不同）
-- 本项目现状：`util/ApkPatcher.kt`（jbsdiff）、`util/IncrementalUpdater.kt`、`domain/ChainPlanner.kt`、`.github/workflows/build_delta_chains.py` / `build_beta_chains.py`、`docs/versioning-and-update-system.md`
+- 本项目现状：`util/ApkPatcher.kt`（ApkDiffPatch JNI）、`util/IncrementalUpdater.kt`、`domain/ChainPlanner.kt`、`.github/workflows/build_delta_chains.py` / `build_beta_chains.py`、`docs/versioning-and-update-system.md`

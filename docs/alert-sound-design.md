@@ -110,6 +110,9 @@ contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PER
 
 `LiveCheckService.playAlertSound()`（service/LiveCheckService.kt:662）用 Media3 ExoPlayer：
 
+> **勿扰时段例外**：`triggerAlert`/`triggerActivityAlert` 在勿扰窗口内（`QuietHoursDecider`）不调用
+> `playAlertSound`，只发静音通知（`setSilent`），不响铃不震动不全屏。见 `docs/new-features-plan.md`。
+
 ```kotlin
 val player = playerFactory(context)              // ExoPlayer.Builder
 player.setAudioAttributes(Media3AudioAttributes USAGE_ALARM, handleAudioFocus=false)
