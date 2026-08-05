@@ -45,4 +45,34 @@ class StreamStatsTest {
         assertEquals(2 * 3_600_000, s.maxDurationMs)
         assertEquals(2 * 3_600_000 + 3_600_000 + 30 * 60_000, s.totalDurationMs)
     }
+
+    @Test
+    fun `dailyCounts 7 天桶对齐 越界忽略`() {
+        // now = epoch day 1,000,000（UTC 对齐）；桶下标 0 = 6 天前
+        val sessions = listOf(
+            closed(0, -3_600_000),                 // 今天
+            closed(1 * day, 1 * day - 3_600_000),  // 昨天
+            closed(6 * day, 6 * day - 3_600_000),  // 6 天前（最后桶）
+            closed(7 * day, 7 * day - 3_600_000),  // 7 天前（越界）
+            StreamSessionEntity(startTs = now - day, endTs = null) // 未闭合忽略
+        )
+        val daily = StreamStats.dailyCounts(sessions, now, 7)
+        assertEquals(listOf(1, 0, 0, 0, 0, 1, 1), daily)
+    }
+
+    @Test
+    fun `favoriteWeekday 累计并返回最多的一天`() {
+        // 1970-01-01 周四（epochDay 0 → 4）；+day 周五（5）；+2day 周六（6）
+        val thursday = StreamSessionEntity(startTs = 0, endTs = 3_600_000)
+        val friday = StreamSessionEntity(startTs = day, endTs = day + 3_600_000)
+        val saturday = StreamSessionEntity(startTs = 2 * day, endTs = 2 * day + 3_600_000)
+        val fav = StreamStats.favoriteWeekday(listOf(thursday, thursday, friday, saturday))!!
+        assertEquals(4 to 2, fav)
+        assertEquals("空列表应返回 null", null, StreamStats.favoriteWeekday(emptyList()))
+        assertEquals(
+            "未闭合不参与",
+            null,
+            StreamStats.favoriteWeekday(listOf(StreamSessionEntity(startTs = 0, endTs = null)))
+        )
+    }
 }

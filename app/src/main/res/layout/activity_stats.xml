@@ -10,21 +10,57 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/tvStatsSummary"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="12dp"
-            android:paddingBottom="10dp"
-            android:textSize="14sp"
-            android:text="本周 0 场 · 本月 0 场 · 平均 -- · 最长 --" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tvStatsSummary"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingStart="16dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="10dp"
+                android:textSize="14sp"
+                android:text="本周 0 场 · 本月 0 场 · 平均 -- · 最长 --" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnExportStats"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
+                android:text="导出"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="?android:attr/listDivider" />
+
+        <TextView
+            android:id="@+id/tvWeekBarsTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="12dp"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:text="最近 7 天开播场次" />
+
+        <com.bilibili.livemonitor.views.WeekStreamBarsView
+            android:id="@+id/weekBars"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -92,6 +128,18 @@
             android:layout_height="wrap_content"
             android:nestedScrollingEnabled="false"
             android:paddingBottom="16dp" />
+
+        <TextView
+            android:id="@+id/tvDayTitleChanges"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="8dp"
+            android:textSize="12sp"
+            android:textColor="?android:attr/textColorSecondary" />
 
         <TextView
             android:id="@+id/tvEmptyGuide"

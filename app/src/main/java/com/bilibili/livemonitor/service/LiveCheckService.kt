@@ -363,6 +363,8 @@ class LiveCheckService : Service() {
         }
 
         lastStatus = isLive
+        // 勿扰错过提醒：勿扰窗口内静音过的开播，等窗口结束后补一条汇总
+        maybeSendQuietMissedSummary()
     }
 
     // 直播中主题变化提醒（默认关）：标题变化且开播超 5 分钟才提醒；记录基线到 prefs 与 DB
@@ -699,6 +701,23 @@ class LiveCheckService : Service() {
         )
     }
 
+    // 勿扰错过提醒：静音开播的 marker 在勿扰结束后补一条汇总（只发一次，发完清 marker）
+    private fun maybeSendQuietMissedSummary() {
+        val missedTs = preferenceManager.getQuietMissedLiveTs()
+        if (missedTs <= 0L) return
+        if (isInQuietHours()) return
+        preferenceManager.setQuietMissedLiveTs(0L)
+        val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(missedTs))
+        val title = preferenceManager.getQuietMissedLiveTitle()
+        val text = if (title.isBlank()) {
+            "勿扰时段内白绮 $time 开播了"
+        } else {
+            "勿扰时段内白绮 $time 开播了：「$title」"
+        }
+        sendTextNotification(LiveMonitorApp.CHANNEL_ALERT_ID, "🔔 白绮勿扰时段内开播了", text)
+    }
+
     private fun sendTextNotification(channelId: String, title: String, text: String?) {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -810,6 +829,9 @@ class LiveCheckService : Service() {
         // 勿扰时段：不响铃/不震动/不全屏，只发静音通知（醒来能看到「开播了」）
         if (isInQuietHours()) {
             AppLogger.w(TAG, "quiet hours active, silent alert only")
+            // 记录被静音的开播时间与标题，勿扰结束后补「错过提醒」汇总
+            preferenceManager.setQuietMissedLiveTs(System.currentTimeMillis())
+            preferenceManager.setQuietMissedLiveTitle(preferenceManager.getLastLiveTitle())
             sendSilentAlertNotification()
             return
         }

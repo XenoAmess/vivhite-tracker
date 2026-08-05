@@ -210,6 +210,24 @@ class PreferenceManager(context: Context) {
         return prefs.getInt(KEY_QUIET_END_MINUTES, DEFAULT_QUIET_END_MINUTES)
     }
 
+    // 勿扰窗口内被静音的开播时间戳（0=无），勿扰结束后补一条「错过提醒」汇总
+    fun setQuietMissedLiveTs(ts: Long) {
+        prefs.edit().putLong(KEY_QUIET_MISSED_LIVE_TS, ts).apply()
+    }
+
+    fun getQuietMissedLiveTs(): Long {
+        return prefs.getLong(KEY_QUIET_MISSED_LIVE_TS, 0L)
+    }
+
+    // 勿扰窗口内被静音的开播标题（可能为空，汇总时兜底文案）
+    fun setQuietMissedLiveTitle(title: String) {
+        prefs.edit().putString(KEY_QUIET_MISSED_LIVE_TITLE, title).apply()
+    }
+
+    fun getQuietMissedLiveTitle(): String {
+        return prefs.getString(KEY_QUIET_MISSED_LIVE_TITLE, "") ?: ""
+    }
+
     // ========== 直播生命周期提醒 ==========
 
     // 下播时通知（含时长），默认开
@@ -382,6 +400,8 @@ class PreferenceManager(context: Context) {
         private const val KEY_QUIET_HOURS_ENABLED = "quiet_hours_enabled"
         private const val KEY_QUIET_START_MINUTES = "quiet_start_minutes"
         private const val KEY_QUIET_END_MINUTES = "quiet_end_minutes"
+        private const val KEY_QUIET_MISSED_LIVE_TS = "quiet_missed_live_ts"
+        private const val KEY_QUIET_MISSED_LIVE_TITLE = "quiet_missed_live_title"
         private const val DEFAULT_QUIET_START_MINUTES = 23 * 60
         private const val DEFAULT_QUIET_END_MINUTES = 7 * 60
 

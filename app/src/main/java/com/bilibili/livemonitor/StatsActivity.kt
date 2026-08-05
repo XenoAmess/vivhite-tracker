@@ -1,5 +1,6 @@
 package com.bilibili.livemonitor
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -38,6 +39,7 @@ class StatsActivity : AppCompatActivity() {
     private val sessionsByDay = mutableMapOf<Long, MutableList<StreamSessionEntity>>()
     private var selectedDayStart: Long = 0
     private lateinit var sessionAdapter: SessionAdapter
+    private val loadedSessions = mutableListOf<StreamSessionEntity>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,15 +63,34 @@ class StatsActivity : AppCompatActivity() {
 
         binding.btnPrevMonth.setOnClickListener { cal.add(Calendar.MONTH, -1); renderCalendar() }
         binding.btnNextMonth.setOnClickListener { cal.add(Calendar.MONTH, 1); renderCalendar() }
+        binding.btnExportStats.setOnClickListener { exportSessions() }
 
         lifecycleScope.launch {
             val dao = AppDatabase.get(this@StatsActivity).streamSessionDao()
             val now = System.currentTimeMillis()
             val recent = dao.recentSessions(200)
+            loadedSessions.clear()
+            loadedSessions.addAll(recent)
             val summary = StreamStats.summarize(dao.closedSessionsSince(now - 30L * 86_400_000L), now)
-            binding.tvStatsSummary.text =
+            var summaryText =
                 "本周 ${summary.weekCount} 场 · 本月 ${summary.monthCount} 场 · " +
                     "平均 ${formatDuration(summary.avgDurationMs)} · 最长 ${formatDuration(summary.maxDurationMs)}"
+            // 星期偏好并入摘要：常播日（0=周日..6=周六）
+            val localOffset = java.util.TimeZone.getDefault().getOffset(now).toLong()
+            val fav = StreamStats.favoriteWeekday(recent, localOffset)
+            if (fav != null) {
+                summaryText += " · 常播：${WEEKDAY_NAMES[fav.first]}"
+            }
+            binding.tvStatsSummary.text = summaryText
+
+            // 最近 7 天开播柱状（标签取当天星期）
+            val daily = StreamStats.dailyCounts(recent, now, 7, localOffset)
+            val dayCal = java.util.Calendar.getInstance().apply { timeInMillis = now }
+            val labels = daily.indices.map { i ->
+                dayCal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+                dayCal.get(java.util.Calendar.DAY_OF_WEEK) - 1
+            }.reversed().map { WEEKDAY_NAMES[it] }
+            binding.weekBars.setData(daily, labels)
 
             sessionsByDay.clear()
             recent.forEach { s ->
@@ -187,6 +208,64 @@ class StatsActivity : AppCompatActivity() {
         }
         binding.tvSelectedDayHint.text = label
         sessionAdapter.update(sessions)
+        loadTitleChanges(sessions)
+    }
+
+    // 本日主题变化时间线（stream_title_changes 已记录，这里补 UI）
+    private fun loadTitleChanges(sessions: List<StreamSessionEntity>) {
+        val day = selectedDayStart
+        binding.tvDayTitleChanges.visibility = View.GONE
+        lifecycleScope.launch {
+            val dao = AppDatabase.get(this@StatsActivity).streamSessionDao()
+            val changes = sessions.flatMap { s -> dao.titleChanges(s.id) }
+                .sortedBy { it.changedAt }
+            if (day != selectedDayStart) return@launch
+            if (changes.isEmpty()) {
+                binding.tvDayTitleChanges.visibility = View.GONE
+            } else {
+                binding.tvDayTitleChanges.visibility = View.VISIBLE
+                binding.tvDayTitleChanges.text = "本日主题变化：" + changes.joinToString("；") {
+                    val time = timeFormat.format(Date(it.changedAt))
+                    val from = it.oldTitle?.takeIf { t -> t.isNotBlank() }?.let { "「$it」" } ?: "开播"
+                    val to = it.newTitle?.takeIf { t -> t.isNotBlank() }?.let { "「$it」" } ?: "（空）"
+                    "$time $from → $to"
+                }
+            }
+        }
+    }
+
+    // 场次导出：最近场次写 CSV 到 cacheDir/shared，走 FileProvider 分享
+    private fun exportSessions() {
+        if (loadedSessions.isEmpty()) {
+            android.widget.Toast.makeText(this, "暂无场次可导出", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val dir = java.io.File(cacheDir, "shared").apply { mkdirs() }
+            val file = java.io.File(dir, "sessions_export.csv")
+            val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            val header = "场次,开始,结束,时长(分钟),标题\n"
+            val body = loadedSessions.sortedBy { it.startTs }.joinToString("\n") { s ->
+                val start = dateFormat.format(java.util.Date(s.startTs))
+                val end = s.endTs?.let { dateFormat.format(java.util.Date(it)) } ?: "进行中"
+                val minutes = s.endTs?.let { (it - s.startTs) / 60_000 }?.toString() ?: ""
+                val title = (s.title ?: "").replace("\"", "\"\"")
+                "$start,$end,$minutes,\"$title\""
+            }
+            file.writeText(header + body, Charsets.UTF_8)
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", file
+            )
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "牢白播了吗 直播场次导出")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, "导出直播场次"))
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(this, "导出失败：${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun formatDuration(ms: Long): String {
@@ -194,6 +273,11 @@ class StatsActivity : AppCompatActivity() {
         val h = ms / 3_600_000
         val m = ms % 3_600_000 / 60_000
         return if (h > 0) "${h}小时${m}分" else "${m}分钟"
+    }
+
+    companion object {
+        // 0=周日..6=周六
+        private val WEEKDAY_NAMES = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
     }
 
     private class SessionAdapter(

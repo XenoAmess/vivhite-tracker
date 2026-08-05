@@ -299,6 +299,40 @@ class LiveCheckServiceTest {
     }
 
     @Test
+    fun `S18 勿扰时段开播记 marker 结束补错过提醒汇总`() {
+        val now = java.util.Calendar.getInstance()
+        val nowMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+            now.get(java.util.Calendar.MINUTE)
+        prefs.setServiceRunning(true)
+        prefs.setQuietHoursEnabled(true)
+        prefs.setQuietStartMinutes((nowMinutes - 30 + 1440) % 1440)
+        prefs.setQuietEndMinutes((nowMinutes + 30) % 1440)
+
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive, BilibiliApi.LiveStatus.Live())
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        controller.startCommand(0, 1)
+        waitFor("first check done") { fakeApi.callCount >= 1 && prefs.getLastCheckTime() > 0 }
+
+        waitFor("silent alert marker recorded", 20_000) {
+            controller.startCommand(0, 2)
+            prefs.getQuietMissedLiveTs() > 0L
+        }
+        assertTrue("勿扰开播应记录错过 marker", prefs.getQuietMissedLiveTs() > 0L)
+
+        // 勿扰窗口移开（当前时刻不再处于勿扰），下一次检测应补发汇总并清除 marker
+        prefs.setQuietStartMinutes((nowMinutes + 60) % 1440)
+        prefs.setQuietEndMinutes((nowMinutes + 120) % 1440)
+        waitFor("missed summary notification", 20_000) {
+            controller.startCommand(0, 3)
+            shadowOf(nm).getAllNotifications().any {
+                it.extras.getString(android.app.Notification.EXTRA_TITLE) == "🔔 白绮勿扰时段内开播了"
+            }
+        }
+        assertEquals("发送汇总后 marker 应清除", 0L, prefs.getQuietMissedLiveTs())
+    }
+
+    @Test
     fun `S17 直播中标题变化 开播超5分钟后提醒并记录基线`() {
         prefs.setServiceRunning(true)
         prefs.setNotifyTitleChange(true)
