@@ -29,7 +29,6 @@ import com.bilibili.livemonitor.api.UpdateChecker
 import com.bilibili.livemonitor.domain.UpdateDecider
 import com.bilibili.livemonitor.service.LiveCheckService
 import com.bilibili.livemonitor.util.AppLogger
-import com.bilibili.livemonitor.util.AppUpdater
 import com.bilibili.livemonitor.util.AlertSoundProvider
 import com.bilibili.livemonitor.util.BuiltInSound
 import com.bilibili.livemonitor.util.OemHelper
@@ -184,7 +183,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         magicAlarmBannerRefresh = null
-        updateScope.cancel()
+        updateController.cancel()
         shareController.cancel()
         super.onDestroy()
     }
@@ -269,20 +268,15 @@ class MainActivity : AppCompatActivity() {
     // 应用内更新：检查源为 GitHub Releases（version.json 优先，APK 文件名兜底）
     internal var updateChecker: UpdateChecker = UpdateChecker()
 
-    private val updateScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob()
-    )
+    // 更新检查/下载/设置（逻辑在 controller/UpdateController；测试注入位 updateChecker 保留在本 Activity）
+    private val updateController by lazy { com.bilibili.livemonitor.controller.UpdateController(this) }
 
     // 整张宣传图的 Canvas 合成与 QR 生成不能占主线程；测试可注入 Unconfined 做同步断言。
     internal var promoRenderDispatcher: CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default
 
     // 前台每日一次静默自动检测：到点先落时间戳（失败也节流，避免每次进 App 都打 API）
-    internal fun autoCheckUpdateIfDue(now: Long = System.currentTimeMillis()) {
-        if (!preferenceManager.isAutoCheckUpdate()) return
-        if (now - preferenceManager.getLastUpdateCheckTime() < UPDATE_CHECK_INTERVAL_MS) return
-        preferenceManager.setLastUpdateCheckTime(now)
-        checkForUpdate(manual = false)
-    }
+    internal fun autoCheckUpdateIfDue(now: Long = System.currentTimeMillis()) =
+        updateController.autoCheckUpdateIfDue(now)
 
     // ========== 统一设置抽屉 ==========
 
@@ -412,10 +406,6 @@ class MainActivity : AppCompatActivity() {
     internal fun calendarCellSizePx(gridWidthPx: Int, marginPx: Int): Int =
         gridWidthPx / 7 - 2 * marginPx
 
-    private val magicDateFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-    private val magicTimeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-    private val magicRangeFmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
-
     private fun loadMagicPeriods(): MutableList<com.bilibili.livemonitor.domain.MagicPeriod> =
         com.bilibili.livemonitor.util.MagicPeriodStore.load(preferenceManager).toMutableList()
 
@@ -472,265 +462,15 @@ class MainActivity : AppCompatActivity() {
     /** 魔法期记录对话框：月份导航 + 7 列日历 + 联动编辑 + 记录列表 */
     /** 魔法期记录对话框：纯日历驱动——点空白日建段（自动展开编辑），点已标记的条编辑/删除 */
     internal fun showMagicPeriodDialog() {
-        val periods = loadMagicPeriods()
-        var selectedIndex = -1 // -1 = 未在编辑任何段；>=0 = editPanel 正在编辑的段下标
-        var viewYear: Int
-        var viewMonth: Int // 1-12
-        java.util.Calendar.getInstance().let {
-            viewYear = it.get(java.util.Calendar.YEAR)
-            viewMonth = it.get(java.util.Calendar.MONTH) + 1
-        }
-
-        val view = layoutInflater.inflate(R.layout.dialog_magic_period, null)
-        val grid = view.findViewById<android.widget.GridLayout>(R.id.calendarGrid)
-        val tvMonth = view.findViewById<android.widget.TextView>(R.id.tvMonthTitle)
-        val editPanel = view.findViewById<android.widget.LinearLayout>(R.id.editPanel)
-        val tvEditTitle = view.findViewById<android.widget.TextView>(R.id.tvEditTitle)
-        val btnStartDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditStartDate)
-        val btnStartTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditStartTime)
-        val btnEndDate = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditEndDate)
-        val btnEndTime = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditEndTime)
-        val tvDuration = view.findViewById<android.widget.TextView>(R.id.tvEditDuration)
-        val magicAlarmBanner = view.findViewById<android.widget.LinearLayout>(R.id.magicAlarmBanner)
-        val btnMagicAlarmPerm = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnMagicAlarmPerm)
-
-        val dialog = AlertDialog.Builder(this).setView(view).create()
-
-        // 精确闹钟警示条：未授权显示（结束提醒降级不准点），授权/设置返回后隐藏
-        fun refreshMagicAlarmBanner() {
-            magicAlarmBanner.visibility =
-                if (exactAlarmGranted()) android.view.View.GONE else android.view.View.VISIBLE
-        }
-        refreshMagicAlarmBanner()
-        btnMagicAlarmPerm.setOnClickListener { openExactAlarmSettings() }
-        magicAlarmBannerRefresh = { refreshMagicAlarmBanner() }
-        dialog.setOnDismissListener { magicAlarmBannerRefresh = null }
-
-        fun dayStartOf(cal: java.util.Calendar): Long = java.util.Calendar.getInstance().apply {
-            timeInMillis = cal.timeInMillis
-            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
-            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
-        }.timeInMillis
-
-        fun markedBackground(prev: Boolean, next: Boolean): android.graphics.drawable.GradientDrawable {
-            val r = 16f * resources.displayMetrics.density
-            val radii = when {
-                !prev && !next -> floatArrayOf(r, r, r, r, r, r, r, r) // 孤日全圆
-                !prev && next -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r) // 段首左圆
-                prev && next -> floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f) // 段中直角
-                else -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f) // 段尾右圆
-            }
-            return android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadii = radii
-                setColor(0xFF6750A4.toInt())
-            }
-        }
-
-        fun refreshEditors() {
-            if (selectedIndex in periods.indices) {
-                editPanel.visibility = android.view.View.VISIBLE
-                val p = periods[selectedIndex]
-                tvEditTitle.text = "编辑这一段（${magicRangeFmt.format(java.util.Date(p.start))} 起）"
-                btnStartDate.text = magicDateFmt.format(java.util.Date(p.start))
-                btnStartTime.text = magicTimeFmt.format(java.util.Date(p.start))
-                btnEndDate.text = magicDateFmt.format(java.util.Date(p.end))
-                btnEndTime.text = magicTimeFmt.format(java.util.Date(p.end))
-                tvDuration.text = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                    .computeDurationDays(p.start, p.end).toString()
-            } else {
-                editPanel.visibility = android.view.View.GONE
-            }
-        }
-
-        fun refreshCalendar() {
-            tvMonth.text = "${viewYear}-${"%02d".format(viewMonth)}"
-            grid.removeAllViews()
-            val first = java.util.Calendar.getInstance().apply {
-                set(viewYear, viewMonth - 1, 1, 0, 0, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }
-            val firstWeekday = first.get(java.util.Calendar.DAY_OF_WEEK) // 1=周日
-            val daysInMonth = first.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
-            val margin = (2 * resources.displayMetrics.density).toInt()
-            // 单元格宽度必须给外边距留量，否则 7×(cell+2m) 超出网格把周六列切出屏幕
-            val fallbackGridWidth = (
-                resources.displayMetrics.widthPixels - (56 * resources.displayMetrics.density).toInt()
-            ).coerceAtLeast(7 * (2 * margin + 1))
-            val cellSize = calendarCellSizePx(
-                grid.width.takeIf { it > 0 } ?: fallbackGridWidth, margin
-            )
-            repeat(firstWeekday - 1) {
-                val blank = android.widget.TextView(this)
-                blank.layoutParams = android.widget.GridLayout.LayoutParams().apply {
-                    width = cellSize; height = cellSize
-                }
-                grid.addView(blank)
-            }
-            for (day in 1..daysInMonth) {
-                val dayCal = java.util.Calendar.getInstance().apply {
-                    set(viewYear, viewMonth - 1, day, 0, 0, 0)
-                    set(java.util.Calendar.MILLISECOND, 0)
-                }
-                val dayStart = dayStartOf(dayCal)
-                val pos = com.bilibili.livemonitor.domain.MagicPeriodDecider.segmentPositionOf(periods, dayStart)
-                val marked = pos != com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.NONE
-                // 同段相邻 → 该侧边距 0（无缝长条）；不同段相邻 → 留缝（不粘连）
-                val samePrev = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                    .samePeriodCovers(periods, dayStart - 86_400_000L, dayStart)
-                val sameNext = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                    .samePeriodCovers(periods, dayStart, dayStart + 86_400_000L)
-                val cell = android.widget.TextView(this).apply {
-                    text = day.toString()
-                    gravity = android.view.Gravity.CENTER
-                    textSize = 13f
-                    layoutParams = android.widget.GridLayout.LayoutParams().apply {
-                        width = cellSize; height = cellSize
-                        setMargins(
-                            if (samePrev) 0 else margin, margin,
-                            if (sameNext) 0 else margin, margin
-                        )
-                    }
-                    if (marked) {
-                        val prev = pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.MIDDLE ||
-                            pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.LAST
-                        val next = pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.MIDDLE ||
-                            pos == com.bilibili.livemonitor.domain.MagicPeriodDecider.SegmentPosition.FIRST
-                        background = markedBackground(prev, next)
-                        setTextColor(0xFFFFFFFF.toInt())
-                    } else {
-                        setTextColor(0xFF1A1A1A.toInt())
-                    }
-                    setOnClickListener {
-                        if (!marked) {
-                            // 点空白日：建 3 天段并自动展开编辑
-                            val toggled = com.bilibili.livemonitor.domain.MagicPeriodDecider.toggleDay(periods, dayStart)
-                            periods.clear(); periods.addAll(toggled)
-                            selectedIndex = periods.indices.lastOrNull() ?: -1
-                            saveMagicPeriods(periods)
-                        } else {
-                            // 点已标记的条：定位覆盖段，展开编辑
-                            selectedIndex = periods.indexOfFirst {
-                                com.bilibili.livemonitor.domain.MagicPeriodDecider.coversDay(it, dayStart)
-                            }
-                        }
-                        refreshCalendar(); refreshEditors()
-                    }
-                }
-                grid.addView(cell)
-            }
-        }
-
-        // 月份导航
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPrevMonth)
-            .setOnClickListener {
-                if (viewMonth == 1) { viewYear--; viewMonth = 12 } else viewMonth--
-                refreshCalendar()
-            }
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnNextMonth)
-            .setOnClickListener {
-                if (viewMonth == 12) { viewYear++; viewMonth = 1 } else viewMonth++
-                refreshCalendar()
-            }
-
-        // 段编辑：开始/结束（DatePicker + TimePicker，联动照旧）
-        fun pickDateTime(isStart: Boolean, isDate: Boolean) {
-            if (selectedIndex !in periods.indices) return
-            val p = periods[selectedIndex]
-            val base = if (isStart) p.start else p.end
-            val cal = java.util.Calendar.getInstance().apply { timeInMillis = base }
-            if (isDate) {
-                android.app.DatePickerDialog(this, { _, y, m, d ->
-                    val newCal = java.util.Calendar.getInstance().apply {
-                        timeInMillis = base; set(y, m, d)
-                    }
-                    val updated = if (isStart) {
-                        com.bilibili.livemonitor.domain.MagicPeriodDecider.updateStart(periods, selectedIndex, newCal.timeInMillis)
-                    } else {
-                        com.bilibili.livemonitor.domain.MagicPeriodDecider.updateEnd(periods, selectedIndex, newCal.timeInMillis)
-                    }
-                    periods.clear(); periods.addAll(updated)
-                    saveMagicPeriods(periods)
-                    refreshEditors(); refreshCalendar()
-                }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH),
-                    cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
-            } else {
-                android.app.TimePickerDialog(this, { _, h, min ->
-                    val newCal = java.util.Calendar.getInstance().apply {
-                        timeInMillis = base
-                        set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min)
-                        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
-                    }
-                    val updated = if (isStart) {
-                        com.bilibili.livemonitor.domain.MagicPeriodDecider.updateStart(periods, selectedIndex, newCal.timeInMillis)
-                    } else {
-                        com.bilibili.livemonitor.domain.MagicPeriodDecider.updateEnd(periods, selectedIndex, newCal.timeInMillis)
-                    }
-                    periods.clear(); periods.addAll(updated)
-                    saveMagicPeriods(periods)
-                    refreshEditors(); refreshCalendar()
-                }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
-            }
-        }
-        btnStartDate.setOnClickListener { pickDateTime(isStart = true, isDate = true) }
-        btnStartTime.setOnClickListener { pickDateTime(isStart = true, isDate = false) }
-        btnEndDate.setOnClickListener { pickDateTime(isStart = false, isDate = true) }
-        btnEndTime.setOnClickListener { pickDateTime(isStart = false, isDate = false) }
-
-        // 段编辑：时长 ±
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDurMinus)
-            .setOnClickListener {
-                if (selectedIndex in periods.indices) {
-                    val cur = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                        .computeDurationDays(periods[selectedIndex].start, periods[selectedIndex].end)
-                    if (cur > 1) {
-                        val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                            .updateDuration(periods, selectedIndex, cur - 1)
-                        periods.clear(); periods.addAll(updated)
-                        saveMagicPeriods(periods)
-                        refreshEditors(); refreshCalendar()
-                    }
-                }
-            }
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDurPlus)
-            .setOnClickListener {
-                if (selectedIndex in periods.indices) {
-                    val cur = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                        .computeDurationDays(periods[selectedIndex].start, periods[selectedIndex].end)
-                    val updated = com.bilibili.livemonitor.domain.MagicPeriodDecider
-                        .updateDuration(periods, selectedIndex, cur + 1)
-                    periods.clear(); periods.addAll(updated)
-                    saveMagicPeriods(periods)
-                    refreshEditors(); refreshCalendar()
-                }
-            }
-
-        // 段编辑：删除这一段
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditDelete)
-            .setOnClickListener {
-                if (selectedIndex in periods.indices) {
-                    periods.removeAt(selectedIndex)
-                    selectedIndex = -1
-                    saveMagicPeriods(periods)
-                    refreshEditors(); refreshCalendar()
-                }
-            }
-
-        // 段编辑：收起
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnEditClose)
-            .setOnClickListener {
-                selectedIndex = -1
-                refreshEditors(); refreshCalendar()
-            }
-
-        // 完成
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnMagicDone)
-            .setOnClickListener { dialog.dismiss() }
-
-        refreshCalendar(); refreshEditors()
-        dialog.show()
-        // AlertDialog show 后才有真实宽度；重绘一次保证分屏/横屏用实际网格尺寸。
-        grid.post { refreshCalendar() }
+        com.bilibili.livemonitor.ui.MagicPeriodDialogFragment.show(
+            activity = this,
+            periodsLoader = { loadMagicPeriods() },
+            periodsSaver = { saveMagicPeriods(it) },
+            exactAlarmGranted = { exactAlarmGranted() },
+            openExactAlarmSettings = { openExactAlarmSettings() },
+            onBannerRefresh = { magicAlarmBannerRefresh = it },
+            cellSize = { w, m -> calendarCellSizePx(w, m) }
+        )
     }
 
     private fun computeActivitySubtitle(): String {
@@ -743,11 +483,7 @@ class MainActivity : AppCompatActivity() {
         return "视频·置顶·动态 $on/3 已开$ringText"
     }
 
-    private fun computeUpdateSubtitle(): String {
-        val check = if (preferenceManager.isAutoCheckUpdate()) "开" else "关"
-        val dl = if (preferenceManager.isAutoDownloadUpdate()) "开" else "关"
-        return "自动检查: $check  自动下载: $dl"
-    }
+    private fun computeUpdateSubtitle(): String = updateController.computeUpdateSubtitle()
 
     private fun computeQuietSubtitle(): String {
         if (!preferenceManager.isQuietHoursEnabled()) return "未开启"
@@ -964,208 +700,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    internal fun checkForUpdate(manual: Boolean) {
-        if (manual) {
-            Toast.makeText(this, "正在检查更新…", Toast.LENGTH_SHORT).show()
-        }
-        updateScope.launch {
-            when (val state = updateChecker.checkLatestRelease(
-                BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME
-            )) {
-                is UpdateDecider.UpdateState.UpdateAvailable -> {
-                    val info = state.info
-                    val dismissed = !manual && info.versionCode == preferenceManager.getDismissedVersionCode()
-                    if (dismissed) return@launch
-                    if (!manual && preferenceManager.isAutoDownloadUpdate() && AppUpdater.isOnWifi(this@MainActivity)) {
-                        startUpdateDownload(info)
-                    } else {
-                        showUpdateDialog(info)
-                    }
-                }
-                UpdateDecider.UpdateState.UpToDate -> {
-                    if (manual) Toast.makeText(this@MainActivity, "已是最新版本", Toast.LENGTH_SHORT).show()
-                }
-                is UpdateDecider.UpdateState.Error -> {
-                    AppLogger.w("MainActivity", "update check failed: ${state.reason}")
-                    if (manual) showUpdateErrorDialog(state.reason)
-                }
-            }
-        }
-    }
+    internal fun checkForUpdate(manual: Boolean) = updateController.checkForUpdate(manual)
 
     // 检查失败不再只有一个 Toast：区分网络错误/发布页格式，给出 Releases 页出口
-    internal fun showUpdateErrorDialog(reason: String) {
-        val message = if (reason == "network error") {
-            "无法连接 GitHub，请检查网络后重试"
-        } else {
-            "暂时无法获取更新信息（$reason）"
-        }
-        AlertDialog.Builder(this)
-            .setTitle("检查更新失败")
-            .setMessage(message)
-            .setPositiveButton("打开发布页") { _, _ ->
-                try {
-                    startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("$GITHUB_URL/releases/latest"))
-                    )
-                } catch (e: Exception) {
-                    AppLogger.e("MainActivity", "open releases page failed", e)
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
+    internal fun showUpdateErrorDialog(reason: String) = updateController.showUpdateErrorDialog(reason)
 
     /**
      * 内测版尝鲜：比对 GitHub Pages 上的 master 最新构建，比本地新则下载更新。
      * 手动触发，无忽略版本/自动下载逻辑；versionCode 比较天然防降级。
      */
-    internal fun checkBetaUpdate() {
-        Toast.makeText(this, "正在检查内测版…", Toast.LENGTH_SHORT).show()
-        updateScope.launch {
-            when (val state = updateChecker.checkBetaChannel(
-                BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME
-            )) {
-                is UpdateDecider.UpdateState.UpdateAvailable -> showUpdateDialog(state.info)
-                UpdateDecider.UpdateState.UpToDate ->
-                    Toast.makeText(this@MainActivity, "已是最新内测版", Toast.LENGTH_SHORT).show()
-                is UpdateDecider.UpdateState.Error -> {
-                    AppLogger.w("MainActivity", "beta update check failed: ${state.reason}")
-                    showUpdateErrorDialog(state.reason)
-                }
-            }
-        }
-    }
+    internal fun checkBetaUpdate() = updateController.checkBetaUpdate()
 
-    internal fun showUpdateDialog(info: UpdateDecider.ReleaseInfo) {
-        val isBeta = info.tagName == com.bilibili.livemonitor.api.UpdateChecker.BETA_TAG_NAME
-        val title = if (isBeta) "发现内测版 v${info.versionName}" else "发现新版本 v${info.versionName}"
-        val builder = AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(info.changelog.trim().ifBlank { "暂无更新说明" }.take(500))
-            .setPositiveButton("立即更新") { _, _ -> startUpdateDownload(info) }
-            .setNegativeButton("取消", null)
-        if (!isBeta) {
-            // 「忽略此版本」只对正式通道有意义：beta 的 versionCode 与 stable 的
-            // dismissed 逻辑互不相关，避免污染
-            builder.setNeutralButton("忽略此版本") { _, _ ->
-                preferenceManager.setDismissedVersionCode(info.versionCode)
-            }
-        }
-        builder.show()
-    }
+    internal fun showUpdateDialog(info: UpdateDecider.ReleaseInfo) =
+        updateController.showUpdateDialog(info)
 
-    internal fun startUpdateDownload(info: UpdateDecider.ReleaseInfo) {
-        if (!AppUpdater.canRequestInstalls(this)) {
-            AlertDialog.Builder(this)
-                .setTitle("需要安装权限")
-                .setMessage("系统要求授予「安装未知应用」权限后才能更新。开启后请重新点击检查更新。")
-                .setPositiveButton("去开启") { _, _ ->
-                    try {
-                        startActivity(AppUpdater.unknownSourcesIntent(this))
-                    } catch (e: Exception) {
-                        AppLogger.e("MainActivity", "open unknown sources settings failed", e)
-                        openAppDetails()
-                    }
-                }
-                .setNegativeButton("取消", null)
-                .show()
-            return
-        }
-        val dialogView = layoutInflater.inflate(R.layout.dialog_update_progress, null)
-        val bar = dialogView.findViewById<android.widget.ProgressBar>(R.id.updateProgressBar)
-        val label = dialogView.findViewById<android.widget.TextView>(R.id.tvUpdateProgressLabel)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("正在下载更新 v${info.versionName}")
-            .setView(dialogView)
-            .setCancelable(false)
-            .show()
-        val dest = AppUpdater.apkFile(this, info.versionName)
-        updateScope.launch {
-            // 增量优先：有链且底包 sha256 匹配且比全量小才走补丁，任一失败回退全量
-            val localApkSha = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.bilibili.livemonitor.util.ApkPatcher.installedApkFile(this@MainActivity)
-                    ?.let { com.bilibili.livemonitor.util.ApkPatcher.sha256(it) }
-            }
-            val plan = com.bilibili.livemonitor.domain.ChainPlanner.choosePlan(
-                info.chain, localApkSha, info.apkSize
-            )
-            var installed = false
-            if (plan is com.bilibili.livemonitor.domain.ChainPlanner.UpdatePlan.Incremental) {
-                AppLogger.d("MainActivity", "incremental update: ${plan.chain.hops.size} hop(s), total ${plan.chain.totalSize} bytes")
-                val updater = com.bilibili.livemonitor.util.IncrementalUpdater(this@MainActivity)
-                updater.downloader = { url, d, cb -> updateChecker.downloadApk(url, d, cb) }
-                val result = updater.executeChain(plan.chain, info.versionName) { percent ->
-                    bar.post {
-                        bar.progress = percent
-                        label.text = "增量更新 $percent%"
-                    }
-                }
-                if (result != null) {
-                    installed = true
-                    dialog.dismiss()
-                    try {
-                        startActivity(AppUpdater.buildInstallIntent(this@MainActivity, result))
-                    } catch (e: Exception) {
-                        AppLogger.e("MainActivity", "launch apk installer failed", e)
-                        Toast.makeText(this@MainActivity, "无法打开安装器", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    AppLogger.w("MainActivity", "incremental update failed, fallback to full apk")
-                    label.text = "增量更新失败，转全量下载…"
-                }
-            }
-            if (!installed) {
-                val ok = updateChecker.downloadApk(info.apkUrl, dest) { percent ->
-                    bar.post {
-                        bar.progress = percent
-                        label.text = "$percent%"
-                    }
-                }
-                // 全量包完整性校验（version.json 带 apkSha256 时）
-                val verified = ok && info.apkSha256?.let { expect ->
-                    withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        com.bilibili.livemonitor.util.ApkPatcher.sha256(dest)
-                    }.equals(expect, ignoreCase = true).also { match ->
-                        if (!match) {
-                            AppLogger.w("MainActivity", "full apk sha256 mismatch, deleted")
-                            dest.delete()
-                        }
-                    }
-                } ?: ok
-                dialog.dismiss()
-                if (verified) {
-                    try {
-                        startActivity(AppUpdater.buildInstallIntent(this@MainActivity, dest))
-                    } catch (e: Exception) {
-                        AppLogger.e("MainActivity", "launch apk installer failed", e)
-                        Toast.makeText(this@MainActivity, "无法打开安装器", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    Toast.makeText(this@MainActivity, "更新包下载失败，请稍后再试", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
+    internal fun startUpdateDownload(info: UpdateDecider.ReleaseInfo) =
+        updateController.startUpdateDownload(info)
 
-    internal fun showUpdateSettingsDialog() {
-        val view = layoutInflater.inflate(R.layout.dialog_update_settings, null)
-        val switchAutoCheck = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoCheck)
-        val switchAutoDownload = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoDownload)
-        switchAutoCheck.isChecked = preferenceManager.isAutoCheckUpdate()
-        switchAutoDownload.isChecked = preferenceManager.isAutoDownloadUpdate()
-        switchAutoCheck.setOnCheckedChangeListener { _, isChecked ->
-            preferenceManager.setAutoCheckUpdate(isChecked)
-        }
-        switchAutoDownload.setOnCheckedChangeListener { _, isChecked ->
-            preferenceManager.setAutoDownloadUpdate(isChecked)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("更新设置")
-            .setView(view)
-            .setPositiveButton("完成", null)
-            .show()
-    }
+    internal fun showUpdateSettingsDialog() = updateController.showUpdateSettingsDialog()
 
     // ========== 提醒铃声自定义 ==========
 
@@ -1694,7 +1246,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openAppDetails() {
+    internal fun openAppDetails() {
         val appSettings = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.parse("package:$packageName")
         }
@@ -1717,9 +1269,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
         private const val GITHUB_URL = "https://github.com/XenoAmess/vivhite-tracker"
-
-        // 自动检查更新的最小间隔：24 小时
-        internal const val UPDATE_CHECK_INTERVAL_MS = 24 * 3600 * 1000L
 
         // 上次展示的常规池下标，防连续重复（静态保存，跨 Activity 实例有效）
         private var lastQuoteIndex: Int? = null
