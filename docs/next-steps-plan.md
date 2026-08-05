@@ -38,7 +38,7 @@
 
 ## P2 — 工程优化（长期收益）
 
-> 状态：✅ #11/#13 已完成；#12 判定不启用（原因见下）。#9/#10 拆分专项留待单独排期。
+> 状态：✅ 全部落地（#9/#10/#11/#13 完成；#12 判定不启用，原因见下）。
 
 | # | 项 | 现状 | 动作 | 估 |
 |---|---|---|---|---|
@@ -50,9 +50,11 @@
 
 ### P2 落地记录（2026-08-05）
 
-- **#11 ✅**：lint 0 error。`MainActivity.openBatterySettings` 加 `@SuppressLint("BatteryLife")`（请求电池白名单是本应用监控功能的必要用途）；新建 `WeekStreamBarsView` 的 Paint/RectF 提升为字段消除 DrawAllocation。
-- **#12 ❌ 判定不启用**：`--configuration-cache` 实测 AGP 9.3.1 内部读取 Gradle 属性 `android.injected.build.model.only.advanced` 时无法序列化（trace 指向 `plugin 'com.android.internal.application'`），属 AGP 层限制、仓库脚本无法修复，按「KSP/Room 兼容则保留」准则不启用。**顺手保留的脚本卫生改进**：`generateChangelog` doLast 改 `ProcessBuilder`（不再捕获 `providers`/Project）、`writeVersionInfo` 配置期预计算目标 File、`assets.srcDir` → `directories`（AGP9 去弃用 API）。后续若 AGP 修复可重新评估。
-- **#13 ✅**：`LiveStatusWidgetProvider.computeContent` 抽纯函数 + 4 组断言（直播展示标题/空标题隐藏/未开播隐藏/停止隐藏）；`StreamSessionDaoTest` 补 空库、多场次下 `closeOpenSessions` 只闭合残留、标题变化按 session 隔离且升序；`StatsActivityTest` 补 日历点选空日（清空列表+「无直播」+空态隐藏）、选中日主题变化时间线展示。487 → 493 例。
+- **#9 ✅**（`7ea51ac`）：`service/NotificationBuilder`（通知构建/发送纯机械层）+ `service/StreamSessionTracker`（场次记录/主题变化追踪，决策可单测）；LiveCheckService **1262→976 行**，`internal` 注入位（api/bilibiliInstalled/buildVideoIntent/buildDynamicIntent/resolveBiliPackage）全部保留，测试不迁移。新增 `StreamSessionTrackerTest`（parseLiveStartTime 各格式、recordStreamEnd 闭合+时长回调、关提醒不回调）。
+- **#10 ✅**（`bce9db7`）：`ui/MagicPeriodDialogFragment`（~260 行日历对话框，`onCreateDialog` 内建 AlertDialog，`showNow` 同步提交保证 Robolectric `ShadowDialog.getLatestDialog` 可用，依赖经 `show()` 注入）+ `controller/UpdateController`（~250 行更新检查/下载/设置，scope 归控制器持有）；MainActivity **1727→1276 行**，`updateChecker` 注入位保留、内部方法全委托，测试不迁移。
+- **#11 ✅**：lint 0 error。BatteryLife 豁免 + DrawAllocation 消除。
+- **#12 ❌ 判定不启用**：`--configuration-cache` 实测 AGP 9.3.1 内部读取 Gradle 属性 `android.injected.build.model.only.advanced` 时无法序列化（trace 指向 `plugin 'com.android.internal.application'`），属 AGP 层限制、仓库脚本无法修复，按「KSP/Room 兼容则保留」准则不启用。**顺手保留的脚本卫生改进**：`generateChangelog` doLast 改 `ProcessBuilder`（不再捕获 `providers`/Project）、`writeVersionInfo` 配置期预计算目标 File、`assets.srcDir` → `directories`（AGP9 去弃用 API）。
+- **#13 ✅**：Widget `computeContent` 纯函数 4 组断言；Room 空库/多场次/标题隔离 3 边界；StatsActivity 日历点选+主题时间线。493→496 例。
 
 ## 明确不做（维持原判）
 
