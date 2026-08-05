@@ -17,7 +17,7 @@
             android:id="@+id/cvStatus"
             android:layout_width="96dp"
             android:layout_height="96dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="8dp"
             app:cardCornerRadius="48dp"
             app:cardElevation="0dp"
             app:layout_constraintStart_toStartOf="parent"
@@ -319,7 +319,6 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/tvDescription"
-            app:layout_constraintVertical_bias="0.25"
             tools:text="「数学是科学的皇后。」—— 高斯" />
 
         <LinearLayout
@@ -330,11 +329,9 @@
             android:layout_marginBottom="8dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvQuote"
-            app:layout_constraintVertical_bias="0.25">
+            app:layout_constraintTop_toBottomOf="@id/tvQuote">
 
             <TextView
                 android:id="@+id/tvVersion"

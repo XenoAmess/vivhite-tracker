@@ -1,91 +1,97 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/statsRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
-
-    <TextView
-        android:id="@+id/tvStatsSummary"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="14dp"
-        android:paddingBottom="10dp"
-        android:textSize="14sp"
-        android:text="本周 0 场 · 本月 0 场 · 平均 -- · 最长 --" />
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="?android:attr/listDivider" />
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnPrevMonth"
-            style="?attr/materialIconButtonOutlinedStyle"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:text="◀"
-            android:contentDescription="上个月" />
+        android:orientation="vertical">
 
         <TextView
-            android:id="@+id/tvMonthTitle"
-            android:layout_width="0dp"
+            android:id="@+id/tvStatsSummary"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:text="2026年8月" />
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="10dp"
+            android:textSize="14sp"
+            android:text="本周 0 场 · 本月 0 场 · 平均 -- · 最长 --" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnNextMonth"
-            style="?attr/materialIconButtonOutlinedStyle"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:text="▶"
-            android:contentDescription="下个月" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="?android:attr/listDivider" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPrevMonth"
+                style="?attr/materialIconButtonOutlinedStyle"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:text="◀"
+                android:contentDescription="上个月" />
+
+            <TextView
+                android:id="@+id/tvMonthTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:text="2026年8月" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNextMonth"
+                style="?attr/materialIconButtonOutlinedStyle"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:text="▶"
+                android:contentDescription="下个月" />
+        </LinearLayout>
+
+        <GridLayout
+            android:id="@+id/calendarGrid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:columnCount="7"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+
+        <TextView
+            android:id="@+id/tvSelectedDayHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:text="点选日期查看当天场次" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="?android:attr/listDivider" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvSessions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:nestedScrollingEnabled="false"
+            android:paddingBottom="16dp" />
+
     </LinearLayout>
-
-    <GridLayout
-        android:id="@+id/calendarGrid"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:columnCount="7"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp" />
-
-    <TextView
-        android:id="@+id/tvSelectedDayHint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
-        android:textSize="13sp"
-        android:textColor="?android:attr/textColorSecondary"
-        android:text="点选日期查看当天场次" />
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="?android:attr/listDivider" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvSessions"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:paddingBottom="16dp" />
-
-</LinearLayout>
+</ScrollView>
