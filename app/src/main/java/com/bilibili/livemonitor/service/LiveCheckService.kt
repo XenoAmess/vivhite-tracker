@@ -1,13 +1,10 @@
 package com.bilibili.livemonitor.service
 
 import android.app.AlarmManager
-import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.net.Uri
 import androidx.media3.common.AudioAttributes as Media3AudioAttributes
@@ -20,10 +17,7 @@ import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import androidx.core.app.NotificationCompat
-import com.bilibili.livemonitor.AlertActivity
 import com.bilibili.livemonitor.LiveMonitorApp
-import com.bilibili.livemonitor.MainActivity
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.api.BilibiliApi
 import com.bilibili.livemonitor.api.LiveStatusChecker
@@ -59,6 +53,21 @@ class LiveCheckService : Service() {
     // 常规视频检查与独立动态 Alarm 会打同一 feed；不能并发读写同一批基线。
     private val activityCheckMutex = Mutex()
 
+    // 通知渲染层（从本服务拆出）。buildVideoIntent/buildDynamicIntent 留在服务
+    // 以保持测试注入位（bilibiliInstalled）不变；builder 通过 lambda 在调用时读取最新值。
+    private val notificationBuilder: NotificationBuilder by lazy {
+        NotificationBuilder(this, DEFAULT_ROOM_ID, { buildVideoIntent(it) }, { buildDynamicIntent(it) })
+    }
+
+    // 场次记录 + 主题变化追踪（从本服务拆出），决策逻辑可单测
+    private val streamSessionTracker: StreamSessionTracker by lazy {
+        StreamSessionTracker(
+            this, preferenceManager, serviceScope,
+            onStreamEnd = { notificationBuilder.sendStreamEnd(it) },
+            onTitleChange = { notificationBuilder.sendTitleChange(it) }
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
         AppLogger.d(TAG, "onCreate")
@@ -79,7 +88,11 @@ class LiveCheckService : Service() {
         // 必须在5秒内调用startForeground，放在onCreate确保及时性
         startForeground(
             LiveMonitorApp.NOTIFICATION_ID_SERVICE,
-            createServiceNotification(lastLiveStatus)
+            notificationBuilder.buildServiceNotification(
+                isLive = lastLiveStatus,
+                lastCheckTime = preferenceManager.getLastCheckTime(),
+                lastCheckSuccess = preferenceManager.isLastCheckSuccess()
+            )
         )
 
         // 停止权威位：prefs=false 表示用户已停止，本次启动是 START_STICKY 重投
@@ -347,7 +360,7 @@ class LiveCheckService : Service() {
 
         // 场次记录：任何 未开播→开播 跳变都记（含观播静音期，静音只影响提醒不影响记录）
         if (isLive && !wasLive) {
-            recordStreamStart(liveStartTime, liveTitle)
+            streamSessionTracker.recordStreamStart(liveStartTime, liveTitle)
         }
         if (shouldAlert) {
             AppLogger.d(TAG, "triggerAlert")
@@ -355,148 +368,16 @@ class LiveCheckService : Service() {
         }
         // 下播：闭合场次 + 下播提醒
         if (!isLive && wasLive) {
-            recordStreamEnd()
+            streamSessionTracker.recordStreamEnd()
         }
         // 直播中主题变化提醒（每次 Live 轮询都追踪）
         if (isLive) {
-            trackTitleChange(liveTitle)
+            streamSessionTracker.trackTitleChange(liveTitle)
         }
 
         lastStatus = isLive
         // 勿扰错过提醒：勿扰窗口内静音过的开播，等窗口结束后补一条汇总
         maybeSendQuietMissedSummary()
-    }
-
-    // 直播中主题变化提醒（默认关）：标题变化且开播超 5 分钟才提醒；记录基线到 prefs 与 DB
-    private fun trackTitleChange(liveTitle: String?) {
-        if (liveTitle.isNullOrBlank()) return
-        val lastTitle = preferenceManager.getLastLiveTitle()
-        if (liveTitle == lastTitle) return
-        preferenceManager.setLastLiveTitle(liveTitle)
-        if (!preferenceManager.isNotifyTitleChange()) return
-        val startTs = parseLiveStartTime(preferenceManager.getLastLiveStartTime()) ?: return
-        if (System.currentTimeMillis() - startTs < TITLE_CHANGE_MIN_LIVE_MS) return
-        sendTitleChangeNotification(liveTitle)
-        val dao = com.bilibili.livemonitor.db.AppDatabase.get(this).streamSessionDao()
-        serviceScope.launch {
-            try {
-                dao.findOpenSession()?.let { open ->
-                    dao.insertTitleChange(
-                        com.bilibili.livemonitor.db.StreamTitleChangeEntity(
-                            sessionId = open.id,
-                            changedAt = System.currentTimeMillis(),
-                            oldTitle = lastTitle.ifBlank { null },
-                            newTitle = liveTitle
-                        )
-                    )
-                }
-            } catch (e: Exception) {
-                AppLogger.w(TAG, "record title change failed", e)
-            }
-        }
-    }
-
-    private fun sendTitleChangeNotification(title: String) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_STREAM_LIFECYCLE_ID)
-            .setSmallIcon(R.drawable.img_on)
-            .setContentTitle("白绮直播标题已改")
-            .setContentText("「$title」")
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_TITLE_CHANGE, notification)
-    }
-
-    // ========== 直播场次记录（Room）与生命周期提醒 ==========
-
-    // B 站 live_start_time 可能是秒级时间戳字符串或 "yyyy-MM-dd HH:mm:ss"
-    private fun parseLiveStartTime(raw: String?): Long? {
-        if (raw.isNullOrBlank()) return null
-        val asSeconds = raw.toLongOrNull()
-        if (asSeconds != null) {
-            return if (asSeconds > 10_000_000_000L) asSeconds else asSeconds * 1000L
-        }
-        return try {
-            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
-                .parse(raw)?.time
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    // 开播跳变：先闭合可能残留的未闭合场次（进程死亡），再插入新场次
-    private fun recordStreamStart(liveStartTime: String?, liveTitle: String?) {
-        val dao = com.bilibili.livemonitor.db.AppDatabase.get(this).streamSessionDao()
-        val startTs = parseLiveStartTime(liveStartTime) ?: System.currentTimeMillis()
-        serviceScope.launch {
-            try {
-                dao.closeOpenSessions(startTs)
-                dao.insertSession(com.bilibili.livemonitor.db.StreamSessionEntity(startTs = startTs, title = liveTitle))
-            } catch (e: Exception) {
-                AppLogger.w(TAG, "record stream start failed", e)
-            }
-        }
-    }
-
-    // 下播跳变：闭合开在场次；无开在场次（进程死亡后）用 prefs 的 live_start_time 补
-    private fun recordStreamEnd() {
-        val dao = com.bilibili.livemonitor.db.AppDatabase.get(this).streamSessionDao()
-        val endTs = System.currentTimeMillis()
-        val title = preferenceManager.getLastLiveTitle()
-        serviceScope.launch {
-            try {
-                val open = dao.findOpenSession()
-                val startTs = open?.startTs ?: parseLiveStartTime(preferenceManager.getLastLiveStartTime())
-                if (open != null) {
-                    dao.updateSession(open.copy(endTs = endTs, title = open.title ?: title))
-                } else if (startTs != null) {
-                    dao.insertSession(
-                        com.bilibili.livemonitor.db.StreamSessionEntity(startTs = startTs, endTs = endTs, title = title)
-                    )
-                }
-                if (startTs != null && preferenceManager.isNotifyStreamEnd()) {
-                    sendStreamEndNotification(endTs - startTs)
-                }
-            } catch (e: Exception) {
-                AppLogger.w(TAG, "record stream end failed", e)
-            }
-        }
-    }
-
-    private fun sendStreamEndNotification(durationMs: Long) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_STREAM_LIFECYCLE_ID)
-            .setSmallIcon(R.drawable.img_off)
-            .setContentTitle("白绮已下播")
-            .setContentText("本场直播 ${formatDuration(durationMs)}")
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_STREAM_END, notification)
-    }
-
-    private fun formatDuration(ms: Long): String {
-        val totalMinutes = ms / 60_000
-        val h = totalMinutes / 60
-        val m = totalMinutes % 60
-        return if (h > 0) "${h}小时${m}分" else "${m}分钟"
     }
 
     // ========== B 站全活动监控 ==========
@@ -632,54 +513,29 @@ class LiveCheckService : Service() {
             ) {
                 preferenceManager.setLastRemindedLiveDynamicId(rcmd.dynamicId)
                 AppLogger.d(TAG, "live reminder: start=${rcmd.liveStartMs} title=${rcmd.title}")
-                sendLiveReminderNotification(rcmd)
+                notificationBuilder.sendLiveReminder(rcmd)
             }
         }
-    }
-
-    private fun sendLiveReminderNotification(rcmd: com.bilibili.livemonitor.api.BilibiliActivityApi.LiveRcmdInfo) {
-        val startMs = rcmd.liveStartMs ?: return
-        val timeText = java.text.SimpleDateFormat("M月d日 HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(startMs))
-        val title = rcmd.title?.takeIf { it.isNotBlank() } ?: "白绮直播预告"
-        val contentText = rcmd.contentText?.takeIf { it.isNotBlank() } ?: "预计 $timeText 开播"
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_STREAM_LIFECYCLE_ID)
-            .setSmallIcon(R.drawable.img_on)
-            .setContentTitle("🔔 $title")
-            .setContentText(contentText)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(rcmd.dynamicId.hashCode(), notification)
     }
 
     private fun triggerActivityAlert(type: com.bilibili.livemonitor.domain.ActivityType) {
         val ring = preferenceManager.isAlertRingOnActivity() && !isInQuietHours()
         when (type) {
             is com.bilibili.livemonitor.domain.ActivityType.Video -> {
-                sendVideoNotification(type.aid, type.title, "新视频投稿")
+                notificationBuilder.sendVideo(type.aid, type.title, "新视频投稿")
                 if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Pinned -> {
                 if (type.aid == 0L) {
                     // 置顶被取消
-                    sendTextNotification(LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID, "白绮置顶已取消", null)
+                    notificationBuilder.sendText(LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID, "白绮置顶已取消", null)
                 } else {
-                    sendVideoNotification(type.aid, type.title, "置顶视频变更")
+                    notificationBuilder.sendVideo(type.aid, type.title, "置顶视频变更")
                 }
                 if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Dynamic -> {
-                sendDynamicNotification(type.id, type.displayText)
+                notificationBuilder.sendDynamic(type.id, type.displayText)
                 if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Live -> {
@@ -707,33 +563,7 @@ class LiveCheckService : Service() {
         if (missedTs <= 0L) return
         if (isInQuietHours()) return
         preferenceManager.setQuietMissedLiveTs(0L)
-        val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(missedTs))
-        val title = preferenceManager.getQuietMissedLiveTitle()
-        val text = if (title.isBlank()) {
-            "勿扰时段内白绮 $time 开播了"
-        } else {
-            "勿扰时段内白绮 $time 开播了：「$title」"
-        }
-        sendTextNotification(LiveMonitorApp.CHANNEL_ALERT_ID, "🔔 白绮勿扰时段内开播了", text)
-    }
-
-    private fun sendTextNotification(channelId: String, title: String, text: String?) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, title.hashCode(), intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val builder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.img_on)
-            .setContentTitle(title)
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-        if (!text.isNullOrBlank()) builder.setContentText(text.take(50))
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(title.hashCode(), builder.build())
+        notificationBuilder.sendQuietMissedSummary(missedTs, preferenceManager.getQuietMissedLiveTitle())
     }
 
     /**
@@ -775,51 +605,12 @@ class LiveCheckService : Service() {
     internal fun buildVideoIntent(aid: Long): Intent =
         buildBiliIntent("https://www.bilibili.com/video/av$aid")
 
-    private fun sendVideoNotification(aid: Long, title: String, prefix: String) {
-        val intent = buildVideoIntent(aid)
-        val pendingIntent = PendingIntent.getActivity(
-            this, aid.toInt(), intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID)
-            .setSmallIcon(R.drawable.img_on)
-            .setContentTitle("白绮 $prefix")
-            .setContentText(title.take(50))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_VIDEO, notification)
-    }
-
-    private fun sendDynamicNotification(dynamicId: String, displayText: String) {
-        val intent = buildDynamicIntent(dynamicId)
-        val pendingIntent = PendingIntent.getActivity(
-            this, dynamicId.hashCode(), intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val text = displayText.takeIf { it.isNotBlank() } ?: "白绮发布了新动态"
-        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_DYNAMIC_ALERT_ID)
-            .setSmallIcon(R.drawable.img_on)
-            .setContentTitle("白绮新动态")
-            .setContentText(text.take(50))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_DYNAMIC, notification)
-    }
-
     private fun updateNotification(isLive: Boolean) {
-        val notification = createServiceNotification(
+        notificationBuilder.postServiceNotification(
             isLive = isLive,
             lastCheckTime = preferenceManager.getLastCheckTime(),
             lastCheckSuccess = preferenceManager.isLastCheckSuccess()
         )
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_SERVICE, notification)
 
         // 更新应用图标由 MainActivity.onResume/updateUI 从 prefs 刷新（历史遗留的
         // ACTION_STATUS_CHANGED 广播无接收者，已删除；界面在回到前台时自动更新）
@@ -832,7 +623,7 @@ class LiveCheckService : Service() {
             // 记录被静音的开播时间与标题，勿扰结束后补「错过提醒」汇总
             preferenceManager.setQuietMissedLiveTs(System.currentTimeMillis())
             preferenceManager.setQuietMissedLiveTitle(preferenceManager.getLastLiveTitle())
-            sendSilentAlertNotification()
+            notificationBuilder.sendSilentAlert()
             return
         }
         // 服务是铃声的唯一所有者；全屏页只负责展示，避免两套 ExoPlayer 叠音。
@@ -840,29 +631,7 @@ class LiveCheckService : Service() {
         vibrate()
         // Android 10+ 不保证后台 startActivity 成功，交给高优先级通知的
         // fullScreenIntent 处理锁屏/前台展示。
-        sendAlertNotification()
-    }
-
-    // 勿扰时段内的静音开播通知：无 fullScreenIntent、setSilent 覆盖通道 HIGH 的默认声音
-    private fun sendSilentAlertNotification() {
-        val contentIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, contentIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_ALERT_ID)
-            .setSmallIcon(R.drawable.img_on)
-            .setContentTitle("🎉 白绮开播啦！")
-            .setContentText("直播间 $DEFAULT_ROOM_ID 正在直播中（勿扰时段已静音）")
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setSilent(true)
-            .setContentIntent(pendingIntent)
-            .build()
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_ALERT, notification)
+        notificationBuilder.sendAlert()
     }
 
     // 提醒铃声播放器引用（internal 便于测试）。此前是局部变量：
@@ -1003,83 +772,6 @@ class LiveCheckService : Service() {
         }
     }
 
-    private fun sendAlertNotification() {
-        val contentIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, contentIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val fullScreenIntent = PendingIntent.getActivity(
-            this,
-            1,
-            Intent(this, AlertActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_ALERT_ID)
-            .setSmallIcon(R.drawable.img_on)
-            .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.img_on))
-            .setContentTitle("🎉 白绮开播啦！")
-            .setContentText("直播间 $DEFAULT_ROOM_ID 正在直播中，快去看看吧！")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .setFullScreenIntent(fullScreenIntent, true)
-            .build()
-
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(LiveMonitorApp.NOTIFICATION_ID_ALERT, notification)
-    }
-
-    private fun createServiceNotification(
-        isLive: Boolean,
-        lastCheckTime: Long = preferenceManager.getLastCheckTime(),
-        lastCheckSuccess: Boolean = preferenceManager.isLastCheckSuccess()
-    ): Notification {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val iconRes = if (isLive) R.drawable.img_on else R.drawable.img_off
-        val smallIconRes = if (isLive) R.drawable.img_on else R.drawable.img_off
-        val statusText = if (isLive) "🔴 直播中" else "⚫ 未开播"
-        val timeText = if (lastCheckTime > 0) {
-            java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
-                .format(java.util.Date(lastCheckTime))
-        } else null
-        val contentText = when {
-            !lastCheckSuccess && lastCheckTime > 0 ->
-                if (timeText != null) "监控异常 · $timeText" else "监控异常"
-            isLive ->
-                if (timeText != null) "白绮正在直播，快去观看吧！ · $timeText"
-                else "白绮正在直播，快去观看吧！"
-            else ->
-                if (timeText != null) "上次检测 $timeText · 未开播"
-                else "正在监控直播间状态..."
-        }
-
-        return NotificationCompat.Builder(this, LiveMonitorApp.CHANNEL_SERVICE_ID)
-            .setSmallIcon(smallIconRes)
-            .setLargeIcon(BitmapFactory.decodeResource(resources, iconRes))
-            .setContentTitle("牢白播了吗 - $statusText")
-            .setContentText(contentText)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setWhen(lastCheckTime.takeIf { it > 0 } ?: System.currentTimeMillis())
-            .setShowWhen(true)
-            .build()
-    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
