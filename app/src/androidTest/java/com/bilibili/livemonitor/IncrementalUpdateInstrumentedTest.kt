@@ -21,7 +21,16 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class IncrementalUpdateInstrumentedTest {
 
+    // targetContext = 被测 App（filesDir/已安装APK/FileProvider 路径用它）
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    // instrumentation context = 测试 APK（app/src/androidTest/assets 打进的是测试 APK）
+    private val testContext = InstrumentationRegistry.getInstrumentation().context
+
+    private fun copyFixture(name: String, destDir: File) {
+        testContext.assets.open("apkdiff-fixtures/$name").use { input ->
+            File(destDir, name).writeBytes(input.readBytes())
+        }
+    }
 
     @Test
     fun installedApk可读且sha256可算() {
@@ -38,9 +47,7 @@ class IncrementalUpdateInstrumentedTest {
         val dir = context.cacheDir
         val fixtureDir = File(context.filesDir, "apkdiff-fixtures").apply { mkdirs() }
         for (name in listOf("old.apk", "new.apk", "patch.bin")) {
-            context.assets.open("apkdiff-fixtures/$name").use { input ->
-                File(fixtureDir, name).writeBytes(input.readBytes())
-            }
+            copyFixture(name, fixtureDir)
         }
         val oldFile = File(fixtureDir, "old.apk")
         val patchFile = File(fixtureDir, "patch.bin")
@@ -67,17 +74,10 @@ class IncrementalUpdateInstrumentedTest {
 
         // 用预生成的 ZiPat1 补丁走真机打补丁路径；这里复用同一份夹具，
         // 只验证 IncrementalUpdater 编排（下载→校验→打补丁→校验结果）
-        val fixtureDir = File(context.filesDir, "apkdiff-fixtures")
+        val fixtureDir = File(context.filesDir, "apkdiff-fixtures").apply { mkdirs() }
         if (!File(fixtureDir, "old.apk").exists()) {
-            File(fixtureDir, "old.apk").parentFile.mkdirs()
-            context.assets.open("apkdiff-fixtures/old.apk").use { input ->
-                File(fixtureDir, "old.apk").writeBytes(input.readBytes())
-            }
-            context.assets.open("apkdiff-fixtures/patch.bin").use { input ->
-                File(fixtureDir, "patch.bin").writeBytes(input.readBytes())
-            }
-            context.assets.open("apkdiff-fixtures/new.apk").use { input ->
-                File(fixtureDir, "new.apk").writeBytes(input.readBytes())
+            for (name in listOf("old.apk", "patch.bin", "new.apk")) {
+                copyFixture(name, fixtureDir)
             }
         }
         val baseFixture = File(fixtureDir, "old.apk")
