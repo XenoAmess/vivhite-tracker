@@ -16,6 +16,8 @@
 
 ## P0 — 补明显缺口（低风险，尽快做）
 
+> 状态：✅ 已完成（2026-08-05，484 例单测 0 失败 / lint 0 error）
+
 | # | 项 | 现状/问题 | 动作 | 估 |
 |---|---|---|---|---|
 | 1 | **场次标题落库** | `recordStreamStart/End` 只存时间，title 恒 null | `recordStreamEnd` 用 `preferenceManager.getLastLiveTitle()` 补 title；`recordStreamStart` 有 title 时直接带上 | 0.5h |

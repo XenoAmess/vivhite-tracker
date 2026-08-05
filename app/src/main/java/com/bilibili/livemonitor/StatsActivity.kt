@@ -76,6 +76,8 @@ class StatsActivity : AppCompatActivity() {
                 val day = dayStart(s.startTs)
                 sessionsByDay.getOrPut(day) { mutableListOf() }.add(s)
             }
+            // 完全没有场次时显示首次使用引导
+            binding.tvEmptyGuide.visibility = if (recent.isEmpty()) View.VISIBLE else View.GONE
             // 默认选中：今天；今天无场次则最近一场所在的日期
             val today = dayStart(now)
             selectedDayStart = if (sessionsByDay.containsKey(today)) today

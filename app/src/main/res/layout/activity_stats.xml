@@ -93,5 +93,19 @@
             android:nestedScrollingEnabled="false"
             android:paddingBottom="16dp" />
 
+        <TextView
+            android:id="@+id/tvEmptyGuide"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:paddingStart="32dp"
+            android:paddingEnd="32dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="24dp"
+            android:gravity="center"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:text="还没有场次记录。\n开播后会自动记录每场直播的时长与标题；\n也可以把「牢白播了吗」小组件加到桌面随时看状态。" />
+
     </LinearLayout>
 </ScrollView>

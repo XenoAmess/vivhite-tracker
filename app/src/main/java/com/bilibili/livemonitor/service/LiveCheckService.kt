@@ -347,7 +347,7 @@ class LiveCheckService : Service() {
 
         // 场次记录：任何 未开播→开播 跳变都记（含观播静音期，静音只影响提醒不影响记录）
         if (isLive && !wasLive) {
-            recordStreamStart(liveStartTime)
+            recordStreamStart(liveStartTime, liveTitle)
         }
         if (shouldAlert) {
             AppLogger.d(TAG, "triggerAlert")
@@ -432,13 +432,13 @@ class LiveCheckService : Service() {
     }
 
     // 开播跳变：先闭合可能残留的未闭合场次（进程死亡），再插入新场次
-    private fun recordStreamStart(liveStartTime: String?) {
+    private fun recordStreamStart(liveStartTime: String?, liveTitle: String?) {
         val dao = com.bilibili.livemonitor.db.AppDatabase.get(this).streamSessionDao()
         val startTs = parseLiveStartTime(liveStartTime) ?: System.currentTimeMillis()
         serviceScope.launch {
             try {
                 dao.closeOpenSessions(startTs)
-                dao.insertSession(com.bilibili.livemonitor.db.StreamSessionEntity(startTs = startTs))
+                dao.insertSession(com.bilibili.livemonitor.db.StreamSessionEntity(startTs = startTs, title = liveTitle))
             } catch (e: Exception) {
                 AppLogger.w(TAG, "record stream start failed", e)
             }
@@ -449,14 +449,17 @@ class LiveCheckService : Service() {
     private fun recordStreamEnd() {
         val dao = com.bilibili.livemonitor.db.AppDatabase.get(this).streamSessionDao()
         val endTs = System.currentTimeMillis()
+        val title = preferenceManager.getLastLiveTitle()
         serviceScope.launch {
             try {
                 val open = dao.findOpenSession()
                 val startTs = open?.startTs ?: parseLiveStartTime(preferenceManager.getLastLiveStartTime())
                 if (open != null) {
-                    dao.updateSession(open.copy(endTs = endTs))
+                    dao.updateSession(open.copy(endTs = endTs, title = open.title ?: title))
                 } else if (startTs != null) {
-                    dao.insertSession(com.bilibili.livemonitor.db.StreamSessionEntity(startTs = startTs, endTs = endTs))
+                    dao.insertSession(
+                        com.bilibili.livemonitor.db.StreamSessionEntity(startTs = startTs, endTs = endTs, title = title)
+                    )
                 }
                 if (startTs != null && preferenceManager.isNotifyStreamEnd()) {
                     sendStreamEndNotification(endTs - startTs)

@@ -60,6 +60,15 @@ class LiveStatusWidgetProvider : AppWidgetProvider() {
             views.setImageViewResource(R.id.ivWidgetIcon, iconRes)
             views.setTextViewText(R.id.tvWidgetStatus, statusText)
 
+            // 直播中展示当前标题（30min 周期刷新兜底服务被杀后的陈旧状态）
+            val liveTitle = prefs.getLastLiveTitle()
+            if (live && liveTitle.isNotBlank()) {
+                views.setTextViewText(R.id.tvWidgetLiveTitle, liveTitle)
+                views.setViewVisibility(R.id.tvWidgetLiveTitle, android.view.View.VISIBLE)
+            } else {
+                views.setViewVisibility(R.id.tvWidgetLiveTitle, android.view.View.GONE)
+            }
+
             val openApp = PendingIntent.getActivity(
                 context, 0, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

@@ -35,6 +35,8 @@ class BootReceiver : BroadcastReceiver() {
                     LiveCheckWorker.scheduleOneTime(context)
                 }
             }
+            // 开机刷新桌面小组件（进程被杀/重启后恢复最新状态）
+            com.bilibili.livemonitor.widget.LiveStatusWidgetProvider.updateAll(context)
             // 魔法期结束闹钟：有未来结束则开机重排
             val next = com.bilibili.livemonitor.domain.MagicPeriodDecider.nextPendingEnd(
                 com.bilibili.livemonitor.util.MagicPeriodStore.load(preferenceManager),
