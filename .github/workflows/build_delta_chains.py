@@ -3,6 +3,8 @@
 
 ApkDiffPatch（sisong/ApkDiffPatch，MIT）服务端生成：
 - 对历史 release 的「已发布签名 APK」生成直达补丁（ZipDiff）
+- 跨通道：beta-archive 最近 BETA_CROSS_BASES 个存档内测包也生成直达补丁，
+  beta 客户端可增量切到 stable（同一 keystore + 同一归一化/重签管线，可字节级回放）
 - 回打自验（ZipPatch + 逐字节 cmp），不一致丢弃
 - 只对「已装包内含 libapkpatch.so」的 from-version 生成（jbsdiff-only 旧客户端
   打不了 ZiPat1 补丁，跳过 → 自动全量下载，保证「检查更新」按钮始终可用）
@@ -29,6 +31,11 @@ ZIPDIFF = os.path.join(APKDIFF_BIN, "ZipDiff")
 ZIPPATCH = os.path.join(APKDIFF_BIN, "ZipPatch")
 MAX_KEEP = 8          # 只对最近 N 个历史 release 生成
 MIN_PATCH_RATIO = 0.5 # 补丁不小于全量一半则丢弃
+# 跨通道底包：最近 N 个 beta-archive 存档内测包也生成直达补丁，
+# 让 beta 客户端可以增量切换到 stable，不必全量下载
+BETA_ARCHIVE_TAG = "beta-archive"
+BETA_HISTORY_FILE = "beta-history.json"
+BETA_CROSS_BASES = 4
 
 
 def sha256(path):
@@ -67,6 +74,59 @@ def apk_has_native_lib(apk_path):
         return False
 
 
+def beta_cross_sources(new_vc):
+    """beta-archive 中最近 BETA_CROSS_BASES 个可用 beta 底包：[(vc, apk资产名, sha256)]。
+
+    archive 不存在 / history 缺失或损坏时返回空列表，跨通道补丁静默跳过。
+    """
+    if not gh_download(BETA_ARCHIVE_TAG, BETA_HISTORY_FILE, "meta-beta"):
+        print("skip beta cross bases: beta-history.json unavailable")
+        return []
+    try:
+        with open(os.path.join("meta-beta", BETA_HISTORY_FILE), encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception as e:
+        print(f"skip beta cross bases: history broken ({e})")
+        return []
+    out = []
+    for k, v in raw.items():
+        try:
+            vc = int(k)
+        except (TypeError, ValueError):
+            continue
+        if not (0 < vc < new_vc) or not isinstance(v, dict):
+            continue
+        apk = v.get("apk")
+        sha = v.get("sha256")
+        if isinstance(apk, str) and isinstance(sha, str):
+            out.append((vc, apk, sha))
+    out.sort()
+    return out[-BETA_CROSS_BASES:]
+
+
+def try_patch(old_apk, new_apk, pf, new_size, label):
+    """生成单跳补丁并回打自验；成功返回 {"file","size","patchSha256"}，失败清理后返回 None。"""
+    try:
+        run([ZIPDIFF, old_apk, new_apk, pf])
+        run([ZIPPATCH, old_apk, pf, "verify.apk"])
+        ok = filecmp.cmp(new_apk, "verify.apk", shallow=False)
+        too_big = ok and os.path.getsize(pf) >= new_size * MIN_PATCH_RATIO
+        if not ok:
+            print(f"patch {label}: VERIFY FAILED, dropped")
+        elif too_big:
+            print(f"patch {label}: >= {int(MIN_PATCH_RATIO*100)}% of full apk, dropped")
+        else:
+            return {"file": pf, "size": os.path.getsize(pf), "patchSha256": sha256(pf)}
+    except Exception as e:
+        print(f"patch {label}: error {e}, dropped")
+    finally:
+        if os.path.exists("verify.apk"):
+            os.remove("verify.apk")
+    if os.path.exists(pf):
+        os.remove(pf)
+    return None
+
+
 def main():
     new_apk = sorted(glob.glob("vivhite-tracker-*.apk"))[0]
     cur_tag = git("describe", "--tags", "--abbrev=0", "--match", "v*")
@@ -99,6 +159,7 @@ def main():
     print(f"current: {cur_tag} vc={new_vc}; candidates={[t for _, t in history]}")
 
     patches = {}
+    base_sha = {}  # vc -> 已下载底包的实际 sha256（chains 的 fromApkSha256 单一来源）
     for vc, tag in history:
         d = f"old/{vc}"
         if not gh_download(tag, "vivhite-tracker-*.apk", d):
@@ -113,34 +174,44 @@ def main():
             print(f"skip {tag}({vc}): 旧客户端无 libapkpatch.so（jbsdiff-only），走全量")
             continue
 
-        pf = f"patch-{vc}-to-{new_vc}.patch"
-        try:
-            run([ZIPDIFF, old_apk, new_apk, pf])
-            run([ZIPPATCH, old_apk, pf, "verify.apk"])
-            if not filecmp.cmp(new_apk, "verify.apk", shallow=False):
-                print(f"patch {tag}({vc}) -> {new_vc}: VERIFY FAILED, dropped")
-            elif os.path.getsize(pf) >= new_size * MIN_PATCH_RATIO:
-                print(f"patch {tag}({vc}) -> {new_vc}: >= {int(MIN_PATCH_RATIO*100)}% of full apk, dropped")
-            else:
-                patches[vc] = {
-                    "file": pf,
-                    "size": os.path.getsize(pf),
-                    "patchSha256": sha256(pf),
-                }
-                print(f"patch {tag}({vc}) -> {new_vc}: {patches[vc]['size']} bytes OK")
-        except Exception as e:
-            print(f"patch {tag}({vc}) -> {new_vc}: error {e}, dropped")
-        finally:
-            if os.path.exists("verify.apk"):
-                os.remove("verify.apk")
-            if pf not in [p["file"] for p in patches.values()] and os.path.exists(pf):
-                os.remove(pf)
+        p = try_patch(old_apk, new_apk, f"patch-{vc}-to-{new_vc}.patch",
+                      new_size, f"{tag}({vc}) -> {new_vc}")
+        if p is not None:
+            patches[vc] = p
+            base_sha[vc] = old_sha
+            print(f"patch {tag}({vc}) -> {new_vc}: {p['size']} bytes OK")
+
+    # 跨通道：beta-archive 最近 BETA_CROSS_BASES 个存档内测包 → 本次 stable。
+    # 整块防御性包裹：任何异常只丢跨通道条目，绝不影响 stable 通道内补丁与发布。
+    try:
+        for vc, apk_name, recorded_sha in beta_cross_sources(new_vc):
+            d = f"old-beta/{vc}"
+            if not gh_download(BETA_ARCHIVE_TAG, apk_name, d):
+                print(f"skip beta {vc}: archived apk unavailable")
+                continue
+            old_apk = os.path.join(d, apk_name)
+            old_sha = sha256(old_apk)
+            if old_sha != recorded_sha:
+                print(f"skip beta {vc}: archived apk hash disagrees with beta history")
+                continue
+            if not apk_has_native_lib(old_apk):
+                print(f"skip beta {vc}: 旧客户端无 libapkpatch.so（jbsdiff-only），走全量")
+                continue
+
+            p = try_patch(old_apk, new_apk, f"patch-{vc}-to-{new_vc}.patch",
+                          new_size, f"beta({vc}) -> {new_vc}")
+            if p is not None:
+                patches[vc] = p
+                base_sha[vc] = old_sha
+                print(f"patch beta({vc}) -> {new_vc}: {p['size']} bytes OK")
+    except Exception as e:
+        print(f"beta cross bases aborted: {e}")
 
     # 单跳直达链：from 版本 → 当前版本
     chains = {}
     for vc, p in patches.items():
         chains[str(vc)] = {
-            "fromApkSha256": sha256(glob.glob(f"old/{vc}/vivhite-tracker-*.apk")[0]),
+            "fromApkSha256": base_sha[vc],
             "totalSize": p["size"],
             "hops": [
                 {

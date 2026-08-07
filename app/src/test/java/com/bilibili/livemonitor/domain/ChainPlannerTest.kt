@@ -76,4 +76,33 @@ class ChainPlannerTest {
                 is ChainPlanner.UpdatePlan.Incremental
         )
     }
+
+    @Test
+    fun `跨通道链按本地versionCode命中并走增量`() {
+        // stable 装检查 beta（或反向）：chains 只按本地 versionCode 查表，
+        // 与来源通道无关；底包 sha 匹配即走增量
+        val meta = UpdateDecider.parseVersionMeta(
+            """{
+                "versionCode": 300,
+                "versionName": "1.2.3+4",
+                "apkSha256": "cafe",
+                "apkSize": 1000,
+                "chains": {
+                    "200": {
+                        "fromApkSha256": "deadbeef",
+                        "totalSize": 300,
+                        "hops": [
+                            {"toVersionCode": 300, "url": "https://x/p.patch", "size": 300,
+                             "patchSha256": "aa", "resultSha256": "cafe"}
+                        ]
+                    }
+                }
+            }"""
+        )!!
+        val chain = meta.chains[200]
+        assertTrue(
+            ChainPlanner.choosePlan(chain, "DEADBEEF", meta.apkSize)
+                is ChainPlanner.UpdatePlan.Incremental
+        )
+    }
 }

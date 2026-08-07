@@ -108,7 +108,7 @@ vivhite-tracker-<versionName>.apk
 
 - `vivhite-tracker-<versionName>.apk`：完整 release APK（归一化+重签的发布物）。
 - `version.json`：版本和更新元数据（`apkSha256/apkSize` 对发布物计算）。
-- `patch-<fromVersionCode>-to-<toVersionCode>.patch`：可用的稳定版增量补丁（ApkDiffPatch）。
+- `patch-<fromVersionCode>-to-<toVersionCode>.patch`：可用的增量补丁（ApkDiffPatch）；来源覆盖最近 8 个历史 Stable 和 `beta-archive` 中最近 4 个已存档 Beta。
 
 `softprops/action-gh-release` 会生成 GitHub Release notes。客户端的更新说明则优先使用 `version.json` 中的 `changelog`。
 
@@ -137,6 +137,7 @@ Beta 通道的 APK URL 固定，版本判断完全依赖 `version.json`。因此
 Beta 的历史底包不能由 Pages 获得，所以 `.github/workflows/build_beta_chains.py` 维护一个名为 `beta-archive` 的 GitHub Release：
 
 - 初次运行时创建该 Release，并将其 tag 固定在根提交，避免它影响 `git describe` 的正式版本推导。
+- 固定为 **prerelease**（每次运行钉住）：普通 Release 一旦被重建，创建日期变新会劫持 `releases/latest`，Stable 更新检查会解析到错误 Release。
 - 保存最近 8 个 Beta APK，文件名为 `beta-<versionCode>.apk`。
 - 保存可复用的补丁和 `beta-history.json`。
 - 每次发布后裁剪较旧 APK 及其关联补丁。
@@ -253,10 +254,11 @@ APK 下载网络异常时会删除未完成文件并返回失败。
 
 1. 发布物 = `ApkNormalized(新APK)` + `apksigner 34.0.0` 重签（**apksigner v35+ 破坏字节一致性，必须钉 34**，上游 issue #96/#107）。
 2. 对最近 8 个历史 release 的**已发布签名 APK** 生成直达补丁：`ZipDiff(old.apk, 发布物, patch)`。
-3. 回打自验：`ZipPatch(old.apk, patch, verify.apk)` 与发布物逐字节 `cmp`，不一致丢弃。
-4. 补丁不小于发布物一半也丢弃；单跳直达，不构建多跳链。
-5. **过渡安全**：只对「已装包内含 `libapkpatch.so`」的 from-version 生成补丁；jbsdiff-only 旧客户端自动全量下载，「检查更新」按钮始终可用（首个带新客户端的 release 无任何链，全员全量）。
-6. 把通过验证的补丁 SHA-256、大小和目标 APK SHA-256 写入元数据。
+3. 跨通道：再对 `beta-archive` 中最近 4 个已存档 Beta 底包生成直达补丁（`patch-<betaVersionCode>-to-<newVersionCode>.patch`，随 Stable Release 上传），让 Beta 客户端可增量切到 Stable。
+4. 回打自验：`ZipPatch(old.apk, patch, verify.apk)` 与发布物逐字节 `cmp`，不一致丢弃。
+5. 补丁不小于发布物一半也丢弃；单跳直达，不构建多跳链。
+6. **过渡安全**：只对「已装包内含 `libapkpatch.so`」的 from-version 生成补丁；jbsdiff-only 旧客户端自动全量下载，「检查更新」按钮始终可用（首个带新客户端的 release 无任何链，全员全量）。
+7. 把通过验证的补丁 SHA-256、大小和目标 APK SHA-256 写入元数据。
 
 实测（v1.7.0→v1.8.0）：ApkDiffPatch 补丁 **0.58MB**，原 jbsdiff 为 **6.74MB**（缩小 11.6 倍，仅全量 1.5%）。
 
@@ -264,7 +266,11 @@ APK 下载网络异常时会删除未完成文件并返回失败。
 
 ### 生成策略（Beta：ApkDiffPatch）
 
-Beta 脚本 `build_beta_chains.py` 与稳定版同一套 ApkDiffPatch 管线（归一化+apksigner34 重签 + ZipDiff 单跳直达 + 回打自验 + lib 守卫），客户端格式统一为 ZiPat1。
+Beta 脚本 `build_beta_chains.py` 与稳定版同一套 ApkDiffPatch 管线（归一化+apksigner34 重签 + ZipDiff 单跳直达 + 回打自验 + lib 守卫），客户端格式统一为 ZiPat1。除指数回退窗口（最近第 1、2、4 个 Beta 基）外，还对最近 2 个 Stable Release 生成 `patch-beta-<stableVersionCode>-to-<newVersionCode>.patch`（存入 `beta-archive`），让 Stable 客户端可增量切到 Beta。
+
+### 跨通道互转
+
+两个通道的发布物走同一条归一化 + apksigner 34 + 同一 keystore 管线，跨通道补丁因此可以字节级回放。`chains` 只按已安装 `versionCode` 查表，与来源通道无关：Stable 元数据可为已存档 Beta 提供链，Beta 元数据可为最近 Stable 提供链，Stable 与 Beta 客户端可双向增量切换。目标 `versionCode` 严格大于本机才构成更新；同提交重发的同 code 包不生成链（字节本就不同，走全量）。
 
 ### 客户端执行和回退
 
