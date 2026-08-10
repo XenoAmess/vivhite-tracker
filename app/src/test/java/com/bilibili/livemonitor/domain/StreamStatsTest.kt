@@ -61,6 +61,35 @@ class StreamStatsTest {
     }
 
     @Test
+    fun `weekdayLabels 与 dailyCounts 桶逐日对齐`() {
+        // now = epoch day 1,000,000（UTC）：今天星期 = (1_000_000+4)%7 = 5
+        val labels = StreamStats.weekdayLabels(now, 7)
+        assertEquals(listOf(6, 0, 1, 2, 3, 4, 5), labels)
+        // 昨天一场：命中桶的标签必须等于该场次实际星期，而不是偏一天
+        val yesterday = closed(1 * day, 1 * day - 3_600_000)
+        val daily = StreamStats.dailyCounts(listOf(yesterday), now, 7)
+        val hitIdx = daily.indexOfFirst { it > 0 }
+        val expectedWd = ((yesterday.startTs / day + 4) % 7).toInt()
+        assertEquals(expectedWd, labels[hitIdx])
+    }
+
+    @Test
+    fun `weekdayLabels 带时区偏移 周日场次标在周日桶`() {
+        // 回归：2026-08-10 周一 20:00(+8) 查看，8-09 周日那场必须落在「周日」标签的桶
+        val offset = 8 * 3_600_000L
+        val mondayEpochDay = 20_675L // 2026-08-10 周一
+        val nowLocal = mondayEpochDay * day - offset + 20 * 3_600_000L
+        val sundayStart = (mondayEpochDay - 1) * day - offset + 20 * 3_600_000L + 27 * 60_000L
+        val sunday = StreamSessionEntity(startTs = sundayStart, endTs = sundayStart + 2 * 3_600_000L)
+
+        val daily = StreamStats.dailyCounts(listOf(sunday), nowLocal, 7, offset)
+        val labels = StreamStats.weekdayLabels(nowLocal, 7, offset)
+        val hitIdx = daily.indexOfFirst { it > 0 }
+        assertEquals("周日的场次应标在周日桶", 0, labels[hitIdx])
+        assertEquals("最后一桶是今天（周一）", 1, labels[6])
+    }
+
+    @Test
     fun `favoriteWeekday 累计并返回最多的一天`() {
         // 1970-01-01 周四（epochDay 0 → 4）；+day 周五（5）；+2day 周六（6）
         val thursday = StreamSessionEntity(startTs = 0, endTs = 3_600_000)

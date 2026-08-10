@@ -55,6 +55,19 @@ object StreamStats {
     }
 
     /**
+     * 与 [dailyCounts] 逐桶对齐的星期标签（0=周日..6=周六，下标 0 = 最早一天）。
+     * 桶 j 对应本地日 day0+j，星期映射同 [favoriteWeekday]：(epochDay+4)%7。
+     */
+    fun weekdayLabels(
+        now: Long,
+        days: Int,
+        localDayOffsetMs: Long = 0
+    ): List<Int> {
+        val day0 = (now + localDayOffsetMs) / DAY_MS - (days - 1)
+        return (0 until days).map { j -> Math.floorMod(day0 + j + 4, 7).toInt() }
+    }
+
+    /**
      * 星期偏好：0=周日..6=周六，各自累计已闭合场次数；无场次返回 null。
      * 星期映射 (epochDay+4)%7（epochDay 0 = 1970-01-01 周四 → 4）。
      */

@@ -83,13 +83,9 @@ class StatsActivity : AppCompatActivity() {
             }
             binding.tvStatsSummary.text = summaryText
 
-            // 最近 7 天开播柱状（标签取当天星期）
+            // 最近 7 天开播柱状（标签与 dailyCounts 桶逐日对齐，下标 0 = 最早一天）
             val daily = StreamStats.dailyCounts(recent, now, 7, localOffset)
-            val dayCal = java.util.Calendar.getInstance().apply { timeInMillis = now }
-            val labels = daily.indices.map { i ->
-                dayCal.add(java.util.Calendar.DAY_OF_MONTH, -1)
-                dayCal.get(java.util.Calendar.DAY_OF_WEEK) - 1
-            }.reversed().map { WEEKDAY_NAMES[it] }
+            val labels = StreamStats.weekdayLabels(now, 7, localOffset).map { WEEKDAY_NAMES[it] }
             binding.weekBars.setData(daily, labels)
 
             sessionsByDay.clear()
