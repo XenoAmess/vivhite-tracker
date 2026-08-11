@@ -284,4 +284,47 @@ class StatsActivityTest {
         etDuration.setText("")
         assertEquals("结束：--", btnEnd.text.toString())
     }
+
+    // ---------- 备份导入 ----------
+
+    @Test
+    fun `导入CSV 合并去重 场次与心情`() = runBlocking {
+        val sdao = AppDatabase.get(context).streamSessionDao()
+        val mdao = AppDatabase.get(context).moodEventDao()
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+        fun ts(s: String) = fmt.parse(s)!!.time
+
+        // 预置：1 场次 + 1 心情（与 CSV 中重复）
+        sdao.insertSession(StreamSessionEntity(startTs = ts("2026-08-09 20:27"), endTs = ts("2026-08-09 23:01"), title = "sad"))
+        mdao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = ts("2026-08-09 21:00"), durationMin = 0, mood = "happy",
+                title = "看了场直播", createdAt = 0
+            )
+        )
+
+        val csv = com.bilibili.livemonitor.domain.SessionBackup.HEADER + "\n" +
+            "场次,2026-08-09 20:27,2026-08-09 23:01,154,\"sad\",,,\n" +          // 重复
+            "场次,2026-08-08 20:00,2026-08-08 22:00,120,\"新场次\",,,\n" +          // 新增
+            "心情,2026-08-09 21:00,,0,\"看了场直播\",😄开心,,\n" +                   // 重复（display 反查）
+            "心情,2026-08-08 21:00,,0,\"新心情\",😢难过,,\"备注\"\n" +                 // 新增
+            "场次,坏行,,,,\"x\",,,\n"                                            // 无法解析
+
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("summary") {
+            activity.findViewById<TextView>(R.id.tvStatsSummary).text.toString().contains("本周")
+        }
+        val result = activity.importCsvText(csv)
+        assertEquals(1, result.sessionsAdded)
+        assertEquals(1, result.sessionsSkipped)
+        assertEquals(1, result.moodsAdded)
+        assertEquals(1, result.moodsSkipped)
+        assertEquals(1, result.badLines)
+
+        // DB 终态：2 场次 + 2 心情；心情 display 已反查为 key
+        assertEquals(2, sdao.closedSessionsSince(0).size)
+        val allMoods = mdao.all()
+        assertEquals(2, allMoods.size)
+        assertTrue(allMoods.any { it.mood == "sad" && it.note == "备注" })
+    }
 }

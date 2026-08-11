@@ -40,9 +40,13 @@ object MoodCatalog {
     )
 
     private val byKey: Map<String, Mood> = moods.associateBy { it.key }
+    private val byDisplay: Map<String, Mood> = moods.associateBy { it.emoji + it.label }
 
     fun find(key: String): Mood? = byKey[key]
 
     /** 列表展示用：「😄开心」；未知 key 兜底原样显示 */
     fun display(key: String): String = byKey[key]?.let { it.emoji + it.label } ?: key
+
+    /** CSV 导入反查：「😄开心」→ happy；裸 key/不认识的原样透传（display 会兜底展示） */
+    fun keyOf(displayOrKey: String): String = byDisplay[displayOrKey]?.key ?: displayOrKey
 }

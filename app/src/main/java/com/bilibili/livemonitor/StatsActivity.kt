@@ -24,6 +24,7 @@ import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import com.bilibili.livemonitor.domain.MoodCatalog
 import com.bilibili.livemonitor.domain.MoodTiming
+import com.bilibili.livemonitor.domain.SessionBackup
 import com.bilibili.livemonitor.domain.StreamStats
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
@@ -82,7 +83,14 @@ class StatsActivity : AppCompatActivity() {
         binding.btnPrevMonth.setOnClickListener { cal.add(Calendar.MONTH, -1); renderCalendar() }
         binding.btnNextMonth.setOnClickListener { cal.add(Calendar.MONTH, 1); renderCalendar() }
         binding.btnExportStats.setOnClickListener { exportSessions() }
+        binding.btnImportStats.setOnClickListener { importLauncher.launch("*/*") }
+        binding.btnExportImage.setOnClickListener { exportStatsImage() }
 
+        refreshData()
+    }
+
+    // 首次加载与导入后共用的全量刷新：场次列表/摘要/柱状/日历/心情
+    private fun refreshData() {
         lifecycleScope.launch {
             val dao = AppDatabase.get(this@StatsActivity).streamSessionDao()
             val now = System.currentTimeMillis()
@@ -406,38 +414,227 @@ class StatsActivity : AppCompatActivity() {
         }
     }
 
-    // 场次导出：最近场次写 CSV 到 cacheDir/shared，走 FileProvider 分享
+    // 备份导出：场次 + 心情混合 CSV（格式见 domain/SessionBackup），走 FileProvider 分享
     private fun exportSessions() {
-        if (loadedSessions.isEmpty()) {
-            android.widget.Toast.makeText(this, "暂无场次可导出", android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        try {
-            val dir = java.io.File(cacheDir, "shared").apply { mkdirs() }
-            val file = java.io.File(dir, "sessions_export.csv")
-            val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
-            val header = "场次,开始,结束,时长(分钟),标题\n"
-            val body = loadedSessions.sortedBy { it.startTs }.joinToString("\n") { s ->
-                val start = dateFormat.format(java.util.Date(s.startTs))
-                val end = s.endTs?.let { dateFormat.format(java.util.Date(it)) } ?: "进行中"
-                val minutes = s.endTs?.let { (it - s.startTs) / 60_000 }?.toString() ?: ""
-                val title = (s.title ?: "").replace("\"", "\"\"")
-                "$start,$end,$minutes,\"$title\""
+        lifecycleScope.launch {
+            val moods = AppDatabase.get(this@StatsActivity).moodEventDao().all()
+            if (loadedSessions.isEmpty() && moods.isEmpty()) {
+                Toast.makeText(this@StatsActivity, "暂无数据可导出", Toast.LENGTH_SHORT).show()
+                return@launch
             }
-            file.writeText(header + body, Charsets.UTF_8)
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                this, "$packageName.fileprovider", file
+            try {
+                val dir = java.io.File(cacheDir, "shared").apply { mkdirs() }
+                val file = java.io.File(dir, "vivhite_backup.csv")
+                file.writeText(SessionBackup.toCsv(loadedSessions, moods), Charsets.UTF_8)
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this@StatsActivity, "$packageName.fileprovider", file
+                )
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/csv"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "牢白播了吗 场次+心情备份")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(shareIntent, "导出备份"))
+            } catch (e: Exception) {
+                Toast.makeText(this@StatsActivity, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // SAF 选文件导入备份（mime 各家文件管理器不靠谱，用 */* 让用户都能选到）
+    private val importLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { importFromUri(it) }
+    }
+
+    private fun importFromUri(uri: android.net.Uri) {
+        lifecycleScope.launch {
+            val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openInputStream(uri)
+                        ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                }.getOrNull()
+            }
+            if (text == null) {
+                Toast.makeText(this@StatsActivity, "无法读取文件", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val result = importCsvText(text)
+            AlertDialog.Builder(this@StatsActivity)
+                .setTitle("导入完成")
+                .setMessage(
+                    "场次：新增 ${result.sessionsAdded} · 跳过重复 ${result.sessionsSkipped}\n" +
+                        "心情：新增 ${result.moodsAdded} · 跳过重复 ${result.moodsSkipped}\n" +
+                        "无法解析/进行中被跳过：${result.badLines} 行"
+                )
+                .setPositiveButton("好", null)
+                .show()
+            refreshData()
+        }
+    }
+
+    data class ImportResult(
+        val sessionsAdded: Int,
+        val sessionsSkipped: Int,
+        val moodsAdded: Int,
+        val moodsSkipped: Int,
+        val badLines: Int
+    )
+
+    /** 合并式导入：按关键字段去重（场次=起止时间，心情=时间+心情+标题），重复的跳过 */
+    internal suspend fun importCsvText(text: String): ImportResult {
+        val parsed = SessionBackup.parse(text)
+        val db = AppDatabase.get(this)
+        val sdao = db.streamSessionDao()
+        val mdao = db.moodEventDao()
+        var sAdded = 0
+        var sSkipped = 0
+        var mAdded = 0
+        var mSkipped = 0
+        parsed.sessions.forEach { r ->
+            if (sdao.countByStartEnd(r.startTs, r.endTs) > 0) {
+                sSkipped++
+            } else {
+                sdao.insertSession(
+                    StreamSessionEntity(startTs = r.startTs, endTs = r.endTs, title = r.title)
+                )
+                sAdded++
+            }
+        }
+        parsed.moods.forEach { r ->
+            if (mdao.countByKey(r.eventTs, r.mood, r.title) > 0) {
+                mSkipped++
+            } else {
+                mdao.insert(
+                    MoodEventEntity(
+                        eventTs = r.eventTs, durationMin = r.durationMin, mood = r.mood,
+                        title = r.title, reason = r.reason, note = r.note,
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+                mAdded++
+            }
+        }
+        return ImportResult(sAdded, sSkipped, mAdded, mSkipped, parsed.skippedLines)
+    }
+
+    // 导出图片：当月完整数据海报（摘要+柱图+日历热力+心情统计+全记录），渲染后走分享面板
+    private fun exportStatsImage() {
+        lifecycleScope.launch {
+            val data = buildStatsImageData()
+            val bmp = com.bilibili.livemonitor.util.StatsImageRenderer.render(this@StatsActivity, data)
+            val loader = com.bilibili.livemonitor.util.ShareImageLoader()
+            val file = loader.save(this@StatsActivity, bmp, "stats_share.png")
+            if (file == null) {
+                Toast.makeText(this@StatsActivity, "图片生成失败", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val uri = loader.shareableUri(this@StatsActivity, file)
+            val intent = com.bilibili.livemonitor.util.ShareImageFactory.buildImageShareIntent(
+                uri, contentResolver, "stats_share", "image/png",
+                extraText = "白绮 ${data.monthTitle} 场次记录",
+                extraSubject = "牢白播了吗 场次记录海报"
             )
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/csv"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "牢白播了吗 直播场次导出")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(shareIntent, "导出直播场次"))
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(this, "导出失败：${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            startActivity(Intent.createChooser(intent, "分享场次记录图"))
         }
+    }
+
+    /** 组装海报数据：以当前日历所在月为准（用户可翻月） */
+    private suspend fun buildStatsImageData(): com.bilibili.livemonitor.util.StatsImageRenderer.StatsImageData {
+        val db = AppDatabase.get(this)
+        val now = System.currentTimeMillis()
+        val localOffset = java.util.TimeZone.getDefault().getOffset(now).toLong()
+
+        // 摘要（与页面一致：30 天窗口）
+        val summary = StreamStats.summarize(
+            db.streamSessionDao().closedSessionsSince(now - 30L * DAY_MS), now
+        )
+        val summaryLines = mutableListOf(
+            "本周 ${summary.weekCount} 场 · 本月 ${summary.monthCount} 场",
+            "平均 ${formatDuration(summary.avgDurationMs)} · 最长 ${formatDuration(summary.maxDurationMs)}"
+        )
+        StreamStats.favoriteWeekday(loadedSessions, localOffset)?.let {
+            summaryLines += "常播：${WEEKDAY_NAMES[it.first]}"
+        }
+
+        // 柱状图（与页面一致：最近 7 天）
+        val barCounts = StreamStats.dailyCounts(loadedSessions, now, 7, localOffset)
+        val barLabels = StreamStats.weekdayLabels(now, 7, localOffset).map { WEEKDAY_NAMES[it] }
+
+        // 当前显示月的边界
+        val monthStart = (cal.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+        val leading = (monthStart.get(Calendar.DAY_OF_WEEK) - 1)
+        val daysInMonth = monthStart.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+        val monthSessions = loadedSessions.filter {
+            it.startTs >= monthStart.timeInMillis && it.startTs < monthEnd.timeInMillis
+        }.sortedBy { it.startTs }
+        val monthMoods = db.moodEventDao().eventsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+
+        val dayOfMonth = { ts: Long ->
+            Calendar.getInstance().apply { timeInMillis = ts }.get(Calendar.DAY_OF_MONTH)
+        }
+        val sessionDays = monthSessions.map { dayOfMonth(it.startTs) }.toSet()
+        val todayDom = run {
+            val t = Calendar.getInstance()
+            if (t.get(Calendar.YEAR) == monthStart.get(Calendar.YEAR) &&
+                t.get(Calendar.MONTH) == monthStart.get(Calendar.MONTH)
+            ) {
+                t.get(Calendar.DAY_OF_MONTH)
+            } else {
+                0
+            }
+        }
+
+        // 心情统计：display → 次数，倒序取前 6
+        val moodStats = monthMoods.groupingBy { MoodCatalog.display(it.mood) }
+            .eachCount().entries.sortedByDescending { it.value }.take(6).map { it.toPair() }
+
+        // 本月完整记录：场次（紫）+ 心情（粉）按时间混排
+        val dayFmt = SimpleDateFormat("MM-dd", Locale.getDefault())
+        val records = mutableListOf<Pair<Long, com.bilibili.livemonitor.util.StatsImageRenderer.RecordLine>>()
+        monthSessions.forEach { s ->
+            val time = timeFormat.format(Date(s.startTs)) +
+                (s.endTs?.let { "~${timeFormat.format(Date(it))}" } ?: "~进行中")
+            val duration = s.endTs?.let { " · ${formatDuration(it - s.startTs)}" } ?: ""
+            records += s.startTs to com.bilibili.livemonitor.util.StatsImageRenderer.RecordLine(
+                isSession = true,
+                text = "${dayFmt.format(Date(s.startTs))} $time$duration · ${s.title ?: "（无标题）"}"
+            )
+        }
+        monthMoods.forEach { m ->
+            val time = timeFormat.format(Date(m.eventTs)) +
+                if (m.durationMin > 0) {
+                    "~${timeFormat.format(Date(MoodTiming.endTs(m.eventTs, m.durationMin)))}"
+                } else {
+                    ""
+                }
+            val reason = m.reason?.takeIf { it.isNotBlank() }?.let { "（原因：$it）" } ?: ""
+            records += m.eventTs to com.bilibili.livemonitor.util.StatsImageRenderer.RecordLine(
+                isSession = false,
+                text = "${dayFmt.format(Date(m.eventTs))} $time ${MoodCatalog.display(m.mood)} · ${m.title}$reason"
+            )
+        }
+
+        return com.bilibili.livemonitor.util.StatsImageRenderer.StatsImageData(
+            monthTitle = monthTitleFormat.format(cal.time),
+            summaryLines = summaryLines,
+            barCounts = barCounts,
+            barLabels = barLabels,
+            leading = leading,
+            daysInMonth = daysInMonth,
+            sessionDays = sessionDays,
+            todayDom = todayDom,
+            moodStats = moodStats,
+            records = records.sortedBy { it.first }.map { it.second },
+            exportDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(now))
+        )
     }
 
     private fun formatDuration(ms: Long): String {

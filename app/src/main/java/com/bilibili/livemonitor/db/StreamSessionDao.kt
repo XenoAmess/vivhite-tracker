@@ -33,6 +33,10 @@ interface StreamSessionDao {
     @Query("SELECT * FROM stream_sessions WHERE end_ts IS NOT NULL AND start_ts >= :since ORDER BY start_ts DESC")
     suspend fun closedSessionsSince(since: Long): List<StreamSessionEntity>
 
+    /** 导入去重：同 开始+结束 视为重复（SQLite IS 同时覆盖 NULL 与等值比较） */
+    @Query("SELECT COUNT(*) FROM stream_sessions WHERE start_ts = :startTs AND end_ts IS :endTs")
+    suspend fun countByStartEnd(startTs: Long, endTs: Long?): Int
+
     @Insert
     suspend fun insertTitleChange(change: StreamTitleChangeEntity)
 
