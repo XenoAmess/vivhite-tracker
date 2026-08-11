@@ -81,6 +81,17 @@ def upload_asset(path):
     print(f"uploaded {path}")
 
 
+def upload_channel_files(apk_path):
+    """beta 检查通道固定名资产（App「内测版尝鲜」读取的固定 URL，
+    github.com 主机 → 客户端可走镜像加速；Pages 仅作 legacy 回退）。
+    滚动裁剪只动 beta-<vc>.apk / patch-*，固定名不受裁剪影响。"""
+    upload_asset("version.json")
+    fixed = "beta-latest.apk"
+    run(["cp", apk_path, fixed])
+    upload_asset(fixed)
+    os.remove(fixed)
+
+
 def download_release_asset(tag, pattern, dest):
     os.makedirs(dest, exist_ok=True)
     r = gh("release", "download", tag, "-p", pattern,
@@ -153,15 +164,16 @@ def main():
     new_sha = sha256(new_apk)
     new_size = os.path.getsize(new_apk)
 
+    ensure_archive()
+
     if not os.path.exists(ZIPDIFF) or not os.path.exists(ZIPPATCH):
         print("ZipDiff/ZipPatch 缺失（APKDIFF_BIN 未就绪），仅回填 apkSha256/apkSize，跳过补丁生成")
         vj["apkSha256"] = new_sha
         vj["apkSize"] = new_size
         with open("version.json", "w", encoding="utf-8") as f:
             json.dump(vj, f, ensure_ascii=False)
+        upload_channel_files(new_apk)
         return 0
-
-    ensure_archive()
 
     # 滚动历史：vc -> {"apk": asset名, "sha256":..., "size":..., "patches": {...}}
     history = {}
@@ -273,6 +285,7 @@ def main():
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump({str(k): v for k, v in history.items()}, f, ensure_ascii=False)
     upload_asset(HISTORY_FILE)
+    upload_channel_files(new_apk)
     print(f"beta: {len(patches)} patch(es), {len(chains)} chain(s), keep {len(history)} builds")
 
 

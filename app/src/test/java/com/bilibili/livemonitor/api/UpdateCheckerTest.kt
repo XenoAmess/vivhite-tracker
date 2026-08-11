@@ -1,6 +1,7 @@
 package com.bilibili.livemonitor.api
 
 import com.bilibili.livemonitor.domain.UpdateDecider
+import com.bilibili.livemonitor.domain.UpdateMirrors
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -295,11 +296,115 @@ class UpdateCheckerTest {
 
     @Test
     fun `e2e beta通道 网络失败 返回Error`() = runBlocking {
-        // 服务器直接拒连（连接被拒不达）
-        val checker = UpdateChecker().apply { betaVersionJsonUrl = "http://127.0.0.1:1/beta/version.json" }
+        // 主通道与 legacy 回退都拒连（连接被拒不达）
+        val checker = UpdateChecker().apply {
+            betaVersionJsonUrl = "http://127.0.0.1:1/beta/version.json"
+            betaLegacyVersionJsonUrl = "http://127.0.0.1:1/legacy/version.json"
+        }
         val state = checker.checkBetaChannel(localVersionCode = 141, localVersionName = "1.5.1+3")
         assertTrue(state is UpdateDecider.UpdateState.Error)
         assertEquals("network error", (state as UpdateDecider.UpdateState.Error).reason)
+    }
+
+    @Test
+    fun `e2e beta通道 主URL失败 回退legacy Pages`() = runBlocking {
+        // 主通道（beta-archive 资产）拒连 → 回退 legacy Pages URL 成功
+        withServer({ exchange ->
+            val body = """{"versionCode":150,"versionName":"1.5.1+9","changelog":"abc1234 feat: 内测改动"}"""
+            val bytes = body.toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }) { baseUrl ->
+            val checker = UpdateChecker().apply {
+                betaVersionJsonUrl = "http://127.0.0.1:1/beta/version.json"
+                betaLegacyVersionJsonUrl = "$baseUrl/legacy/version.json"
+            }
+            val state = checker.checkBetaChannel(localVersionCode = 141, localVersionName = "1.5.1+3")
+            assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
+            val info = (state as UpdateDecider.UpdateState.UpdateAvailable).info
+            assertEquals(150, info.versionCode)
+            assertEquals(UpdateChecker.BETA_APK_URL_LEGACY, info.apkUrl)
+        }
+        Unit
+    }
+
+    @Test
+    fun `beta 新通道 URL 均可镜像加速`() {
+        // beta-archive 资产是 github.com 主机 → UpdateMirrors 白名单天然生效
+        assertTrue(UpdateMirrors.candidates(UpdateChecker.BETA_VERSION_JSON_URL).size > 1)
+        assertTrue(UpdateMirrors.candidates(UpdateChecker.BETA_APK_URL).size > 1)
+        assertEquals(
+            UpdateChecker.BETA_VERSION_JSON_URL,
+            UpdateMirrors.candidates(UpdateChecker.BETA_VERSION_JSON_URL).last()
+        )
+    }
+
+    @Test
+    fun `e2e stable api失败 回退302页拿tag再拉versionJson`() = runBlocking {
+        // api.github.com 拒连 → releases/latest 302 Location 提取 tag →
+        // 拼 releases/download/<tag>/version.json 拉精确版本（全程可代理 URL 形态）
+        withServer({ exchange ->
+            when (exchange.requestURI.path) {
+                "/releases/latest" -> {
+                    exchange.responseHeaders.add("Location", "/releases/tag/v9.9.9")
+                    exchange.sendResponseHeaders(302, -1)
+                }
+                "/releases/download/v9.9.9/version.json" -> {
+                    val bytes = """{"versionCode":99,"versionName":"9.9.9","changelog":"abc1234 feat: 302路径"}""".toByteArray()
+                    exchange.sendResponseHeaders(200, bytes.size.toLong())
+                    exchange.responseBody.use { it.write(bytes) }
+                }
+                else -> exchange.sendResponseHeaders(404, -1)
+            }
+        }) { baseUrl ->
+            val socket = java.net.ServerSocket(0)
+            val deadPort = socket.localPort
+            socket.close()
+            val checker = UpdateChecker().apply {
+                latestReleaseApi = "http://127.0.0.1:$deadPort/api"
+                latestReleasePageUrl = "$baseUrl/releases/latest"
+            }
+            val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
+            assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
+            val info = (state as UpdateDecider.UpdateState.UpdateAvailable).info
+            assertEquals(99, info.versionCode)
+            assertEquals("9.9.9", info.versionName)
+            assertEquals("$baseUrl/releases/download/v9.9.9/vivhite-tracker-9.9.9.apk", info.apkUrl)
+            assertEquals("abc1234 feat: 302路径", info.changelog)
+        }
+        Unit
+    }
+
+    @Test
+    fun `e2e stable 302页无Location时从HTML提取tag`() = runBlocking {
+        // 镜像代跟重定向返回 200 HTML：从页面正则提取 tag
+        withServer({ exchange ->
+            when (exchange.requestURI.path) {
+                "/releases/latest" -> {
+                    val bytes = "<html><a href=\"/releases/tag/v9.9.8\">latest</a></html>".toByteArray()
+                    exchange.sendResponseHeaders(200, bytes.size.toLong())
+                    exchange.responseBody.use { it.write(bytes) }
+                }
+                "/releases/download/v9.9.8/version.json" -> {
+                    val bytes = """{"versionCode":98,"versionName":"9.9.8"}""".toByteArray()
+                    exchange.sendResponseHeaders(200, bytes.size.toLong())
+                    exchange.responseBody.use { it.write(bytes) }
+                }
+                else -> exchange.sendResponseHeaders(404, -1)
+            }
+        }) { baseUrl ->
+            val socket = java.net.ServerSocket(0)
+            val deadPort = socket.localPort
+            socket.close()
+            val checker = UpdateChecker().apply {
+                latestReleaseApi = "http://127.0.0.1:$deadPort/api"
+                latestReleasePageUrl = "$baseUrl/releases/latest"
+            }
+            val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
+            assertTrue(state is UpdateDecider.UpdateState.UpdateAvailable)
+            assertEquals("9.9.8", (state as UpdateDecider.UpdateState.UpdateAvailable).info.versionName)
+        }
+        Unit
     }
 
     @Test
@@ -324,7 +429,10 @@ class UpdateCheckerTest {
         val deadPort = socket.localPort
         socket.close()
 
-        val checker = UpdateChecker().apply { latestReleaseApi = "http://127.0.0.1:$deadPort/x" }
+        val checker = UpdateChecker().apply {
+            latestReleaseApi = "http://127.0.0.1:$deadPort/x"
+            latestReleasePageUrl = "http://127.0.0.1:$deadPort/releases/latest"
+        }
         val state = checker.checkLatestRelease(localVersionCode = 91, localVersionName = "1.1.91")
 
         assertTrue(state is UpdateDecider.UpdateState.Error)
