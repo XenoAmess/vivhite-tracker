@@ -1,6 +1,8 @@
 package com.bilibili.livemonitor.api
 
 import com.bilibili.livemonitor.domain.UpdateDecider
+import com.bilibili.livemonitor.domain.UpdateMirrors
+import com.bilibili.livemonitor.util.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -96,14 +98,32 @@ open class UpdateChecker {
         }
     }
 
-    // 下载 APK 到 dest，onProgress 回调 0-100（在 IO 线程调用，UI 更新需自行切线程）；
+    // 下载 APK 到 dest，onProgress 回调 0-100（在 IO 线程调用，UI 更新需自行切线程）。
+    // github.com 资产按 UpdateMirrors.candidates 顺序走公共镜像加速，全部失败回退直连；
     // 成功 true，失败清理半成品文件返回 false
     open suspend fun downloadApk(
         url: String,
         dest: File,
         onProgress: (percent: Int) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
-        try {
+        val candidates = UpdateMirrors.candidates(url)
+        candidates.forEachIndexed { index, candidate ->
+            if (index > 0) {
+                AppLogger.d("UpdateChecker", "download fallback: $candidate")
+                onProgress(0) // 重试时进度条归零
+            }
+            if (downloadOnce(candidate, dest, onProgress)) return@withContext true
+        }
+        dest.delete()
+        false
+    }
+
+    private fun downloadOnce(
+        url: String,
+        dest: File,
+        onProgress: (percent: Int) -> Unit
+    ): Boolean {
+        return try {
             val connection = URL(url).openConnection() as HttpURLConnection
             connection.apply {
                 setRequestProperty("User-Agent", USER_AGENT)
