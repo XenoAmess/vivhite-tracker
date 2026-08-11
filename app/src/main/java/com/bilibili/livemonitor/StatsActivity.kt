@@ -23,6 +23,7 @@ import com.bilibili.livemonitor.db.AppDatabase
 import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import com.bilibili.livemonitor.domain.MoodCatalog
+import com.bilibili.livemonitor.domain.MoodTiming
 import com.bilibili.livemonitor.domain.StreamStats
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
@@ -263,10 +264,24 @@ class StatsActivity : AppCompatActivity() {
             selectedDayStart + nowCal.get(Calendar.HOUR_OF_DAY) * 3_600_000L +
                 nowCal.get(Calendar.MINUTE) * 60_000L
         }
+        var durationMin = existing?.durationMin ?: 0
+        val etDuration = view.findViewById<EditText>(R.id.etMoodEventDuration)
+        val btnEnd = view.findViewById<TextView>(R.id.btnMoodEventEnd)
+
         fun refreshTimeText() {
-            btnTime.text = "时间：${timeFormat.format(Date(eventTs))}"
+            btnTime.text = "开始：${timeFormat.format(Date(eventTs))}"
+        }
+        // 时长>0 才展示结束时间；开始/时长变 → 结束跟着变
+        fun refreshEndText() {
+            btnEnd.text = if (durationMin > 0) {
+                "结束：${timeFormat.format(Date(MoodTiming.endTs(eventTs, durationMin)))}"
+            } else {
+                "结束：--"
+            }
         }
         refreshTimeText()
+        refreshEndText()
+
         btnTime.setOnClickListener {
             val c = Calendar.getInstance().apply { timeInMillis = eventTs }
             android.app.TimePickerDialog(
@@ -274,6 +289,33 @@ class StatsActivity : AppCompatActivity() {
                 { _, h, m ->
                     eventTs = selectedDayStart + h * 3_600_000L + m * 60_000L
                     refreshTimeText()
+                    refreshEndText() // 时长不变，结束时间跟随开始时间
+                },
+                c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true
+            ).show()
+        }
+
+        // 时长 → 结束时间 联动
+        etDuration.setText(if (durationMin > 0) durationMin.toString() else "")
+        etDuration.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                durationMin = s?.toString()?.trim()?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+                refreshEndText()
+            }
+        })
+
+        // 结束时间 → 时长 联动（结束不晚于开始视为跨午夜）
+        btnEnd.setOnClickListener {
+            val base = if (durationMin > 0) MoodTiming.endTs(eventTs, durationMin) else eventTs
+            val c = Calendar.getInstance().apply { timeInMillis = base }
+            android.app.TimePickerDialog(
+                this,
+                { _, h, m ->
+                    val picked = selectedDayStart + h * 3_600_000L + m * 60_000L
+                    durationMin = MoodTiming.durationMinFromEnd(eventTs, picked)
+                    etDuration.setText(durationMin.toString()) // 触发 watcher → refreshEndText
                 },
                 c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true
             ).show()
@@ -304,7 +346,8 @@ class StatsActivity : AppCompatActivity() {
                         if (existing == null) {
                             dao.insert(
                                 MoodEventEntity(
-                                    eventTs = eventTs, mood = moodKey, title = title,
+                                    eventTs = eventTs, durationMin = durationMin,
+                                    mood = moodKey, title = title,
                                     reason = reason, note = note,
                                     createdAt = System.currentTimeMillis()
                                 )
@@ -312,7 +355,8 @@ class StatsActivity : AppCompatActivity() {
                         } else {
                             dao.update(
                                 existing.copy(
-                                    eventTs = eventTs, mood = moodKey, title = title,
+                                    eventTs = eventTs, durationMin = durationMin,
+                                    mood = moodKey, title = title,
                                     reason = reason, note = note
                                 )
                             )
@@ -438,8 +482,14 @@ class StatsActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val e = events[position]
-            holder.tvTitle.text =
-                "${timeFormat.format(Date(e.eventTs))} ${MoodCatalog.display(e.mood)} · ${e.title}"
+            val start = timeFormat.format(Date(e.eventTs))
+            // 时长>0 才展示结束时间
+            val timePart = if (e.durationMin > 0) {
+                "$start ~ ${timeFormat.format(Date(MoodTiming.endTs(e.eventTs, e.durationMin)))}"
+            } else {
+                start
+            }
+            holder.tvTitle.text = "$timePart ${MoodCatalog.display(e.mood)} · ${e.title}"
             if (e.reason.isNullOrEmpty()) {
                 holder.tvReason.visibility = View.GONE
             } else {

@@ -223,4 +223,65 @@ class StatsActivityTest {
         )
         assertEquals(0, dao.eventsBetween(todayStart(), todayStart() + 86_400_000L).size)
     }
+
+    @Test
+    fun `心情事件时长 0 不显示结束时间 大于 0 显示起止`() = runBlocking {
+        val dao = AppDatabase.get(context).moodEventDao()
+        dao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = todayStart() + 10 * 3_600_000L, durationMin = 90,
+                mood = "happy", title = "有时长", createdAt = System.currentTimeMillis()
+            )
+        )
+        dao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = todayStart() + 12 * 3_600_000L, durationMin = 0,
+                mood = "calm", title = "没时长", createdAt = System.currentTimeMillis()
+            )
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("mood list") {
+            activity.findViewById<RecyclerView>(R.id.rvMoodEvents).adapter!!.itemCount == 2
+        }
+        val rv = activity.findViewById<RecyclerView>(R.id.rvMoodEvents)
+        val text0 = rv.findViewHolderForAdapterPosition(0)!!.itemView
+            .findViewById<TextView>(R.id.tvMoodEventTitle).text.toString()
+        val text1 = rv.findViewHolderForAdapterPosition(1)!!.itemView
+            .findViewById<TextView>(R.id.tvMoodEventTitle).text.toString()
+        assertTrue(text0, text0.startsWith("10:00 ~ 11:30"))
+        assertTrue(text1, text1.startsWith("12:00"))
+        assertTrue(text1, !text1.contains("~"))
+    }
+
+    @Test
+    fun `心情编辑对话框 改动时长联动结束时间`() = runBlocking {
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("calendar rendered") {
+            activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid).childCount > 7
+        }
+        activity.findViewById<android.view.View>(R.id.btnAddMoodEvent).performClick()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        val btnTime = dialog.findViewById<TextView>(R.id.btnMoodEventTime)!!
+        val btnEnd = dialog.findViewById<TextView>(R.id.btnMoodEventEnd)!!
+        val etDuration = dialog.findViewById<android.widget.EditText>(R.id.etMoodEventDuration)!!
+
+        // 初始：时长 0 → 不展示结束时间
+        assertEquals("结束：--", btnEnd.text.toString())
+
+        etDuration.setText("45")
+        fun minutesOf(buttonText: String): Int {
+            val hm = buttonText.substringAfter("：")
+            val h = hm.substringBefore(":").toInt()
+            val m = hm.substringAfter(":").toInt()
+            return h * 60 + m
+        }
+        val startMin = minutesOf(btnTime.text.toString())
+        val endMin = minutesOf(btnEnd.text.toString())
+        assertEquals("结束时间应 = 开始 + 45 分钟", 45, (endMin - startMin + 24 * 60) % (24 * 60))
+
+        // 清空时长 → 回到不展示
+        etDuration.setText("")
+        assertEquals("结束：--", btnEnd.text.toString())
+    }
 }

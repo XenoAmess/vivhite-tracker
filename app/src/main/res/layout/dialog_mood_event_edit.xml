@@ -18,10 +18,37 @@
             style="?attr/materialButtonOutlinedStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="时间：20:30"
+            android:text="开始：20:30"
             android:textSize="14sp"
             app:icon="@android:drawable/ic_menu_recent_history"
             app:iconSize="16dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <EditText
+                android:id="@+id/etMoodEventDuration"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="时长（分钟，0=不记时长）"
+                android:inputType="number"
+                android:maxLines="1"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMoodEventEnd"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="结束：--"
+                android:textSize="14sp"
+                app:icon="@android:drawable/ic_menu_recent_history"
+                app:iconSize="16dp" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"

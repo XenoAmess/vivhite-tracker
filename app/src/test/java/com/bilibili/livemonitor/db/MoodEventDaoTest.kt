@@ -38,12 +38,14 @@ class MoodEventDaoTest {
         var list = dao.eventsBetween(0, 2000)
         assertEquals(1, list.size)
         assertEquals("开播了", list[0].title)
+        assertEquals("默认时长为 0", 0, list[0].durationMin)
 
-        dao.update(list[0].copy(title = "下播了", mood = "sad", reason = "没看够"))
+        dao.update(list[0].copy(title = "下播了", mood = "sad", reason = "没看够", durationMin = 90))
         list = dao.eventsBetween(0, 2000)
         assertEquals("下播了", list[0].title)
         assertEquals("sad", list[0].mood)
         assertEquals("没看够", list[0].reason)
+        assertEquals(90, list[0].durationMin)
 
         dao.delete(list[0])
         assertEquals(0, dao.eventsBetween(0, 2000).size)
