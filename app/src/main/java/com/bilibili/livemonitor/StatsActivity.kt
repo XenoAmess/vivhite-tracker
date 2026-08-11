@@ -6,8 +6,11 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.GridLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -17,8 +20,12 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bilibili.livemonitor.databinding.ActivityStatsBinding
 import com.bilibili.livemonitor.db.AppDatabase
+import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
+import com.bilibili.livemonitor.domain.MoodCatalog
 import com.bilibili.livemonitor.domain.StreamStats
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -39,6 +46,7 @@ class StatsActivity : AppCompatActivity() {
     private val sessionsByDay = mutableMapOf<Long, MutableList<StreamSessionEntity>>()
     private var selectedDayStart: Long = 0
     private lateinit var sessionAdapter: SessionAdapter
+    private lateinit var moodAdapter: MoodEventAdapter
     private val loadedSessions = mutableListOf<StreamSessionEntity>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,6 +68,15 @@ class StatsActivity : AppCompatActivity() {
         sessionAdapter = SessionAdapter(emptyList(), timeFormat)
         binding.rvSessions.layoutManager = LinearLayoutManager(this)
         binding.rvSessions.adapter = sessionAdapter
+
+        moodAdapter = MoodEventAdapter(
+            emptyList(), timeFormat,
+            onClick = { showMoodEventDialog(it) },
+            onDelete = { confirmDeleteMoodEvent(it) }
+        )
+        binding.rvMoodEvents.layoutManager = LinearLayoutManager(this)
+        binding.rvMoodEvents.adapter = moodAdapter
+        binding.btnAddMoodEvent.setOnClickListener { showMoodEventDialog(null) }
 
         binding.btnPrevMonth.setOnClickListener { cal.add(Calendar.MONTH, -1); renderCalendar() }
         binding.btnNextMonth.setOnClickListener { cal.add(Calendar.MONTH, 1); renderCalendar() }
@@ -205,6 +222,121 @@ class StatsActivity : AppCompatActivity() {
         binding.tvSelectedDayHint.text = label
         sessionAdapter.update(sessions)
         loadTitleChanges(sessions)
+        loadMoodEvents()
+    }
+
+    // 当日心情事件（按日归属：[selectedDayStart, +1天)）
+    private fun loadMoodEvents() {
+        val day = selectedDayStart
+        lifecycleScope.launch {
+            val dao = AppDatabase.get(this@StatsActivity).moodEventDao()
+            val events = dao.eventsBetween(day, day + DAY_MS)
+            if (day != selectedDayStart) return@launch
+            moodAdapter.update(events)
+            binding.tvMoodEventsEmpty.visibility = if (events.isEmpty()) View.VISIBLE else View.GONE
+        }
+    }
+
+    // 添加（existing=null）/ 编辑心情事件共用的对话框
+    private fun showMoodEventDialog(existing: MoodEventEntity?) {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_mood_event_edit, null)
+        val chipGroup = view.findViewById<ChipGroup>(R.id.chipGroupMood)
+        val btnTime = view.findViewById<TextView>(R.id.btnMoodEventTime)
+        val etTitle = view.findViewById<EditText>(R.id.etMoodEventTitle)
+        val etReason = view.findViewById<EditText>(R.id.etMoodEventReason)
+        val etNote = view.findViewById<EditText>(R.id.etMoodEventNote)
+
+        MoodCatalog.moods.forEach { mood ->
+            val chip = (LayoutInflater.from(this).inflate(R.layout.item_mood_chip, chipGroup, false) as Chip).apply {
+                id = View.generateViewId()
+                text = mood.emoji + mood.label
+                isCheckable = true
+                tag = mood.key
+            }
+            chipGroup.addView(chip)
+            if (existing?.mood == mood.key) chipGroup.check(chip.id)
+        }
+
+        // 事件时间：日期固定为选中日，只改时分；默认取当前时刻
+        var eventTs = existing?.eventTs ?: run {
+            val nowCal = Calendar.getInstance()
+            selectedDayStart + nowCal.get(Calendar.HOUR_OF_DAY) * 3_600_000L +
+                nowCal.get(Calendar.MINUTE) * 60_000L
+        }
+        fun refreshTimeText() {
+            btnTime.text = "时间：${timeFormat.format(Date(eventTs))}"
+        }
+        refreshTimeText()
+        btnTime.setOnClickListener {
+            val c = Calendar.getInstance().apply { timeInMillis = eventTs }
+            android.app.TimePickerDialog(
+                this,
+                { _, h, m ->
+                    eventTs = selectedDayStart + h * 3_600_000L + m * 60_000L
+                    refreshTimeText()
+                },
+                c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true
+            ).show()
+        }
+
+        etTitle.setText(existing?.title.orEmpty())
+        etReason.setText(existing?.reason.orEmpty())
+        etNote.setText(existing?.note.orEmpty())
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "添加心情事件" else "编辑心情事件")
+            .setView(view)
+            .setPositiveButton("保存", null) // 校验失败时不关闭，下面手动接管
+            .setNegativeButton("取消", null)
+            .show()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val title = etTitle.text.toString().trim()
+            val checkedId = chipGroup.checkedChipId
+            when {
+                title.isEmpty() -> etTitle.error = "事件必填"
+                checkedId == View.NO_ID -> Toast.makeText(this, "请选择心情", Toast.LENGTH_SHORT).show()
+                else -> {
+                    val moodKey = view.findViewById<Chip>(checkedId).tag as String
+                    val reason = etReason.text.toString().trim().ifEmpty { null }
+                    val note = etNote.text.toString().trim().ifEmpty { null }
+                    lifecycleScope.launch {
+                        val dao = AppDatabase.get(this@StatsActivity).moodEventDao()
+                        if (existing == null) {
+                            dao.insert(
+                                MoodEventEntity(
+                                    eventTs = eventTs, mood = moodKey, title = title,
+                                    reason = reason, note = note,
+                                    createdAt = System.currentTimeMillis()
+                                )
+                            )
+                        } else {
+                            dao.update(
+                                existing.copy(
+                                    eventTs = eventTs, mood = moodKey, title = title,
+                                    reason = reason, note = note
+                                )
+                            )
+                        }
+                        loadMoodEvents()
+                    }
+                    dialog.dismiss()
+                }
+            }
+        }
+    }
+
+    private fun confirmDeleteMoodEvent(event: MoodEventEntity) {
+        AlertDialog.Builder(this)
+            .setTitle("删除心情事件")
+            .setMessage("确定删除「${event.title}」吗？")
+            .setPositiveButton("删除") { _, _ ->
+                lifecycleScope.launch {
+                    AppDatabase.get(this@StatsActivity).moodEventDao().delete(event)
+                    loadMoodEvents()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // 本日主题变化时间线（stream_title_changes 已记录，这里补 UI）
@@ -274,6 +406,55 @@ class StatsActivity : AppCompatActivity() {
     companion object {
         // 0=周日..6=周六
         private val WEEKDAY_NAMES = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
+        private const val DAY_MS = 86_400_000L
+    }
+
+    private class MoodEventAdapter(
+        private var events: List<MoodEventEntity>,
+        private val timeFormat: SimpleDateFormat,
+        private val onClick: (MoodEventEntity) -> Unit,
+        private val onDelete: (MoodEventEntity) -> Unit
+    ) : RecyclerView.Adapter<MoodEventAdapter.Holder>() {
+
+        class Holder(view: View) : RecyclerView.ViewHolder(view) {
+            val tvTitle: TextView = view.findViewById(R.id.tvMoodEventTitle)
+            val tvReason: TextView = view.findViewById(R.id.tvMoodEventReason)
+            val tvNote: TextView = view.findViewById(R.id.tvMoodEventNote)
+            val btnDelete: View = view.findViewById(R.id.btnMoodEventDelete)
+        }
+
+        fun update(newEvents: List<MoodEventEntity>) {
+            events = newEvents
+            notifyDataSetChanged()
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_mood_event, parent, false)
+            return Holder(view)
+        }
+
+        override fun getItemCount(): Int = events.size
+
+        override fun onBindViewHolder(holder: Holder, position: Int) {
+            val e = events[position]
+            holder.tvTitle.text =
+                "${timeFormat.format(Date(e.eventTs))} ${MoodCatalog.display(e.mood)} · ${e.title}"
+            if (e.reason.isNullOrEmpty()) {
+                holder.tvReason.visibility = View.GONE
+            } else {
+                holder.tvReason.visibility = View.VISIBLE
+                holder.tvReason.text = "原因：${e.reason}"
+            }
+            if (e.note.isNullOrEmpty()) {
+                holder.tvNote.visibility = View.GONE
+            } else {
+                holder.tvNote.visibility = View.VISIBLE
+                holder.tvNote.text = "备注：${e.note}"
+            }
+            holder.itemView.setOnClickListener { onClick(e) }
+            holder.btnDelete.setOnClickListener { onDelete(e) }
+        }
     }
 
     private class SessionAdapter(

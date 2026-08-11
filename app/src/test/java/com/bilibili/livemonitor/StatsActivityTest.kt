@@ -24,9 +24,10 @@ class StatsActivityTest {
 
     @Before
     fun setUp() {
-        // 每个用例清空场次（Robolectric 同一测试类共享 filesDir/DB）
+        // 每个用例清空场次与心情事件（Robolectric 同一测试类共享 filesDir/DB）
         runBlocking {
             AppDatabase.get(context).streamSessionDao().deleteAll()
+            AppDatabase.get(context).moodEventDao().deleteAll()
         }
     }
 
@@ -123,5 +124,103 @@ class StatsActivityTest {
             true,
             activity.findViewById<TextView>(R.id.tvDayTitleChanges).text.toString().startsWith("本日主题变化")
         )
+    }
+
+    // ---------- 心情事件 ----------
+
+    private fun todayStart(): Long = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    @Test
+    fun `添加心情事件 列表显示且空态隐藏`() = runBlocking {
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("calendar rendered") {
+            activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid).childCount > 7
+        }
+        activity.findViewById<android.view.View>(R.id.btnAddMoodEvent).performClick()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        dialog.findViewById<android.widget.EditText>(R.id.etMoodEventTitle)!!.setText("看了场直播")
+        val chipGroup = dialog.findViewById<com.google.android.material.chip.ChipGroup>(R.id.chipGroupMood)!!
+        (chipGroup.getChildAt(0) as com.google.android.material.chip.Chip).performClick()
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+
+        waitFor("mood event added") {
+            activity.findViewById<RecyclerView>(R.id.rvMoodEvents).adapter!!.itemCount == 1
+        }
+        assertEquals(
+            android.view.View.GONE,
+            activity.findViewById<TextView>(R.id.tvMoodEventsEmpty).visibility
+        )
+        assertEquals(
+            1,
+            AppDatabase.get(context).moodEventDao()
+                .eventsBetween(todayStart(), todayStart() + 86_400_000L).size
+        )
+    }
+
+    @Test
+    fun `编辑心情事件 字段更新`() = runBlocking {
+        val dao = AppDatabase.get(context).moodEventDao()
+        dao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = todayStart() + 10 * 3_600_000L, mood = "happy",
+                title = "原标题", reason = "旧原因", createdAt = System.currentTimeMillis()
+            )
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("mood list") {
+            activity.findViewById<RecyclerView>(R.id.rvMoodEvents).adapter!!.itemCount == 1
+        }
+        val rv = activity.findViewById<RecyclerView>(R.id.rvMoodEvents)
+        rv.findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        dialog.findViewById<android.widget.EditText>(R.id.etMoodEventTitle)!!.setText("新标题")
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+
+        waitFor("mood event updated") {
+            runBlocking {
+                dao.eventsBetween(todayStart(), todayStart() + 86_400_000L)
+                    .firstOrNull()?.title == "新标题"
+            }
+        }
+        val saved = dao.eventsBetween(todayStart(), todayStart() + 86_400_000L).first()
+        assertEquals("happy", saved.mood) // 心情沿用未改
+        assertEquals("旧原因", saved.reason)
+    }
+
+    @Test
+    fun `删除心情事件 确认后消失`() = runBlocking {
+        val dao = AppDatabase.get(context).moodEventDao()
+        dao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = todayStart() + 11 * 3_600_000L, mood = "sad",
+                title = "要删的", createdAt = System.currentTimeMillis()
+            )
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("mood list") {
+            activity.findViewById<RecyclerView>(R.id.rvMoodEvents).adapter!!.itemCount == 1
+        }
+        val rv = activity.findViewById<RecyclerView>(R.id.rvMoodEvents)
+        rv.findViewHolderForAdapterPosition(0)!!.itemView
+            .findViewById<android.view.View>(R.id.btnMoodEventDelete).performClick()
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+
+        waitFor("mood event deleted") {
+            activity.findViewById<RecyclerView>(R.id.rvMoodEvents).adapter!!.itemCount == 0
+        }
+        assertEquals(
+            android.view.View.VISIBLE,
+            activity.findViewById<TextView>(R.id.tvMoodEventsEmpty).visibility
+        )
+        assertEquals(0, dao.eventsBetween(todayStart(), todayStart() + 86_400_000L).size)
     }
 }
