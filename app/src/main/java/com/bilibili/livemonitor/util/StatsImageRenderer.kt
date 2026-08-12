@@ -62,7 +62,10 @@ object StatsImageRenderer {
     private const val CAL_CELL_H = 72
     private const val MOOD_LINE_H = 48
     private const val RECORD_ROW_H = 64
-    private const val FOOTER_H = 90
+    private const val FOOTER_H = 120
+
+    // 海报最下方的不显眼小字（落款之下）
+    private const val WHISPER_TEXT = "你会一直好好的，因为，我一直看着你呢。"
 
     // 各分区之后的间距（computeHeight 与 render 共用，改动必须同步）
     private const val GAP_AFTER_SUMMARY = 24
@@ -276,6 +279,11 @@ object StatsImageRenderer {
             c, helper.paintText(22f, TEXT_GRAY),
             "白绮的绮迹手账 · 来自「牢白播了吗」 · 导出 ${data.exportDate}",
             WIDTH / 2f, y + 50f
+        )
+        // 耳语小字（不显眼：更浅灰 + 更小字号）
+        helper.drawCenter(
+            c, helper.paintText(18f, 0xFFBBBBBB.toInt()),
+            WHISPER_TEXT, WIDTH / 2f, y + 92f
         )
         return bmp
     }
