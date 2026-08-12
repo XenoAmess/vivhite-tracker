@@ -10,7 +10,7 @@ import android.view.View
 import com.bilibili.livemonitor.views.WeekStreamBarsView
 
 /**
- * 场次记录导出海报渲染（宽 1080，高度按内容计算，白底紫主题）。
+ * 绮迹手账导出海报渲染（宽 1080，高度按内容计算，白底紫主题）。
  * 分区：标题（含主播头像）→ 摘要卡 → 7 天柱状图（离屏复用 WeekStreamBarsView）→
  * 当月日历热力（场次紫底 / 魔法期粉底 / 重叠紫底粉描边）→ 本月心情统计 →
  * 本月魔法期统计 → 本月完整记录（场次/心情/魔法期混排）→ 落款。
@@ -119,7 +119,7 @@ object StatsImageRenderer {
         )
         val titleX = PAD + AVATAR_SIZE + 20f
         c.drawText(
-            "牢白播了吗 · 场次记录", titleX, y + 76f,
+            "牢白播了吗 · 绮迹手账", titleX, y + 76f,
             helper.paintText(46f, TEXT_MAIN, bold = true)
         )
         c.drawText(data.monthTitle, titleX, y + 124f, helper.paintText(28f, ACCENT, bold = true))
@@ -266,7 +266,7 @@ object StatsImageRenderer {
         // ============ 落款 ============
         helper.drawCenter(
             c, helper.paintText(22f, TEXT_GRAY),
-            "白绮场次记录 · 来自「牢白播了吗」 · 导出 ${data.exportDate}",
+            "白绮的绮迹手账 · 来自「牢白播了吗」 · 导出 ${data.exportDate}",
             WIDTH / 2f, y + 50f
         )
         return bmp

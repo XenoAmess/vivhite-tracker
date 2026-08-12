@@ -269,7 +269,7 @@
             app:layout_constraintStart_toEndOf="@id/btnSettings"
             app:layout_constraintTop_toBottomOf="@id/btnStats" />
 
-        <!-- 场次记录：独立整行（与开始/停止监控同款 icon 间距与排版），位于 日志/设置/源码 上方 -->
+        <!-- 绮迹手账：独立整行（与开始/停止监控同款 icon 间距与排版），位于 日志/设置/源码 上方 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnStats"
             android:layout_width="0dp"
@@ -277,7 +277,7 @@
             android:layout_marginTop="8dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
-            android:text="场次记录"
+            android:text="绮迹手账"
             android:textSize="16sp"
             app:backgroundTint="@color/blue_500"
             app:icon="@android:drawable/ic_menu_agenda"

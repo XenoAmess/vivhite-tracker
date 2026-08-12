@@ -248,7 +248,7 @@
             android:gravity="center"
             android:textSize="13sp"
             android:textColor="?android:attr/textColorSecondary"
-            android:text="还没有场次记录。\n开播后会自动记录每场直播的时长与标题；\n也可以把「牢白播了吗」小组件加到桌面随时看状态。" />
+            android:text="还没有任何记录。\n开播后会自动记录每场直播的时长与标题；\n也可以点「＋ 添加」记下当下心情。" />
 
     </LinearLayout>
 </ScrollView>

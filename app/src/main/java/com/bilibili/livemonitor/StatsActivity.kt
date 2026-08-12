@@ -582,10 +582,10 @@ class StatsActivity : AppCompatActivity() {
             val uri = loader.shareableUri(this@StatsActivity, file)
             val intent = com.bilibili.livemonitor.util.ShareImageFactory.buildImageShareIntent(
                 uri, contentResolver, "stats_share", "image/png",
-                extraText = "白绮 ${data.monthTitle} 场次记录",
-                extraSubject = "牢白播了吗 场次记录海报"
+                extraText = "白绮 ${data.monthTitle} 绮迹手账",
+                extraSubject = "牢白播了吗 绮迹手账海报"
             )
-            startActivity(Intent.createChooser(intent, "分享场次记录图"))
+            startActivity(Intent.createChooser(intent, "分享绮迹手账"))
         }
     }
 
