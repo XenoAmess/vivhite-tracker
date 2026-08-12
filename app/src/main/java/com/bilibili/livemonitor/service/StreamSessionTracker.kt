@@ -68,12 +68,20 @@ class StreamSessionTracker(
         }
     }
 
-    // 开播跳变：先闭合可能残留的未闭合场次（进程死亡），再插入新场次
+    // 开播跳变：先闭合可能残留的未闭合场次（进程死亡），再插入新场次。
+    // 幂等：进程死亡恢复后若开放行与本场 liveStartTime 相同（同一场），
+    // 直接复用不闭合不新插——否则残留行会被塌缩成 0 分钟幽灵场次（升级场景 A'）
     fun recordStreamStart(liveStartTime: String?, liveTitle: String?) {
         val dao = AppDatabase.get(context).streamSessionDao()
-        val startTs = parseLiveStartTime(liveStartTime) ?: System.currentTimeMillis()
+        val parsedStart = parseLiveStartTime(liveStartTime)
+        val startTs = parsedStart ?: System.currentTimeMillis()
         scope.launch {
             try {
+                val open = dao.findOpenSession()
+                if (open != null && parsedStart != null && open.startTs == parsedStart) {
+                    AppLogger.d(tag, "record stream start: same session ${open.id}, reuse")
+                    return@launch
+                }
                 dao.closeOpenSessions(startTs)
                 dao.insertSession(StreamSessionEntity(startTs = startTs, title = liveTitle))
             } catch (e: Exception) {
@@ -106,6 +114,32 @@ class StreamSessionTracker(
             }
         }
     }
+
+    /**
+     * NotLive reconcile（进程死亡跨过下播的场景）：状态恢复超龄后
+     * recordStreamEnd 不会被调（无跳变），残留开放行会挂到下一场开播被
+     * 错闭合成数天长的假场次。这里在每次 NotLive 检测时静默补闭合：
+     * 闭合点 = 最后一次确认在播的检测时间（存活证据上限），无证据或证据
+     * 早于开场则夹到开场（0 时长行，统计层 endTs>startTs 过滤，诚实"未知"）。
+     * 静默：不触发下播通知。与 recordStreamEnd 由 wasLive 门控天然互斥。
+     */
+    fun reconcileOpenSessionIfNotLive() {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        scope.launch {
+            try {
+                val open = dao.findOpenSession() ?: return@launch
+                val observed = prefs.getLastLiveObservedTime()
+                val endTs = reconcileEndTs(open.startTs, observed)
+                dao.updateSession(open.copy(endTs = endTs, title = open.title ?: prefs.getLastLiveTitle()))
+                AppLogger.d(tag, "reconciled stale open session ${open.id}, endTs=$endTs")
+            } catch (e: Exception) {
+                AppLogger.w(tag, "reconcile open session failed", e)
+            }
+        }
+    }
+
+    internal fun reconcileEndTs(openStartTs: Long, lastLiveObservedMs: Long): Long =
+        if (lastLiveObservedMs >= openStartTs) lastLiveObservedMs else openStartTs
 
     private companion object {
         const val TITLE_CHANGE_MIN_LIVE_MS = 5 * 60_000L // 开播至少 5 分钟后的标题变化才提醒

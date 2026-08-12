@@ -322,6 +322,10 @@ class LiveCheckService : Service() {
         if (isLive && liveStartTime != null) {
             preferenceManager.setLastLiveStartTime(liveStartTime)
         }
+        // 每次确认在播都刷新"存活证据"时间戳（进程死亡后 reconcile 残留场次的闭合上限）
+        if (isLive) {
+            preferenceManager.setLastLiveObservedTime(System.currentTimeMillis())
+        }
 
         // 观播静音解除判定：下播即解除；检测到新一场直播（live_start_time 与
         // 置静音时绑定的不一致）也解除——修复"置静音后服务在下播窗口期被杀，
@@ -369,6 +373,12 @@ class LiveCheckService : Service() {
         // 下播：闭合场次 + 下播提醒
         if (!isLive && wasLive) {
             streamSessionTracker.recordStreamEnd()
+        }
+        // 无跳变的 NotLive（进程死亡跨过下播、状态恢复超龄）：静默补闭合残留开放行，
+        // 否则它会挂到下一场开播被错闭合成数天长的假场次。与 recordStreamEnd 经
+        // wasLive 门控互斥，不会双跑
+        if (!isLive && !wasLive) {
+            streamSessionTracker.reconcileOpenSessionIfNotLive()
         }
         // 直播中主题变化提醒（每次 Live 轮询都追踪）
         if (isLive) {

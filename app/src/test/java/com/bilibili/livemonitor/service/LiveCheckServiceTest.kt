@@ -17,6 +17,7 @@ import com.bilibili.livemonitor.api.LiveStatusChecker
 import com.bilibili.livemonitor.util.AlertSoundProvider
 import com.bilibili.livemonitor.util.FakeExoPlayer
 import com.bilibili.livemonitor.util.PreferenceManager
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -1477,5 +1478,50 @@ class LiveCheckServiceTest {
         }
         // 复位静态开关，防泄漏到其他用例
         org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(false)
+    }
+
+    @Test
+    fun `S12 恢复超龄后NotLive reconcile静默闭合残留场次`() {
+        // 升级/进程死亡跨过下播：lastCheck 拨到 11 分钟前（超 STATUS_RESTORE_MAX_AGE）
+        // → lastStatus=null → wasLive=false → recordStreamEnd 不会被调；
+        // reconcile 应静默闭合残留开放行到"存活证据"时间（而非 now/下一场开播时间）
+        runBlocking {
+            com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao().deleteAll()
+        }
+        val now = System.currentTimeMillis()
+        val streamStart = now - 2 * 3_600_000
+        val observed = now - 40 * 60_000
+        runBlocking {
+            com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao()
+                .insertSession(
+                    com.bilibili.livemonitor.db.StreamSessionEntity(startTs = streamStart, title = "升级前的场次")
+                )
+        }
+        prefs.setLastLiveObservedTime(observed)
+        prefs.setLastCheck(now - 11 * 60_000, true, true) // 超龄 → onCreate 恢复为 null
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive)
+
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        controller.startCommand(0, 1)
+        driveCheckUntil(controller, "stale open session reconciled") {
+            runBlocking {
+                com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao()
+                    .recentSessions(5).firstOrNull()?.endTs != null
+            }
+        }
+        val session = runBlocking {
+            com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao()
+                .recentSessions(5).first()
+        }
+        assertEquals("应闭合到存活证据时间（误差分钟级）", observed, session.endTs)
+        // 若 recordStreamEnd 误跑，endTs 会≈now；且全场次只有这一行（不得补插新行）
+        val all = runBlocking {
+            com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao().recentSessions(10)
+        }
+        assertEquals("不得补插新场次行", 1, all.size)
+        runBlocking {
+            com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao().deleteAll()
+        }
     }
 }

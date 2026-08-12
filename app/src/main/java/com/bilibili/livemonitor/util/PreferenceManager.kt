@@ -90,6 +90,17 @@ class PreferenceManager(context: Context) {
         return prefs.getString(KEY_LAST_LIVE_START_TIME, "") ?: ""
     }
 
+    // 最后一次「确认在播」的检测时间（ms，每次 Live 检测写入）。
+    // 注意与 lastCheckTime 区分：后者每次检测（含 NotLive）都覆盖，
+    // 进程死亡后补闭合场次时只能以本字段作为"存活证据上限"
+    fun setLastLiveObservedTime(timeMillis: Long) {
+        prefs.edit().putLong(KEY_LAST_LIVE_OBSERVED_TIME, timeMillis).apply()
+    }
+
+    fun getLastLiveObservedTime(): Long {
+        return prefs.getLong(KEY_LAST_LIVE_OBSERVED_TIME, 0L)
+    }
+
     // 观播静音绑定的本场直播 live_start_time；与当前不一致 = 新一场 = 自动解除静音
     // 空串 = 老标记（无绑定信息），不参与新会话比对
     fun setSuppressedLiveStart(startTime: String) {
@@ -384,6 +395,7 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_CHECK_SUCCESS = "last_check_success"
         private const val KEY_ALERT_SUPPRESSED = "alert_suppressed"
         private const val KEY_LAST_LIVE_START_TIME = "last_live_start_time"
+        private const val KEY_LAST_LIVE_OBSERVED_TIME = "last_live_observed_time"
         private const val KEY_SUPPRESSED_LIVE_START = "suppressed_live_start"
 
         // ===== 应用更新检查 =====
