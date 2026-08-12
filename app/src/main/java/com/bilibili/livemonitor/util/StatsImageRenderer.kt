@@ -64,15 +64,21 @@ object StatsImageRenderer {
     private const val RECORD_ROW_H = 64
     private const val FOOTER_H = 90
 
+    // 各分区之后的间距（computeHeight 与 render 共用，改动必须同步）
+    private const val GAP_AFTER_SUMMARY = 24
+    private const val GAP_AFTER_BARS = 32
+    private const val GAP_AFTER_CALENDAR = 16
+    private const val GAP_AFTER_STATS = 8
+
     /** 海报总高度（纯计算，可单测）：各分区高度累加 */
     internal fun computeHeight(data: StatsImageData): Int {
         var h = HEADER_H
-        h += SUMMARY_PAD_V * 2 + SUMMARY_LINE_H * data.summaryLines.size + 24
-        h += SECTION_LABEL_H + BARS_H + 16
+        h += SUMMARY_PAD_V * 2 + SUMMARY_LINE_H * data.summaryLines.size + GAP_AFTER_SUMMARY
+        h += SECTION_LABEL_H + BARS_H + GAP_AFTER_BARS
         val calRows = (data.leading + data.daysInMonth + 6) / 7
-        h += SECTION_LABEL_H + CAL_HEADER_H + calRows * CAL_CELL_H + 16
-        if (data.moodStats.isNotEmpty()) h += SECTION_LABEL_H + MOOD_LINE_H + 8
-        if (data.magicSummary != null) h += MOOD_LINE_H + 8
+        h += SECTION_LABEL_H + CAL_HEADER_H + calRows * CAL_CELL_H + GAP_AFTER_CALENDAR
+        if (data.moodStats.isNotEmpty()) h += SECTION_LABEL_H + MOOD_LINE_H + GAP_AFTER_STATS
+        if (data.magicSummary != null) h += MOOD_LINE_H + GAP_AFTER_STATS
         h += SECTION_LABEL_H
         h += if (data.records.isEmpty()) RECORD_ROW_H else data.records.size * RECORD_ROW_H
         h += FOOTER_H
@@ -142,7 +148,7 @@ object StatsImageRenderer {
             )
             lineY += SUMMARY_LINE_H
         }
-        y += cardH + 24f
+        y += cardH + GAP_AFTER_SUMMARY
 
         // ============ 最近 7 天柱状图（离屏复用 View 绘制） ============
         c.drawText(
@@ -159,10 +165,12 @@ object StatsImageRenderer {
             barsView.layout(0, 0, CONTENT_W.toInt(), BARS_H)
             c.save()
             c.translate(PAD, y)
+            // 离屏无父布局裁剪：显式 clip，防止 view 内部绘制越界污染其他分区
+            c.clipRect(0f, 0f, CONTENT_W, BARS_H.toFloat())
             barsView.draw(c)
             c.restore()
         }
-        y += BARS_H + 16f
+        y += BARS_H + GAP_AFTER_BARS
 
         // ============ 当月日历热力（场次紫底 / 魔法期粉底 / 重叠紫底粉描边） ============
         c.drawText(
@@ -213,7 +221,7 @@ object StatsImageRenderer {
             helper.drawCenter(c, dayPaint, d.toString(), cx, cy + CAL_CELL_H / 2 + 8f)
         }
         val calRows = (data.leading + data.daysInMonth + 6) / 7
-        y += calRows * CAL_CELL_H + 16f
+        y += calRows * CAL_CELL_H + GAP_AFTER_CALENDAR
 
         // ============ 本月心情统计 + 魔法期统计 ============
         if (data.moodStats.isNotEmpty()) {
@@ -224,14 +232,14 @@ object StatsImageRenderer {
                 c, helper.paintText(28f, TEXT_MAIN),
                 statsText, WIDTH / 2f, y + 22f, CONTENT_W
             )
-            y += MOOD_LINE_H + 8f
+            y += MOOD_LINE_H + GAP_AFTER_STATS
         }
         data.magicSummary?.let { magic ->
             helper.drawCenter(
                 c, helper.paintText(26f, 0xFFAD1457.toInt(), bold = true),
                 magic, WIDTH / 2f, y + 26f
             )
-            y += MOOD_LINE_H + 8f
+            y += MOOD_LINE_H + GAP_AFTER_STATS
         }
 
         // ============ 本月完整记录（场次/心情/魔法期混排） ============

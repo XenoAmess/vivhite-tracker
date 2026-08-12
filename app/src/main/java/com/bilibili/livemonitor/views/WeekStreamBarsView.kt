@@ -57,7 +57,9 @@ class WeekStreamBarsView @JvmOverloads constructor(
 
         counts.forEachIndexed { i, count ->
             val x = gap + i * (barW + gap)
-            val h = if (count == 0) dp(3).toFloat() else (chartBottom - countH) * count / max
+            // 柱高上限预留一整层 countH：否则满高柱的场次数基线会落到视图外
+            // （页面被父布局裁掉显示不出，离屏绘制则溢出污染上方区域）
+            val h = if (count == 0) dp(3).toFloat() else (chartBottom - countH * 2) * count / max
             barPaint.color = if (count == 0) muted else accent
             barRect.set(x, chartBottom - countH - h, x + barW, chartBottom - countH)
             canvas.drawRoundRect(barRect, corner, corner, barPaint)
