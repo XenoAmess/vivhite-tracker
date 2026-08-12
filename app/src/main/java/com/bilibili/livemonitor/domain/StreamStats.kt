@@ -55,6 +55,38 @@ object StreamStats {
     }
 
     /**
+     * 自然月摘要（导出海报按月维度用）：已闭合场次数 / 平均时长 ms / 最长时长 ms。
+     * 未闭合与脏行（endTs <= startTs）一律忽略，与 [summarize] 口径一致。
+     */
+    fun monthSummary(sessions: List<StreamSessionEntity>): Triple<Int, Long, Long> {
+        val closed = sessions.filter { it.endTs != null && it.endTs!! > it.startTs }
+        val durations = closed.map { it.endTs!! - it.startTs }
+        val total = durations.sum()
+        val avg = if (durations.isEmpty()) 0L else total / durations.size
+        return Triple(durations.size, avg, durations.maxOrNull() ?: 0L)
+    }
+
+    /**
+     * 本月逐周场次（导出海报柱状图用）：按开播日归 5 桶
+     * [1-7] [8-14] [15-21] [22-28] [29-月末]。只计已闭合场次；
+     * 不在本月范围内的场次忽略（防调用方未预过滤）。
+     */
+    fun weeklyCounts(
+        sessions: List<StreamSessionEntity>,
+        monthStartMs: Long,
+        daysInMonth: Int
+    ): List<Int> {
+        val counts = IntArray(5)
+        sessions.filter { it.endTs != null && it.endTs!! > it.startTs }.forEach { s ->
+            val dayOffset = ((s.startTs - monthStartMs) / DAY_MS).toInt()
+            if (dayOffset in 0 until daysInMonth) {
+                counts[(dayOffset / 7).coerceAtMost(4)]++
+            }
+        }
+        return counts.toList()
+    }
+
+    /**
      * 与 [dailyCounts] 逐桶对齐的星期标签（0=周日..6=周六，下标 0 = 最早一天）。
      * 桶 j 对应本地日 day0+j，星期映射同 [favoriteWeekday]：(epochDay+4)%7。
      */

@@ -83,4 +83,38 @@ class WeekStreamBarsViewTest {
         }
         assertEquals(0, accentPixels)
     }
+
+    @Test
+    fun `柱数随数据 五柱逐周渲染`() {
+        // 本月逐周场次：view 解除 7 柱硬编码后按数据长度渲染
+        val width = 700
+        val height = 300
+        val view = WeekStreamBarsView(context)
+        view.setData(
+            listOf(1, 2, 1, 1, 0),
+            listOf("1-7", "8-14", "15-21", "22-28", "29-31")
+        )
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+        )
+        view.layout(0, 0, width, height)
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bmp))
+
+        // 有非零柱 → 画面中存在 accent 像素
+        val accent = 0xFF6750A4.toInt()
+        var found = false
+        run {
+            for (py in 0 until height) {
+                for (px in 0 until width) {
+                    if (bmp.getPixel(px, py) == accent) {
+                        found = true
+                        return@run
+                    }
+                }
+            }
+        }
+        assertTrue("五柱逐周应正常渲染", found)
+    }
 }

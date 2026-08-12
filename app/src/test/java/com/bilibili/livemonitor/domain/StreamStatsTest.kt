@@ -61,6 +61,51 @@ class StreamStatsTest {
     }
 
     @Test
+    fun `monthSummary 只算已闭合 平均与最长`() {
+        val sessions = listOf(
+            closed(3 * day, 3 * day - 2 * 3_600_000),   // 2h
+            closed(10 * day, 10 * day - 3_600_000),     // 1h
+            closed(20 * day, 20 * day - 30 * 60_000),   // 30min
+            StreamSessionEntity(startTs = now - day, endTs = null) // 未闭合忽略
+        )
+        val (count, avg, max) = StreamStats.monthSummary(sessions)
+        assertEquals(3, count)
+        assertEquals((2 * 3_600_000 + 3_600_000 + 30 * 60_000) / 3, avg)
+        assertEquals(2 * 3_600_000, max)
+        // 空列表
+        assertEquals(Triple(0, 0L, 0L), StreamStats.monthSummary(emptyList()))
+    }
+
+    @Test
+    fun `weeklyCounts 按开播日归 5 桶 边界与越界`() {
+        val monthStart = now // 桶基准（视为某月 1 号 00:00）
+        fun sessionOnDay(dom: Int) = StreamSessionEntity(
+            startTs = monthStart + (dom - 1) * day + 12 * 3_600_000,
+            endTs = monthStart + (dom - 1) * day + 14 * 3_600_000
+        )
+        val sessions = listOf(
+            sessionOnDay(1), sessionOnDay(7),           // 桶0（1-7）
+            sessionOnDay(8), sessionOnDay(14),          // 桶1（8-14）
+            sessionOnDay(15),                           // 桶2（15-21）
+            sessionOnDay(22), sessionOnDay(28),         // 桶3（22-28）
+            sessionOnDay(29), sessionOnDay(31),         // 桶4（29-31）
+            StreamSessionEntity(                        // 桶外：次月 1 号
+                startTs = monthStart + 31 * day, endTs = monthStart + 31 * day + 3_600_000
+            ),
+            StreamSessionEntity(                        // 桶外：上月末
+                startTs = monthStart - day, endTs = monthStart - day + 3_600_000
+            ),
+            StreamSessionEntity(                        // 未闭合忽略
+                startTs = monthStart + 2 * day, endTs = null
+            )
+        )
+        assertEquals(
+            listOf(2, 2, 1, 2, 2),
+            StreamStats.weeklyCounts(sessions, monthStart, 31)
+        )
+    }
+
+    @Test
     fun `weekdayLabels 与 dailyCounts 桶逐日对齐`() {
         // now = epoch day 1,000,000（UTC）：今天星期 = (1_000_000+4)%7 = 5
         val labels = StreamStats.weekdayLabels(now, 7)

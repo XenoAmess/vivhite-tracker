@@ -39,7 +39,8 @@ object StatsImageRenderer {
     data class StatsImageData(
         val monthTitle: String,                    // "2026年8月"
         val summaryLines: List<String>,            // 摘要卡，逐行
-        val barCounts: List<Int>,                  // 7 天柱状
+        val barsTitle: String,                     // 柱状图分区标题（「最近 7 天…」/「本月逐周场次」）
+        val barCounts: List<Int>,                  // 柱状数据（柱数随长度）
         val barLabels: List<String>,
         val leading: Int,                          // 1 号前空格数（周日=0）
         val daysInMonth: Int,
@@ -153,13 +154,13 @@ object StatsImageRenderer {
         }
         y += cardH + GAP_AFTER_SUMMARY
 
-        // ============ 最近 7 天柱状图（离屏复用 View 绘制） ============
+        // ============ 柱状图（离屏复用 View 绘制，柱数随数据） ============
         c.drawText(
-            "最近 7 天开播场次", PAD, y + 40f,
+            data.barsTitle, PAD, y + 40f,
             helper.paintText(26f, TEXT_MAIN, bold = true)
         )
         y += SECTION_LABEL_H
-        if (data.barCounts.size == 7 && data.barLabels.size == 7) {
+        if (data.barCounts.isNotEmpty() && data.barCounts.size == data.barLabels.size) {
             val barsView = WeekStreamBarsView(context)
             barsView.setData(data.barCounts, data.barLabels)
             val wSpec = View.MeasureSpec.makeMeasureSpec(CONTENT_W.toInt(), View.MeasureSpec.EXACTLY)

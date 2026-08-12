@@ -589,27 +589,11 @@ class StatsActivity : AppCompatActivity() {
         }
     }
 
-    /** 组装海报数据：以当前日历所在月为准（用户可翻月） */
+    /** 组装海报数据：纯按月维度（以当前日历所在月为准，用户可翻月） */
     private suspend fun buildStatsImageData(): com.bilibili.livemonitor.util.StatsImageRenderer.StatsImageData {
         val db = AppDatabase.get(this)
         val now = System.currentTimeMillis()
         val localOffset = java.util.TimeZone.getDefault().getOffset(now).toLong()
-
-        // 摘要（与页面一致：30 天窗口）
-        val summary = StreamStats.summarize(
-            db.streamSessionDao().closedSessionsSince(now - 30L * DAY_MS), now
-        )
-        val summaryLines = mutableListOf(
-            "本周 ${summary.weekCount} 场 · 本月 ${summary.monthCount} 场",
-            "平均 ${formatDuration(summary.avgDurationMs)} · 最长 ${formatDuration(summary.maxDurationMs)}"
-        )
-        StreamStats.favoriteWeekday(loadedSessions, localOffset)?.let {
-            summaryLines += "常播：${WEEKDAY_NAMES[it.first]}"
-        }
-
-        // 柱状图（与页面一致：最近 7 天）
-        val barCounts = StreamStats.dailyCounts(loadedSessions, now, 7, localOffset)
-        val barLabels = StreamStats.weekdayLabels(now, 7, localOffset).map { WEEKDAY_NAMES[it] }
 
         // 当前显示月的边界
         val monthStart = (cal.clone() as Calendar).apply {
@@ -624,6 +608,20 @@ class StatsActivity : AppCompatActivity() {
             it.startTs >= monthStart.timeInMillis && it.startTs < monthEnd.timeInMillis
         }.sortedBy { it.startTs }
         val monthMoods = db.moodEventDao().eventsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+
+        // 摘要：自然月场次/平均/最长（StreamStats.monthSummary 只算已闭合）
+        val (monthCount, monthAvg, monthMax) = StreamStats.monthSummary(monthSessions)
+        val summaryLines = mutableListOf(
+            "本月 $monthCount 场",
+            "平均 ${formatDuration(monthAvg)} · 最长 ${formatDuration(monthMax)}"
+        )
+        StreamStats.favoriteWeekday(monthSessions, localOffset)?.let {
+            summaryLines += "常播：${WEEKDAY_NAMES[it.first]}"
+        }
+
+        // 柱状图：本月逐周场次（5 桶 1-7/8-14/15-21/22-28/29-月末）
+        val barCounts = StreamStats.weeklyCounts(monthSessions, monthStart.timeInMillis, daysInMonth)
+        val barLabels = listOf("1-7", "8-14", "15-21", "22-28", "29-$daysInMonth")
 
         val dayOfMonth = { ts: Long ->
             Calendar.getInstance().apply { timeInMillis = ts }.get(Calendar.DAY_OF_MONTH)
@@ -704,6 +702,7 @@ class StatsActivity : AppCompatActivity() {
         return com.bilibili.livemonitor.util.StatsImageRenderer.StatsImageData(
             monthTitle = monthTitleFormat.format(cal.time),
             summaryLines = summaryLines,
+            barsTitle = "本月逐周场次",
             barCounts = barCounts,
             barLabels = barLabels,
             leading = leading,

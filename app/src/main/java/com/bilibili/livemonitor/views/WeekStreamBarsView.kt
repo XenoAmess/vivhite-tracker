@@ -8,16 +8,17 @@ import android.util.AttributeSet
 import android.view.View
 
 /**
- * 最近 7 天开播场次柱状图（纯绘制，无状态逻辑）。
- * 数据通过 [setData] 注入：7 个柱 + 7 个底部标签；柱顶显示场次数。
+ * 开播场次柱状图（纯绘制，无状态逻辑）。
+ * 数据通过 [setData] 注入：柱数随数据长度（最近 7 天 = 7 柱，本月逐周 = 5 柱）；
+ * 柱顶显示场次数。
  */
 class WeekStreamBarsView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    private val counts = IntArray(BAR_COUNT)
-    private val labels = Array(BAR_COUNT) { "" }
+    private var counts = intArrayOf()
+    private var labels = arrayOf<String>()
     private val accent = 0xFF6750A4.toInt()
     private val muted = 0x666750A4.toInt()
     private val labelColor = 0xFF999999.toInt()
@@ -36,20 +37,22 @@ class WeekStreamBarsView @JvmOverloads constructor(
     private val barRect = RectF()
 
     fun setData(counts: List<Int>, labels: List<String>) {
-        require(counts.size == BAR_COUNT && labels.size == BAR_COUNT)
-        counts.forEachIndexed { i, v -> this.counts[i] = v }
-        labels.forEachIndexed { i, v -> this.labels[i] = v }
+        require(counts.isNotEmpty() && counts.size == labels.size)
+        this.counts = counts.toIntArray()
+        this.labels = labels.toTypedArray()
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        val barCount = counts.size
+        if (barCount == 0) return
         val max = counts.maxOrNull()?.takeIf { it > 0 } ?: 1
         val gap = dp(8).toFloat()
         val labelH = dp(14).toFloat()
         val countH = dp(14).toFloat()
         val chartBottom = height - labelH
-        val barW = (width - gap * (BAR_COUNT + 1)) / BAR_COUNT
+        val barW = (width - gap * (barCount + 1)) / barCount
 
         countPaint.textSize = dp(12).toFloat()
         labelPaint.textSize = dp(11).toFloat()
@@ -75,8 +78,4 @@ class WeekStreamBarsView @JvmOverloads constructor(
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private companion object {
-        const val BAR_COUNT = 7
-    }
 }

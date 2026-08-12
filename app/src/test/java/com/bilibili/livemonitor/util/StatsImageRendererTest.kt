@@ -17,9 +17,10 @@ class StatsImageRendererTest {
     private fun sampleData(records: List<StatsImageRenderer.RecordLine>) =
         StatsImageRenderer.StatsImageData(
             monthTitle = "2026年8月",
-            summaryLines = listOf("本周 5 场 · 本月 5 场", "平均 2小时27分 · 最长 4小时0分", "常播：周日"),
-            barCounts = listOf(0, 1, 1, 1, 1, 1, 0),
-            barLabels = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日"),
+            summaryLines = listOf("本月 5 场", "平均 2小时27分 · 最长 4小时0分", "常播：周日"),
+            barsTitle = "本月逐周场次",
+            barCounts = listOf(1, 2, 1, 1, 0),
+            barLabels = listOf("1-7", "8-14", "15-21", "22-28", "29-31"),
             leading = 5, // 2026-08-01 周六 → 周日=0 起 6 格
             daysInMonth = 31,
             sessionDays = setOf(5, 6, 7, 8, 9),
