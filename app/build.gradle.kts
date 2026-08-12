@@ -119,6 +119,9 @@ android {
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // Robolectric 加载大图/多沙箱吃堆内存：默认堆偏紧时 PNG 解码会
+        // 随机抛 Resources$NotFoundException（2026-08 CI 实发），给足余量
+        unitTests.all { it.maxHeapSize = "1g" }
     }
 }
 
