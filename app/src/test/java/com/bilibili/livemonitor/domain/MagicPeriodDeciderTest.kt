@@ -93,6 +93,49 @@ class MagicPeriodDeciderTest {
     }
 
     @Test
+    fun `segmentDayIndex 段首为1 逐日递增 段外为0`() {
+        val periods = listOf(MagicPeriod(t0, t0 + 3 * dayMs))
+        assertEquals(1, MagicPeriodDecider.segmentDayIndex(periods, t0))
+        assertEquals(2, MagicPeriodDecider.segmentDayIndex(periods, t0 + dayMs))
+        assertEquals(3, MagicPeriodDecider.segmentDayIndex(periods, t0 + 2 * dayMs))
+        assertEquals(0, MagicPeriodDecider.segmentDayIndex(periods, t0 + 3 * dayMs))
+        assertEquals(0, MagicPeriodDecider.segmentDayIndex(periods, t0 - dayMs))
+        // 两段相邻不粘连：第二段首日重新从 1 计
+        val two = periods + MagicPeriod(t0 + 3 * dayMs, t0 + 5 * dayMs)
+        assertEquals(1, MagicPeriodDecider.segmentDayIndex(two, t0 + 3 * dayMs))
+        assertEquals(2, MagicPeriodDecider.segmentDayIndex(two, t0 + 4 * dayMs))
+    }
+
+    @Test
+    fun `monthSegments 月内分段 跨界裁剪 空月为空`() {
+        // 假设 t0 所在日 00:00 为 monthStart，构造 31 天月
+        val monthStart = t0
+        val days = 31
+        // 段一：5~7 日；段二：10~11 日；段三：上月 30 日起 3 天 → 当月 1~2 日（裁剪）
+        val periods = listOf(
+            MagicPeriod(monthStart + 4 * dayMs, monthStart + 7 * dayMs),
+            MagicPeriod(monthStart + 9 * dayMs, monthStart + 11 * dayMs),
+            MagicPeriod(monthStart - dayMs, monthStart + 2 * dayMs)
+        )
+        val segments = MagicPeriodDecider.monthSegments(periods, monthStart, days)
+        assertEquals(listOf(1 to 2, 5 to 7, 10 to 11), segments)
+        // 空月
+        assertEquals(
+            emptyList<Pair<Int, Int>>(),
+            MagicPeriodDecider.monthSegments(periods, monthStart + 40 * dayMs, 30)
+        )
+        // 相邻不同段不粘连
+        val adjacent = listOf(
+            MagicPeriod(monthStart + 4 * dayMs, monthStart + 6 * dayMs),
+            MagicPeriod(monthStart + 6 * dayMs, monthStart + 8 * dayMs)
+        )
+        assertEquals(
+            listOf(5 to 6, 7 to 8),
+            MagicPeriodDecider.monthSegments(adjacent, monthStart, days)
+        )
+    }
+
+    @Test
     fun `segmentPositionOf 不同段相邻时各自成段 不粘连`() {
         // 两段紧贴：A=[t0, t0+2d)，B=[t0+2d, t0+4d) —— 相邻但不同段
         val periods = listOf(

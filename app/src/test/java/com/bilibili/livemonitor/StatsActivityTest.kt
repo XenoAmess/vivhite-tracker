@@ -288,6 +288,23 @@ class StatsActivityTest {
     // ---------- 备份导入 ----------
 
     @Test
+    fun `选中魔法期日 提示含第几天`() = runBlocking {
+        // 今天起 3 天魔法期
+        val start = todayStart()
+        com.bilibili.livemonitor.util.PreferenceManager(context).setMagicPeriodsJson(
+            org.json.JSONArray().put(
+                org.json.JSONObject().put("start", start).put("end", start + 3 * 86_400_000L)
+            ).toString()
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("magic hint") {
+            activity.findViewById<TextView>(R.id.tvSelectedDayHint).text.toString().contains("魔法期第 1 天")
+        }
+        // 清理，避免污染同测试类其他用例
+        com.bilibili.livemonitor.util.PreferenceManager(context).setMagicPeriodsJson("[]")
+    }
+
+    @Test
     fun `导入CSV 合并去重 场次与心情`() = runBlocking {
         val sdao = AppDatabase.get(context).streamSessionDao()
         val mdao = AppDatabase.get(context).moodEventDao()

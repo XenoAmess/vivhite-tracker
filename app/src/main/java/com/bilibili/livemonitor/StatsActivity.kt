@@ -50,6 +50,7 @@ class StatsActivity : AppCompatActivity() {
     private lateinit var sessionAdapter: SessionAdapter
     private lateinit var moodAdapter: MoodEventAdapter
     private val loadedSessions = mutableListOf<StreamSessionEntity>()
+    private var magicPeriods: List<com.bilibili.livemonitor.domain.MagicPeriod> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,6 +93,9 @@ class StatsActivity : AppCompatActivity() {
     // 首次加载与导入后共用的全量刷新：场次列表/摘要/柱状/日历/心情
     private fun refreshData() {
         lifecycleScope.launch {
+            magicPeriods = com.bilibili.livemonitor.util.MagicPeriodStore.load(
+                com.bilibili.livemonitor.util.PreferenceManager(this@StatsActivity)
+            )
             val dao = AppDatabase.get(this@StatsActivity).streamSessionDao()
             val now = System.currentTimeMillis()
             val recent = dao.recentSessions(200)
@@ -162,8 +166,12 @@ class StatsActivity : AppCompatActivity() {
             val dayCal = (firstDay.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, d) }
             val day = dayStart(dayCal.timeInMillis)
             val hasSession = sessionsByDay.containsKey(day)
+            val hasMagic = com.bilibili.livemonitor.domain.MagicPeriodDecider.isDayMarked(magicPeriods, day)
             binding.calendarGrid.addView(
-                makeDayCell(d, day, hasSession, selected = day == selectedDayStart, isToday = day == today)
+                makeDayCell(
+                    d, day, hasSession, hasMagic,
+                    selected = day == selectedDayStart, isToday = day == today
+                )
             )
         }
         val trailing = (7 - (leading + daysInMonth) % 7) % 7
@@ -189,17 +197,31 @@ class StatsActivity : AppCompatActivity() {
         return tv
     }
 
-    private fun makeDayCell(day: Int, dayStart: Long, hasSession: Boolean, selected: Boolean, isToday: Boolean): TextView {
+    private fun makeDayCell(
+        day: Int,
+        dayStart: Long,
+        hasSession: Boolean,
+        hasMagic: Boolean,
+        selected: Boolean,
+        isToday: Boolean
+    ): TextView {
         val tv = makeCell(day.toString())
         val accent = ContextCompat.getColor(this, R.color.purple_500)
         val soft = 0x1F6750A4.toInt()
+        val magicBg = 0xFFFCE4EC.toInt()
+        val magicStroke = 0xFFF48FB1.toInt()
 
         val bg = android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             cornerRadius = dp(10).toFloat()
             when {
                 selected -> setColor(accent)
+                hasSession && hasMagic -> {
+                    setColor(soft)
+                    setStroke(dp(2), magicStroke)
+                }
                 hasSession -> setColor(soft)
+                hasMagic -> setColor(magicBg)
                 else -> setColor(android.graphics.Color.TRANSPARENT)
             }
         }
@@ -223,11 +245,14 @@ class StatsActivity : AppCompatActivity() {
 
     private fun showSelectedDay() {
         val sessions = sessionsByDay[selectedDayStart].orEmpty()
-        val label = if (sessions.isNotEmpty()) {
+        var label = if (sessions.isNotEmpty()) {
             "${dayLabelFormat.format(Date(selectedDayStart))} · ${sessions.size} 场直播"
         } else {
             dayLabelFormat.format(Date(selectedDayStart)) + " · 无直播"
         }
+        val magicIndex = com.bilibili.livemonitor.domain.MagicPeriodDecider
+            .segmentDayIndex(magicPeriods, selectedDayStart)
+        if (magicIndex > 0) label += " · 魔法期第 ${magicIndex} 天"
         binding.tvSelectedDayHint.text = label
         sessionAdapter.update(sessions)
         loadTitleChanges(sessions)
@@ -520,11 +545,24 @@ class StatsActivity : AppCompatActivity() {
         return ImportResult(sAdded, sSkipped, mAdded, mSkipped, parsed.skippedLines)
     }
 
-    // 导出图片：当月完整数据海报（摘要+柱图+日历热力+心情统计+全记录），渲染后走分享面板
+    // 导出图片：当月完整数据海报（摘要+柱图+日历热力+心情/魔法期+全记录），渲染后走分享面板
     private fun exportStatsImage() {
+        Toast.makeText(this, "正在生成图片…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             val data = buildStatsImageData()
-            val bmp = com.bilibili.livemonitor.util.StatsImageRenderer.render(this@StatsActivity, data)
+            // 主播头像（海报左上角）：失败 null → 渲染器画占位圆，不阻断出图
+            val avatar = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.withTimeoutOrNull(3000) {
+                    val faceUrl = com.bilibili.livemonitor.api.BilibiliApi()
+                        .fetchAnchorFace(com.bilibili.livemonitor.util.BiliTargets.MONITOR_MID)
+                    faceUrl?.let {
+                        com.bilibili.livemonitor.util.ShareImageLoader().downloadBitmap(it)
+                    }
+                }
+            }
+            val bmp = com.bilibili.livemonitor.util.StatsImageRenderer.render(
+                this@StatsActivity, data, avatar
+            )
             val loader = com.bilibili.livemonitor.util.ShareImageLoader()
             val file = loader.save(this@StatsActivity, bmp, "stats_share.png")
             if (file == null) {
@@ -596,7 +634,23 @@ class StatsActivity : AppCompatActivity() {
         val moodStats = monthMoods.groupingBy { MoodCatalog.display(it.mood) }
             .eachCount().entries.sortedByDescending { it.value }.take(6).map { it.toPair() }
 
-        // 本月完整记录：场次（紫）+ 心情（粉）按时间混排
+        // 魔法期：当月覆盖日集合 + 分段统计
+        val magicDays = (1..daysInMonth).filter { dom ->
+            com.bilibili.livemonitor.domain.MagicPeriodDecider.isDayMarked(
+                magicPeriods, monthStart.timeInMillis + (dom - 1) * DAY_MS
+            )
+        }.toSet()
+        val magicSegments = com.bilibili.livemonitor.domain.MagicPeriodDecider.monthSegments(
+            magicPeriods, monthStart.timeInMillis, daysInMonth
+        )
+        val magicSummary = if (magicSegments.isEmpty()) {
+            null
+        } else {
+            val totalDays = magicSegments.sumOf { it.second - it.first + 1 }
+            "本月魔法期：${magicSegments.size} 段 · 共 $totalDays 天"
+        }
+
+        // 本月完整记录：场次（紫）+ 心情（粉）+ 魔法期段（灰）按时间混排
         val dayFmt = SimpleDateFormat("MM-dd", Locale.getDefault())
         val records = mutableListOf<Pair<Long, com.bilibili.livemonitor.util.StatsImageRenderer.RecordLine>>()
         monthSessions.forEach { s ->
@@ -604,7 +658,7 @@ class StatsActivity : AppCompatActivity() {
                 (s.endTs?.let { "~${timeFormat.format(Date(it))}" } ?: "~进行中")
             val duration = s.endTs?.let { " · ${formatDuration(it - s.startTs)}" } ?: ""
             records += s.startTs to com.bilibili.livemonitor.util.StatsImageRenderer.RecordLine(
-                isSession = true,
+                kind = com.bilibili.livemonitor.util.StatsImageRenderer.RecordKind.SESSION,
                 text = "${dayFmt.format(Date(s.startTs))} $time$duration · ${s.title ?: "（无标题）"}"
             )
         }
@@ -617,9 +671,24 @@ class StatsActivity : AppCompatActivity() {
                 }
             val reason = m.reason?.takeIf { it.isNotBlank() }?.let { "（原因：$it）" } ?: ""
             records += m.eventTs to com.bilibili.livemonitor.util.StatsImageRenderer.RecordLine(
-                isSession = false,
+                kind = com.bilibili.livemonitor.util.StatsImageRenderer.RecordKind.MOOD,
                 text = "${dayFmt.format(Date(m.eventTs))} $time ${MoodCatalog.display(m.mood)} · ${m.title}$reason"
             )
+        }
+        magicSegments.forEach { (startDom, endDom) ->
+            val rangeText = if (startDom == endDom) {
+                "%02d-%02d".format(monthStart.get(Calendar.MONTH) + 1, startDom)
+            } else {
+                "%02d-%02d ~ %02d-%02d".format(
+                    monthStart.get(Calendar.MONTH) + 1, startDom,
+                    monthStart.get(Calendar.MONTH) + 1, endDom
+                )
+            }
+            records += monthStart.timeInMillis + (startDom - 1) * DAY_MS to
+                com.bilibili.livemonitor.util.StatsImageRenderer.RecordLine(
+                    kind = com.bilibili.livemonitor.util.StatsImageRenderer.RecordKind.MAGIC,
+                    text = "$rangeText · 魔法期 ${endDom - startDom + 1} 天"
+                )
         }
 
         return com.bilibili.livemonitor.util.StatsImageRenderer.StatsImageData(
@@ -630,8 +699,10 @@ class StatsActivity : AppCompatActivity() {
             leading = leading,
             daysInMonth = daysInMonth,
             sessionDays = sessionDays,
+            magicDays = magicDays,
             todayDom = todayDom,
             moodStats = moodStats,
+            magicSummary = magicSummary,
             records = records.sortedBy { it.first }.map { it.second },
             exportDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(now))
         )

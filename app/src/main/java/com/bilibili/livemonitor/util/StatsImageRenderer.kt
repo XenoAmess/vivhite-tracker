@@ -4,15 +4,17 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.view.View
 import com.bilibili.livemonitor.views.WeekStreamBarsView
 
 /**
  * 场次记录导出海报渲染（宽 1080，高度按内容计算，白底紫主题）。
- * 分区：标题 → 摘要卡 → 7 天柱状图（离屏复用 WeekStreamBarsView）→
- * 当月日历热力 → 本月心情统计 → 本月完整记录（场次+心情混排）→ 落款。
- * 纯绘制无 IO，数据全部由调用方组装。
+ * 分区：标题（含主播头像）→ 摘要卡 → 7 天柱状图（离屏复用 WeekStreamBarsView）→
+ * 当月日历热力（场次紫底 / 魔法期粉底 / 重叠紫底粉描边）→ 本月心情统计 →
+ * 本月魔法期统计 → 本月完整记录（场次/心情/魔法期混排）→ 落款。
+ * 纯绘制无 IO，数据全部由调用方组装；avatar 为 null 时画占位圆。
  */
 object StatsImageRenderer {
 
@@ -23,11 +25,16 @@ object StatsImageRenderer {
     private const val ACCENT = 0xFF6750A4.toInt()
     private const val ACCENT_SOFT = 0xFFF3EFFC.toInt()
     private const val MOOD_PINK = 0xFFF48FB1.toInt()
+    private const val MAGIC_BG = 0xFFFCE4EC.toInt()
+    private const val MAGIC_STROKE = 0xFFF48FB1.toInt()
+    private const val MAGIC_BAR = 0xFF9E9E9E.toInt()
     private const val TEXT_MAIN = 0xFF1A1A1A.toInt()
     private const val TEXT_GRAY = 0xFF999999.toInt()
 
-    /** 记录行：场次（紫条）或心情（粉条），text 已排版好单行展示 */
-    data class RecordLine(val isSession: Boolean, val text: String)
+    /** 记录行类型：场次（紫条）/ 心情（粉条）/ 魔法期段（灰条） */
+    enum class RecordKind { SESSION, MOOD, MAGIC }
+
+    data class RecordLine(val kind: RecordKind, val text: String)
 
     data class StatsImageData(
         val monthTitle: String,                    // "2026年8月"
@@ -37,13 +44,16 @@ object StatsImageRenderer {
         val leading: Int,                          // 1 号前空格数（周日=0）
         val daysInMonth: Int,
         val sessionDays: Set<Int>,                 // 有场次的日（1..31）
+        val magicDays: Set<Int>,                   // 魔法期覆盖的日（1..31）
         val todayDom: Int,                         // 今天的日；不在本月传 0
         val moodStats: List<Pair<String, Int>>,    // display to count，倒序
+        val magicSummary: String?,                 // "本月魔法期：2 段 · 共 9 天"；无则 null
         val records: List<RecordLine>,
         val exportDate: String                     // "2026-08-10"
     )
 
     private const val HEADER_H = 150
+    private const val AVATAR_SIZE = 96f
     private const val SUMMARY_LINE_H = 44
     private const val SUMMARY_PAD_V = 24
     private const val SECTION_LABEL_H = 64
@@ -62,13 +72,14 @@ object StatsImageRenderer {
         val calRows = (data.leading + data.daysInMonth + 6) / 7
         h += SECTION_LABEL_H + CAL_HEADER_H + calRows * CAL_CELL_H + 16
         if (data.moodStats.isNotEmpty()) h += SECTION_LABEL_H + MOOD_LINE_H + 8
+        if (data.magicSummary != null) h += MOOD_LINE_H + 8
         h += SECTION_LABEL_H
         h += if (data.records.isEmpty()) RECORD_ROW_H else data.records.size * RECORD_ROW_H
         h += FOOTER_H
         return h
     }
 
-    fun render(context: Context, data: StatsImageData): Bitmap {
+    fun render(context: Context, data: StatsImageData, avatar: Bitmap? = null): Bitmap {
         val bmp = Bitmap.createBitmap(WIDTH, computeHeight(data), Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val helper = PromoImageRenderer
@@ -76,12 +87,42 @@ object StatsImageRenderer {
 
         var y = 0f
 
-        // ============ 标题栏 ============
+        // ============ 标题栏（左侧圆形头像 + 紫描边，失败占位紫底「白」） ============
+        val avatarCx = PAD + AVATAR_SIZE / 2
+        val avatarCy = 24f + AVATAR_SIZE / 2
+        val avatarRect = RectF(PAD, 24f, PAD + AVATAR_SIZE, 24f + AVATAR_SIZE)
+        if (avatar != null) {
+            c.save()
+            c.clipPath(Path().apply {
+                addRoundRect(avatarRect, AVATAR_SIZE / 2, AVATAR_SIZE / 2, Path.Direction.CW)
+            })
+            val scaled = Bitmap.createScaledBitmap(
+                avatar, AVATAR_SIZE.toInt(), AVATAR_SIZE.toInt(), true
+            )
+            c.drawBitmap(scaled, PAD, 24f, null)
+            if (scaled !== avatar) scaled.recycle()
+            c.restore()
+        } else {
+            c.drawCircle(avatarCx, avatarCy, AVATAR_SIZE / 2, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = ACCENT_SOFT
+            })
+            helper.drawCenter(
+                c, helper.paintText(40f, ACCENT, bold = true),
+                "白", avatarCx, avatarCy + 14f
+            )
+        }
+        c.drawRoundRect(
+            avatarRect, AVATAR_SIZE / 2, AVATAR_SIZE / 2,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE; strokeWidth = 3f; color = ACCENT
+            }
+        )
+        val titleX = PAD + AVATAR_SIZE + 20f
         c.drawText(
-            "牢白播了吗 · 场次记录", PAD, y + 76f,
+            "牢白播了吗 · 场次记录", titleX, y + 76f,
             helper.paintText(46f, TEXT_MAIN, bold = true)
         )
-        c.drawText(data.monthTitle, PAD, y + 124f, helper.paintText(28f, ACCENT, bold = true))
+        c.drawText(data.monthTitle, titleX, y + 124f, helper.paintText(28f, ACCENT, bold = true))
         y += HEADER_H
         c.drawLine(PAD, y - 14f, WIDTH - PAD, y - 14f, Paint().apply {
             color = 0xFFE0E0E0.toInt(); strokeWidth = 1.5f
@@ -123,7 +164,7 @@ object StatsImageRenderer {
         }
         y += BARS_H + 16f
 
-        // ============ 当月日历热力 ============
+        // ============ 当月日历热力（场次紫底 / 魔法期粉底 / 重叠紫底粉描边） ============
         c.drawText(
             data.monthTitle, PAD, y + 40f,
             helper.paintText(26f, TEXT_MAIN, bold = true)
@@ -144,19 +185,29 @@ object StatsImageRenderer {
             val cx = PAD + cellW * (idx % 7) + cellW / 2
             val cy = y + (idx / 7) * CAL_CELL_H
             val hasSession = d in data.sessionDays
-            if (hasSession) {
-                c.drawRoundRect(
-                    RectF(cx - 30f, cy + 4f, cx + 30f, cy + CAL_CELL_H - 8f), 12f, 12f,
-                    Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ACCENT }
-                )
+            val hasMagic = d in data.magicDays
+            val cellRect = RectF(cx - 30f, cy + 4f, cx + 30f, cy + CAL_CELL_H - 8f)
+            when {
+                hasSession -> {
+                    c.drawRoundRect(cellRect, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = ACCENT
+                    })
+                    if (hasMagic) {
+                        c.drawRoundRect(cellRect, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            style = Paint.Style.STROKE; strokeWidth = 3f; color = MAGIC_STROKE
+                        })
+                    }
+                }
+                hasMagic -> {
+                    c.drawRoundRect(cellRect, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = MAGIC_BG
+                    })
+                }
             }
             if (d == data.todayDom) {
-                c.drawRoundRect(
-                    RectF(cx - 30f, cy + 4f, cx + 30f, cy + CAL_CELL_H - 8f), 12f, 12f,
-                    Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        style = Paint.Style.STROKE; strokeWidth = 2.5f; color = ACCENT
-                    }
-                )
+                c.drawRoundRect(cellRect, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE; strokeWidth = 2.5f; color = ACCENT
+                })
             }
             dayPaint.color = if (hasSession) 0xFFFFFFFF.toInt() else TEXT_MAIN
             helper.drawCenter(c, dayPaint, d.toString(), cx, cy + CAL_CELL_H / 2 + 8f)
@@ -164,7 +215,7 @@ object StatsImageRenderer {
         val calRows = (data.leading + data.daysInMonth + 6) / 7
         y += calRows * CAL_CELL_H + 16f
 
-        // ============ 本月心情统计 ============
+        // ============ 本月心情统计 + 魔法期统计 ============
         if (data.moodStats.isNotEmpty()) {
             c.drawText("本月心情", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
             y += SECTION_LABEL_H
@@ -175,8 +226,15 @@ object StatsImageRenderer {
             )
             y += MOOD_LINE_H + 8f
         }
+        data.magicSummary?.let { magic ->
+            helper.drawCenter(
+                c, helper.paintText(26f, 0xFFAD1457.toInt(), bold = true),
+                magic, WIDTH / 2f, y + 26f
+            )
+            y += MOOD_LINE_H + 8f
+        }
 
-        // ============ 本月完整记录（场次+心情混排） ============
+        // ============ 本月完整记录（场次/心情/魔法期混排） ============
         c.drawText(
             "本月记录 · ${data.records.size} 条", PAD, y + 40f,
             helper.paintText(26f, TEXT_MAIN, bold = true)
@@ -189,7 +247,11 @@ object StatsImageRenderer {
             val barPaint = Paint(Paint.ANTI_ALIAS_FLAG)
             val recordPaint = helper.paintText(25f, TEXT_MAIN)
             data.records.forEach { record ->
-                barPaint.color = if (record.isSession) ACCENT else MOOD_PINK
+                barPaint.color = when (record.kind) {
+                    RecordKind.SESSION -> ACCENT
+                    RecordKind.MOOD -> MOOD_PINK
+                    RecordKind.MAGIC -> MAGIC_BAR
+                }
                 c.drawRoundRect(RectF(PAD, y + 12f, PAD + 8f, y + RECORD_ROW_H - 12f), 4f, 4f, barPaint)
                 var text = record.text
                 while (recordPaint.measureText(text) > CONTENT_W - 32f && text.length > 1) {

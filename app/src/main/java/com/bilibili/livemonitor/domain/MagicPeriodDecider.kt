@@ -53,6 +53,45 @@ object MagicPeriodDecider {
     fun samePeriodCovers(periods: List<MagicPeriod>, dayStartMs: Long, otherDayStartMs: Long): Boolean =
         periods.any { coversDay(it, dayStartMs) && coversDay(it, otherDayStartMs) }
 
+    /** 某日在当前连续段内是第几天（1 起；同段邻接才算连续）；不在魔法期返回 0 */
+    fun segmentDayIndex(periods: List<MagicPeriod>, dayStartMs: Long): Int {
+        if (!isDayMarked(periods, dayStartMs)) return 0
+        var index = 1
+        var cursor = dayStartMs
+        while (samePeriodCovers(periods, cursor - DAY_MS, cursor)) {
+            index++
+            cursor -= DAY_MS
+        }
+        return index
+    }
+
+    /**
+     * 当月内各魔法期段（起/止日，1 起闭区间，按开始日升序）。
+     * 段跨界自动裁剪到当月（如上月 30 日开始的段，当月段首计为 1 日）；
+     * 相邻但不同段的两天不粘连，各自成段。
+     */
+    fun monthSegments(periods: List<MagicPeriod>, monthStartMs: Long, daysInMonth: Int): List<Pair<Int, Int>> {
+        val segments = mutableListOf<Pair<Int, Int>>()
+        var segStart: Int? = null
+        for (dom in 1..daysInMonth) {
+            val dayStart = monthStartMs + (dom - 1) * DAY_MS
+            val marked = isDayMarked(periods, dayStart)
+            if (marked) {
+                if (segStart == null) {
+                    segStart = dom
+                } else if (!samePeriodCovers(periods, dayStart - DAY_MS, dayStart)) {
+                    segments += segStart to dom - 1
+                    segStart = dom
+                }
+            } else if (segStart != null) {
+                segments += segStart to dom - 1
+                segStart = null
+            }
+        }
+        segStart?.let { segments += it to daysInMonth }
+        return segments
+    }
+
     /** 连续天长条的分段位置（日历圆角背景用）：孤日/段首/段中/段尾/未标记 */
     enum class SegmentPosition { ISOLATED, FIRST, MIDDLE, LAST, NONE }
 
