@@ -50,6 +50,15 @@ class StatsActivityTest {
     }
 
     @Test
+    fun `左上角头像 无网络时显示占位图`() {
+        // AnchorAvatarLoader 无缓存无网络（Robolectric 沙箱内 B站不可达或返回空）→ 占位圆
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        val iv = activity.findViewById<android.widget.ImageView>(R.id.ivAnchorAvatar)
+        assertNotNull(iv)
+        waitFor("avatar placeholder set") { iv.drawable != null }
+    }
+
+    @Test
     fun `有场次时统计与列表渲染`() = runBlocking {
         val dao = AppDatabase.get(context).streamSessionDao()
         val now = System.currentTimeMillis()

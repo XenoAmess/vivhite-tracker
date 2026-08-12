@@ -15,6 +15,9 @@ class UpdateCheckerTest {
         private val responses: Map<String, String?>
     ) : UpdateChecker() {
         override suspend fun httpGet(url: String): String? = responses[url]
+
+        // 302 回退路径的原始请求也拦截：fake 无匹配 → null（绝不打真实网络）
+        override suspend fun httpGetRaw(url: String, followRedirects: Boolean): GetResult? = null
     }
 
     private val apiUrl = UpdateChecker.LATEST_RELEASE_API

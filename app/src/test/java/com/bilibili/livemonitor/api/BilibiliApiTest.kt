@@ -154,6 +154,21 @@ class BilibiliApiTest {
     }
 
     @Test
+    fun `parseMasterFace 正常解析 data info face`() {
+        // 主源 Master/info（未登录可用，2026-08 实测）：data.info.face
+        val json = """{"code":0,"data":{"info":{"uid":251990176,"uname":"白绮Infinity","face":"https://i1.hdslb.com/bfs/face/a124bc.jpg"}}}"""
+        assertEquals("https://i1.hdslb.com/bfs/face/a124bc.jpg", BilibiliApi.parseMasterFace(json))
+    }
+
+    @Test
+    fun `parseMasterFace 错误码缺info坏JSON 返回null`() {
+        assertNull(BilibiliApi.parseMasterFace("""{"code":-799,"message":"请求过于频繁"}"""))
+        assertNull(BilibiliApi.parseMasterFace("""{"code":0,"data":{}}"""))
+        assertNull(BilibiliApi.parseMasterFace("""{"code":0,"data":{"info":{"face":""}}}"""))
+        assertNull(BilibiliApi.parseMasterFace("not json"))
+    }
+
+    @Test
     fun `parseRoomCover 无字段或非字符串时返回null`() {
         assertNull(BilibiliApi.parseRoomCover("""{"code":0,"data":{"room_id":1}}"""))
         assertNull(BilibiliApi.parseRoomCover("""{"code":0,"data":{"user_cover":""}}"""))

@@ -52,6 +52,9 @@ class StatsActivity : AppCompatActivity() {
     private val loadedSessions = mutableListOf<StreamSessionEntity>()
     private var magicPeriods: List<com.bilibili.livemonitor.domain.MagicPeriod> = emptyList()
 
+    // internal seam：单测注入 fake 头像加载（避免真实网络）
+    internal var avatarLoader = com.bilibili.livemonitor.util.AnchorAvatarLoader()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityStatsBinding.inflate(layoutInflater)
@@ -87,7 +90,20 @@ class StatsActivity : AppCompatActivity() {
         binding.btnImportStats.setOnClickListener { importLauncher.launch("*/*") }
         binding.btnExportImage.setOnClickListener { exportStatsImage() }
 
+        loadAnchorAvatar()
         refreshData()
+    }
+
+    // 左上角主播头像：磁盘缓存优先（AnchorAvatarLoader），全空显示占位圆
+    private fun loadAnchorAvatar() {
+        lifecycleScope.launch {
+            val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.withTimeoutOrNull(4000) { avatarLoader.load(this@StatsActivity) }
+            }
+            binding.ivAnchorAvatar.setImageBitmap(
+                bmp?.let { avatarLoader.cropCircle(it) } ?: avatarLoader.placeholder(96)
+            )
+        }
     }
 
     // 首次加载与导入后共用的全量刷新：场次列表/摘要/柱状/日历/心情
@@ -550,15 +566,9 @@ class StatsActivity : AppCompatActivity() {
         Toast.makeText(this, "正在生成图片…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             val data = buildStatsImageData()
-            // 主播头像（海报左上角）：失败 null → 渲染器画占位圆，不阻断出图
+            // 主播头像（海报左上角）：走磁盘缓存 loader，失败 null → 渲染器画占位圆，不阻断出图
             val avatar = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                kotlinx.coroutines.withTimeoutOrNull(3000) {
-                    val faceUrl = com.bilibili.livemonitor.api.BilibiliApi()
-                        .fetchAnchorFace(com.bilibili.livemonitor.util.BiliTargets.MONITOR_MID)
-                    faceUrl?.let {
-                        com.bilibili.livemonitor.util.ShareImageLoader().downloadBitmap(it)
-                    }
-                }
+                kotlinx.coroutines.withTimeoutOrNull(4000) { avatarLoader.load(this@StatsActivity) }
             }
             val bmp = com.bilibili.livemonitor.util.StatsImageRenderer.render(
                 this@StatsActivity, data, avatar

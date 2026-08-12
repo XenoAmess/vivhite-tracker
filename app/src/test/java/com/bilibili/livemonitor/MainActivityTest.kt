@@ -1626,6 +1626,9 @@ class MainActivityTest {
         private val responses: Map<String, String?>
     ) : com.bilibili.livemonitor.api.UpdateChecker() {
         override suspend fun httpGet(url: String): String? = responses[url]
+
+        // 302 回退路径的原始请求也拦截：fake 无匹配 → null（绝不打真实网络）
+        override suspend fun httpGetRaw(url: String, followRedirects: Boolean): GetResult? = null
     }
 
     // 远端版本号必须动态高于本地（versionCode=提交数，随提交增长，硬编码会失效）

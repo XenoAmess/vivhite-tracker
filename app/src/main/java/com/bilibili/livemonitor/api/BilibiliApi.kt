@@ -96,17 +96,24 @@ open class BilibiliApi : LiveStatusChecker {
     }
 
     /**
-     * 取主播方形头像 URL（B站 space acc/info 的 data.face）。
-     * QQ 卡片缩略图按方形裁剪，16:9 直播封面会被切边——头像天然方形。
-     * 返回 null = 网络/API 异常（调用方用静态兜底图）。
+     * 取主播方形头像 URL。
+     * 主源 `live_user/v1/Master/info`（未登录可用，2026-08 实测 code 0）；
+     * `x/space/acc/info` 已风控（-799 限流），仅作兜底。
+     * 返回 null = 两源都失败（调用方用静态兜底图）。
      */
     suspend fun fetchAnchorFace(mid: Long): String? = withContext(Dispatchers.IO) {
-        val response = HttpClient.get(
+        val master = HttpClient.get(
+            "https://api.live.bilibili.com/live_user/v1/Master/info?uid=$mid",
+            timeoutMs = HTTP_TIMEOUT_MS,
+            referer = "https://live.bilibili.com/"
+        )?.let { parseMasterFace(it) }
+        if (!master.isNullOrBlank()) return@withContext master
+        // 兜底：acc/info（风控常态 -799，偶发可用）
+        HttpClient.get(
             "https://api.bilibili.com/x/space/acc/info?mid=$mid",
             timeoutMs = HTTP_TIMEOUT_MS,
             referer = "https://space.bilibili.com/"
-        ) ?: return@withContext null
-        parseFace(response)
+        )?.let { parseFace(it) }
     }
 
     companion object {
@@ -130,6 +137,18 @@ open class BilibiliApi : LiveStatusChecker {
                 val json = JSONObject(response)
                 val data = json.optJSONObject("data") ?: return null
                 data.optString("user_cover").takeIf { it.isNotBlank() }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        // internal 便于单测：从 Master/info 响应里解析主播头像 URL（data.info.face，方形）
+        internal fun parseMasterFace(response: String): String? {
+            return try {
+                val json = JSONObject(response)
+                if (json.optInt("code", Int.MIN_VALUE) != 0) return null
+                val info = json.optJSONObject("data")?.optJSONObject("info") ?: return null
+                info.optString("face").takeIf { it.isNotBlank() }
             } catch (e: Exception) {
                 null
             }
