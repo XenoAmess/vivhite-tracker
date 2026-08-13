@@ -6,6 +6,7 @@ import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.espresso.matcher.ViewMatchers.withClassName
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -113,5 +114,56 @@ class StatsInstrumentedTest {
             if (System.currentTimeMillis() > deadline) throw AssertionError("timeout: $what")
             Thread.sleep(100)
         }
+    }
+
+    @Test
+    fun moodEditChangeDate() = runBlocking {
+        val dao = AppDatabase.get(context).moodEventDao()
+        val todayStart = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        dao.insert(
+            MoodEventEntity(
+                eventTs = todayStart + 10 * 3_600_000L + 30 * 60_000L, // 今天 10:30
+                mood = "happy", title = "挪日期", createdAt = 0
+            )
+        )
+        ActivityScenario.launch(StatsActivity::class.java).use {
+            // 点条目 → 编辑弹窗 → 日期按钮
+            onView(withText(containsString("挪日期"))).perform(click())
+            onView(withId(R.id.btnMoodEventDate)).inRoot(isDialog()).perform(click())
+            // DatePicker 改为昨天（PickerActions month 是 1 基）
+            val yesterday = java.util.Calendar.getInstance().apply {
+                add(java.util.Calendar.DAY_OF_MONTH, -1)
+            }
+            onView(withClassName(org.hamcrest.Matchers.equalTo(android.widget.DatePicker::class.java.name)))
+                .inRoot(isDialog())
+                .perform(
+                    androidx.test.espresso.contrib.PickerActions.setDate(
+                        yesterday.get(java.util.Calendar.YEAR),
+                        yesterday.get(java.util.Calendar.MONTH) + 1,
+                        yesterday.get(java.util.Calendar.DAY_OF_MONTH)
+                    )
+                )
+            onView(withId(android.R.id.button1)).inRoot(isDialog()).perform(click())
+            // 保存
+            onView(withText("保存")).inRoot(isDialog()).perform(click())
+            waitForDao("date moved") {
+                runBlocking { dao.eventsBetween(todayStart, todayStart + 86_400_000L).isEmpty() }
+            }
+            val moved = dao.all().first()
+            val movedCal = java.util.Calendar.getInstance().apply { timeInMillis = moved.eventTs }
+            assertEquals(
+                yesterday.get(java.util.Calendar.DAY_OF_YEAR),
+                movedCal.get(java.util.Calendar.DAY_OF_YEAR)
+            )
+            assertEquals(
+                "时分保留",
+                10 * 60 + 30,
+                movedCal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + movedCal.get(java.util.Calendar.MINUTE)
+            )
+        }
+        Unit
     }
 }

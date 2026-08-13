@@ -13,15 +13,34 @@
         android:paddingTop="16dp"
         android:paddingBottom="8dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnMoodEventTime"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="开始：20:30"
-            android:textSize="14sp"
-            app:icon="@android:drawable/ic_menu_recent_history"
-            app:iconSize="16dp" />
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMoodEventDate"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="日期：2026-08-13"
+                android:textSize="14sp"
+                app:icon="@android:drawable/ic_menu_month"
+                app:iconSize="16dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMoodEventTime"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="开始：20:30"
+                android:textSize="14sp"
+                app:icon="@android:drawable/ic_menu_recent_history"
+                app:iconSize="16dp" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"

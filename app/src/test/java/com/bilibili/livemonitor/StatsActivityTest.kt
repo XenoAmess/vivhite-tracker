@@ -596,4 +596,28 @@ class StatsActivityTest {
         assertEquals("手动补记的", title)
         Unit
     }
+
+    @Test
+    fun `编辑对话框有日期按钮且显示事件日`() = runBlocking {
+        val dao = AppDatabase.get(context).moodEventDao()
+        dao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = todayStart() + 10 * 3_600_000L, mood = "happy",
+                title = "带日期按钮", createdAt = 0
+            )
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("mood list") {
+            activity.findViewById<RecyclerView>(R.id.rvMoodEvents).adapter!!.itemCount == 1
+        }
+        activity.findViewById<RecyclerView>(R.id.rvMoodEvents)
+            .findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        val btnDate = dialog.findViewById<TextView>(R.id.btnMoodEventDate)!!
+        val expect = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            .format(java.util.Date(todayStart()))
+        assertEquals("日期：$expect", btnDate.text.toString())
+        Unit
+    }
 }

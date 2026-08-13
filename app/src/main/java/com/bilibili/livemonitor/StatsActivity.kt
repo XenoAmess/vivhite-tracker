@@ -609,7 +609,8 @@ class StatsActivity : AppCompatActivity() {
             if (existing?.mood == mood.key) chipGroup.check(chip.id)
         }
 
-        // 事件时间：日期固定为选中日，只改时分；默认取当前时刻
+        // 事件时间：日期默认选中日（可改），时分默认取当前时刻
+        var eventDayStart = dayStart(existing?.eventTs ?: selectedDayStart)
         var eventTs = existing?.eventTs ?: run {
             val nowCal = Calendar.getInstance()
             selectedDayStart + nowCal.get(Calendar.HOUR_OF_DAY) * 3_600_000L +
@@ -633,12 +634,37 @@ class StatsActivity : AppCompatActivity() {
         refreshTimeText()
         refreshEndText()
 
+        val btnDate = view.findViewById<TextView>(R.id.btnMoodEventDate)
+        val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        fun refreshDateText() {
+            btnDate.text = "日期：${dateFmt.format(Date(eventDayStart))}"
+        }
+        refreshDateText()
+        btnDate.setOnClickListener {
+            val c = Calendar.getInstance().apply { timeInMillis = eventDayStart }
+            android.app.DatePickerDialog(
+                this,
+                { _, y, m, d ->
+                    val newDay = Calendar.getInstance().apply {
+                        set(y, m, d, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+                    // 保留时分，只换日
+                    eventTs += newDay - eventDayStart
+                    eventDayStart = newDay
+                    refreshDateText()
+                    refreshTimeText()
+                    refreshEndText()
+                },
+                c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
+            ).show()
+        }
+
         btnTime.setOnClickListener {
             val c = Calendar.getInstance().apply { timeInMillis = eventTs }
             android.app.TimePickerDialog(
                 this,
                 { _, h, m ->
-                    eventTs = selectedDayStart + h * 3_600_000L + m * 60_000L
+                    eventTs = eventDayStart + h * 3_600_000L + m * 60_000L
                     refreshTimeText()
                     refreshEndText() // 时长不变，结束时间跟随开始时间
                 },
@@ -664,7 +690,7 @@ class StatsActivity : AppCompatActivity() {
             android.app.TimePickerDialog(
                 this,
                 { _, h, m ->
-                    val picked = selectedDayStart + h * 3_600_000L + m * 60_000L
+                    val picked = eventDayStart + h * 3_600_000L + m * 60_000L
                     durationMin = MoodTiming.durationMinFromEnd(eventTs, picked)
                     etDuration.setText(durationMin.toString()) // 触发 watcher → refreshEndText
                 },

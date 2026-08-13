@@ -164,8 +164,9 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     // Room 迁移测试（MigrationTestHelper 读 schemas/ 里的版本化 schema JSON）
     androidTestImplementation("androidx.room:room-testing:2.8.4")
-    // 手账 UI 自动化（对话框交互）
+    // 手账 UI 自动化（对话框交互 + DatePicker 操作）
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
 }
 
 tasks.withType<Test>().configureEach {
