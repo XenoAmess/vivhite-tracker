@@ -243,6 +243,11 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this@MainActivity, StatsActivity::class.java))
             }
 
+            // 桌面快捷方式：open_magic=true 直达魔法期记录对话框
+            if (intent.getBooleanExtra("open_magic", false)) {
+                binding.root.post { showMagicPeriodDialog() }
+            }
+
             btnShare.setOnClickListener {
                 showShareOptions()
             }

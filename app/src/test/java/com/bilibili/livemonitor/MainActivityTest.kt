@@ -2273,4 +2273,34 @@ class MainActivityTest {
         }
         shadowOf(context.packageManager).setResolveInfosForIntent(intent, infos)
     }
+
+    @Test
+    fun `桌面快捷方式 open_magic 打开魔法期对话框`() {
+        val intent = android.content.Intent(context, MainActivity::class.java)
+            .putExtra("open_magic", true)
+        val activity = Robolectric.buildActivity(MainActivity::class.java, intent).setup().get()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val deadline = System.currentTimeMillis() + 5_000
+        var dialog: android.app.Dialog? = null
+        while (System.currentTimeMillis() < deadline) {
+            dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            if (dialog != null) break
+            Thread.sleep(50)
+        }
+        assertNotNull("open_magic 应弹出魔法期对话框", dialog)
+    }
+
+    @Test
+    fun `桌面快捷方式 shortcuts_xml 注册两条`() {
+        val xml = context.resources.getXml(com.bilibili.livemonitor.R.xml.shortcuts)
+        val text = StringBuilder()
+        while (xml.eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+            if (xml.eventType == org.xmlpull.v1.XmlPullParser.START_TAG && xml.name == "shortcut") {
+                text.append(xml.getAttributeValue("http://schemas.android.com/apk/res/android", "shortcutId")).append("|")
+            }
+            xml.next()
+        }
+        assertTrue("journal: $text", text.toString().contains("journal"))
+        assertTrue("magic: $text", text.toString().contains("magic"))
+    }
 }

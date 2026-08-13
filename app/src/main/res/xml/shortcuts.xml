@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="journal"
+        android:icon="@drawable/ic_notification_on"
+        android:shortcutShortLabel="@string/shortcut_journal_short"
+        android:shortcutLongLabel="@string/shortcut_journal_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.bilibili.livemonitor"
+            android:targetClass="com.bilibili.livemonitor.StatsActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="magic"
+        android:icon="@drawable/dot_live"
+        android:shortcutShortLabel="@string/shortcut_magic_short"
+        android:shortcutLongLabel="@string/shortcut_magic_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.bilibili.livemonitor"
+            android:targetClass="com.bilibili.livemonitor.MainActivity">
+            <extra android:name="open_magic" android:value="true" />
+        </intent>
+    </shortcut>
+</shortcuts>

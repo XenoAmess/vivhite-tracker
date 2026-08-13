@@ -58,4 +58,8 @@
         <item>生物细胞</item>
         <item>黑白胶片</item>
     </string-array>
+    <string name="shortcut_journal_short">绮迹手账</string>
+    <string name="shortcut_journal_long">打开绮迹手账</string>
+    <string name="shortcut_magic_short">魔法期记录</string>
+    <string name="shortcut_magic_long">打开魔法期记录</string>
 </resources>
