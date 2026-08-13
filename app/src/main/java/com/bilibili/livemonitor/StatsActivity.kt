@@ -339,6 +339,7 @@ class StatsActivity : AppCompatActivity() {
     // 手账搜索弹窗：场次标题 + 心情内容，子串匹配（SessionSearch 纯函数）
     private fun showSearchDialog() {
         lifecycleScope.launch {
+            try {
             val allMoods = AppDatabase.get(this@StatsActivity).moodEventDao().all()
             val view = LayoutInflater.from(this@StatsActivity)
                 .inflate(R.layout.dialog_record_search, null)
@@ -368,6 +369,13 @@ class StatsActivity : AppCompatActivity() {
                 .setView(view)
                 .setPositiveButton("关闭", null)
                 .show()
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@StatsActivity,
+                    com.bilibili.livemonitor.util.UiMessages.DATA_LOAD_ERROR,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
@@ -557,6 +565,7 @@ class StatsActivity : AppCompatActivity() {
     // 观播统计弹窗：近 6 个月场次柱图 + 星期×时段开播热力
     private fun showStatsTrendDialog() {
         lifecycleScope.launch {
+            try {
             val now = System.currentTimeMillis()
             val sessions = AppDatabase.get(this@StatsActivity).streamSessionDao()
                 .closedSessionsSince(now - 200L * DAY_MS) // 覆盖 6 个自然月的余量窗口
@@ -602,27 +611,42 @@ class StatsActivity : AppCompatActivity() {
                 .setView(view)
                 .setPositiveButton("关闭", null)
                 .show()
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@StatsActivity,
+                    com.bilibili.livemonitor.util.UiMessages.DATA_LOAD_ERROR,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
     // 点场次行 → 人气曲线弹窗（60s 轮询采样，无数据时提示）
     private fun showPopularityDialog(session: StreamSessionEntity) {
         lifecycleScope.launch {
-            val points = AppDatabase.get(this@StatsActivity).streamSessionDao()
-                .popularityPoints(session.id)
-            if (points.size < 2) {
-                Toast.makeText(this@StatsActivity, "本场暂无人气数据", Toast.LENGTH_SHORT).show()
-                return@launch
+            try {
+                val points = AppDatabase.get(this@StatsActivity).streamSessionDao()
+                    .popularityPoints(session.id)
+                if (points.size < 2) {
+                    Toast.makeText(this@StatsActivity, "本场暂无人气数据", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val view = LayoutInflater.from(this@StatsActivity)
+                    .inflate(R.layout.dialog_popularity_chart, null)
+                view.findViewById<com.bilibili.livemonitor.views.PopularityChartView>(R.id.popularityChart)
+                    .setData(points.map { it.ts to it.online })
+                AlertDialog.Builder(this@StatsActivity)
+                    .setTitle("本场人气曲线")
+                    .setView(view)
+                    .setPositiveButton("关闭", null)
+                    .show()
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@StatsActivity,
+                    com.bilibili.livemonitor.util.UiMessages.DATA_LOAD_ERROR,
+                    Toast.LENGTH_SHORT
+                ).show()
             }
-            val view = LayoutInflater.from(this@StatsActivity)
-                .inflate(R.layout.dialog_popularity_chart, null)
-            view.findViewById<com.bilibili.livemonitor.views.PopularityChartView>(R.id.popularityChart)
-                .setData(points.map { it.ts to it.online })
-            AlertDialog.Builder(this@StatsActivity)
-                .setTitle("本场人气曲线")
-                .setView(view)
-                .setPositiveButton("关闭", null)
-                .show()
         }
     }
 
