@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MoodEventEntity::class,
         PopularityPointEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -72,13 +72,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v4→v5：场次加当场直播封面本地路径（可空，封面收藏） */
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stream_sessions` ADD COLUMN `cover_path` TEXT")
+            }
+        }
+
         fun get(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "vivhite.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .build().also { INSTANCE = it }
             }
         }
     }

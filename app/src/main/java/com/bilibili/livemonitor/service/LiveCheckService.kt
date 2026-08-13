@@ -311,6 +311,7 @@ class LiveCheckService : Service() {
             is BilibiliApi.LiveStatus.Live -> {
                 handleResult(true, status.liveStartTime, status.title)
                 streamSessionTracker.recordPopularity(status.online)
+                streamSessionTracker.collectStreamCover(roomId)
             }
             is BilibiliApi.LiveStatus.NotLive -> handleResult(false)
             is BilibiliApi.LiveStatus.Error -> {

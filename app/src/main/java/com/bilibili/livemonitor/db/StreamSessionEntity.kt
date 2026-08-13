@@ -13,5 +13,7 @@ data class StreamSessionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "start_ts") val startTs: Long,
     @ColumnInfo(name = "end_ts") val endTs: Long? = null,
-    val title: String? = null
+    val title: String? = null,
+    // 当场直播封面本地路径（filesDir/covers/，URL sha256 去重，原图全保留）
+    @ColumnInfo(name = "cover_path") val coverPath: String? = null
 )

@@ -250,4 +250,39 @@ class StreamSessionTrackerTest {
             runBlocking { dao.popularityPoints(openId).map { it.online }.sorted() }
         )
     }
+
+    @Test
+    fun `collectStreamCover 幂等 有cover跳过 无开放行跳过`() {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        var fetchCount = 0
+        tracker.coverUrlFetcher = { fetchCount++; "https://i0.hdslb.com/cover/x.jpg" }
+        // 假 CoverStore：直接落一个假文件
+        tracker.coverStore = object : com.bilibili.livemonitor.util.CoverStore() {
+            override suspend fun acquire(context: android.content.Context, coverUrl: String): String? {
+                val f = java.io.File(context.filesDir, "covers/fake.jpg")
+                f.parentFile?.mkdirs()
+                f.writeBytes(byteArrayOf(1, 2, 3))
+                return f.absolutePath
+            }
+        }
+
+        // 无开放行 → 不拉取
+        tracker.collectStreamCover(11258892)
+        Thread.sleep(300)
+        assertEquals(0, fetchCount)
+
+        // 有开放行无封面 → 拉一次写回
+        runBlocking { dao.insertSession(StreamSessionEntity(startTs = 1000)) }
+        tracker.collectStreamCover(11258892)
+        waitFor("cover saved") {
+            runBlocking { dao.recentSessions(1).first().coverPath != null }
+        }
+        assertEquals(1, fetchCount)
+
+        // 已有封面 → 不再拉
+        tracker.collectStreamCover(11258892)
+        Thread.sleep(300)
+        assertEquals("已有封面幂等跳过", 1, fetchCount)
+        java.io.File(context.filesDir, "covers/fake.jpg").delete()
+    }
 }

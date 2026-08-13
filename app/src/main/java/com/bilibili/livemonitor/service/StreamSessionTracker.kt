@@ -166,6 +166,32 @@ class StreamSessionTracker(
         }
     }
 
+    // internal seams：单测注入假封面源/假存储
+    internal var coverUrlFetcher: suspend (Long) -> String? = { roomId ->
+        com.bilibili.livemonitor.api.BilibiliApi().fetchRoomInfo(roomId)?.cover
+    }
+    internal var coverStore: com.bilibili.livemonitor.util.CoverStore =
+        com.bilibili.livemonitor.util.CoverStore()
+
+    /**
+     * 开播封面收藏（幂等）：当前开放场次没有 cover_path 才拉一次；
+     * 存储层按 URL sha256 去重（同封面零重复下载），失败静默
+     */
+    fun collectStreamCover(roomId: Long) {
+        scope.launch {
+            try {
+                val dao = AppDatabase.get(context).streamSessionDao()
+                val open = dao.findOpenSession() ?: return@launch
+                if (!open.coverPath.isNullOrBlank()) return@launch
+                val url = coverUrlFetcher(roomId) ?: return@launch
+                val path = coverStore.acquire(context, url) ?: return@launch
+                dao.updateSession(open.copy(coverPath = path))
+            } catch (e: Exception) {
+                AppLogger.w(tag, "collect stream cover failed", e)
+            }
+        }
+    }
+
     private companion object {
         const val TITLE_CHANGE_MIN_LIVE_MS = 5 * 60_000L // 开播至少 5 分钟后的标题变化才提醒
     }

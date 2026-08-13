@@ -813,6 +813,7 @@ class StatsActivity : AppCompatActivity() {
             val tvTime: TextView = view.findViewById(R.id.tvSessionTime)
             val tvDuration: TextView = view.findViewById(R.id.tvSessionDuration)
             val tvTitle: TextView = view.findViewById(R.id.tvSessionTitle)
+            val ivCover: android.widget.ImageView = view.findViewById(R.id.ivSessionCover)
         }
 
         fun update(newSessions: List<StreamSessionEntity>) {
@@ -841,7 +842,35 @@ class StatsActivity : AppCompatActivity() {
                 "进行中…"
             }
             holder.tvTitle.text = s.title ?: "（无标题）"
+            // 当场封面缩略图（原图按控件尺寸采样解码，不改动存储）
+            if (!s.coverPath.isNullOrBlank()) {
+                val bmp = decodeSampled(s.coverPath, 96, 54)
+                if (bmp != null) {
+                    holder.ivCover.setImageBitmap(bmp)
+                    holder.ivCover.visibility = View.VISIBLE
+                } else {
+                    holder.ivCover.visibility = View.GONE
+                }
+            } else {
+                holder.ivCover.visibility = View.GONE
+            }
             holder.itemView.setOnClickListener { onClick(s) }
+        }
+
+        // 原图按控件尺寸采样解码（不改变存储原图）
+        private fun decodeSampled(path: String, reqW: Int, reqH: Int): android.graphics.Bitmap? {
+            return runCatching {
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(path, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+                var sample = 1
+                while (bounds.outWidth / sample > reqW * 2 || bounds.outHeight / sample > reqH * 2) {
+                    sample *= 2
+                }
+                android.graphics.BitmapFactory.decodeFile(
+                    path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                )
+            }.getOrNull()
         }
     }
 }

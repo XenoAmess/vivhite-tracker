@@ -2,7 +2,8 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
     android:foreground="?android:attr/selectableItemBackground"
     android:paddingStart="16dp"
     android:paddingEnd="16dp"
@@ -10,35 +11,52 @@
     android:paddingBottom="10dp">
 
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvSessionTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:text="14:00 ~ 17:23" />
+
+            <TextView
+                android:id="@+id/tvSessionDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:text="3h23m" />
+        </LinearLayout>
 
         <TextView
-            android:id="@+id/tvSessionTime"
-            android:layout_width="0dp"
+            android:id="@+id/tvSessionTitle"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:text="14:00 ~ 17:23" />
-
-        <TextView
-            android:id="@+id/tvSessionDuration"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
             android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary"
-            android:text="3h23m" />
+            android:text="（无标题）" />
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/tvSessionTitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:textSize="13sp"
-        android:text="（无标题）" />
+    <ImageView
+        android:id="@+id/ivSessionCover"
+        android:layout_width="48dp"
+        android:layout_height="27dp"
+        android:layout_marginStart="10dp"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        android:contentDescription="当场封面" />
 
 </LinearLayout>
+

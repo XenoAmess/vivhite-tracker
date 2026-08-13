@@ -446,4 +446,45 @@ class StatsActivityTest {
         assertEquals(2, allMoods.size)
         assertTrue(allMoods.any { it.mood == "sad" && it.note == "备注" })
     }
+
+    @Test
+    fun `场次行带封面时显示缩略图 无封面隐藏`() = runBlocking {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        val now = System.currentTimeMillis()
+        // 写一个真 PNG 当封面
+        val cover = java.io.File(context.filesDir, "covers/test_cover.png")
+        cover.parentFile?.mkdirs()
+        val bmp = android.graphics.Bitmap.createBitmap(64, 36, android.graphics.Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(0xFF6750A4.toInt())
+        cover.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+
+        dao.insertSession(
+            StreamSessionEntity(
+                startTs = now - 3_600_000, endTs = now - 600_000,
+                title = "有封面", coverPath = cover.absolutePath
+            )
+        )
+        dao.insertSession(
+            StreamSessionEntity(startTs = now - 7_200_000, endTs = now - 5_400_000, title = "无封面")
+        )
+
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("two sessions") {
+            activity.findViewById<RecyclerView>(R.id.rvSessions).adapter!!.itemCount == 2
+        }
+        val rv = activity.findViewById<RecyclerView>(R.id.rvSessions)
+        val first = rv.findViewHolderForAdapterPosition(0)!!.itemView
+        val second = rv.findViewHolderForAdapterPosition(1)!!.itemView
+        // 列表倒序（新的在前）：有封面行 VISIBLE，无封面行 GONE
+        assertEquals(
+            android.view.View.VISIBLE,
+            first.findViewById<android.widget.ImageView>(R.id.ivSessionCover).visibility
+        )
+        assertEquals(
+            android.view.View.GONE,
+            second.findViewById<android.widget.ImageView>(R.id.ivSessionCover).visibility
+        )
+        cover.delete()
+        Unit
+    }
 }
