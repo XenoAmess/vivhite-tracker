@@ -92,6 +92,7 @@ class StatsActivity : AppCompatActivity() {
         binding.btnImportStats.setOnClickListener { importLauncher.launch("*/*") }
         binding.btnExportImage.setOnClickListener { exportStatsImage() }
         binding.btnStatsTrend.setOnClickListener { showStatsTrendDialog() }
+        binding.btnSearchRecords.setOnClickListener { showSearchDialog() }
 
         loadAnchorAvatar()
         refreshData()
@@ -290,6 +291,78 @@ class StatsActivity : AppCompatActivity() {
         sessionAdapter.update(sessions)
         loadTitleChanges(sessions)
         loadMoodEvents()
+    }
+
+    // 手账搜索弹窗：场次标题 + 心情内容，子串匹配（SessionSearch 纯函数）
+    private fun showSearchDialog() {
+        lifecycleScope.launch {
+            val allMoods = AppDatabase.get(this@StatsActivity).moodEventDao().all()
+            val view = LayoutInflater.from(this@StatsActivity)
+                .inflate(R.layout.dialog_record_search, null)
+            val etQuery = view.findViewById<EditText>(R.id.etSearchQuery)
+            val rv = view.findViewById<RecyclerView>(R.id.rvSearchResults)
+            val tvEmpty = view.findViewById<TextView>(R.id.tvSearchEmpty)
+            val dateFmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            val adapter = SearchHitsAdapter(dateFmt)
+            rv.layoutManager = LinearLayoutManager(this@StatsActivity)
+            rv.adapter = adapter
+            fun refresh() {
+                val hits = com.bilibili.livemonitor.domain.SessionSearch.search(
+                    loadedSessions, allMoods, etQuery.text.toString()
+                )
+                adapter.update(hits)
+                tvEmpty.visibility = if (hits.isEmpty()) View.VISIBLE else View.GONE
+                tvEmpty.text = if (etQuery.text.isNullOrBlank()) "输入关键词开始搜索" else "没有匹配的记录"
+            }
+            etQuery.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) = refresh()
+            })
+            refresh()
+            AlertDialog.Builder(this@StatsActivity)
+                .setTitle("搜索手账")
+                .setView(view)
+                .setPositiveButton("关闭", null)
+                .show()
+        }
+    }
+
+    private class SearchHitsAdapter(
+        private val dateFmt: SimpleDateFormat
+    ) : RecyclerView.Adapter<SearchHitsAdapter.Holder>() {
+
+        private var hits = listOf<com.bilibili.livemonitor.domain.SessionSearch.Hit>()
+
+        class Holder(val text: TextView) : RecyclerView.ViewHolder(text)
+
+        fun update(newHits: List<com.bilibili.livemonitor.domain.SessionSearch.Hit>) {
+            hits = newHits
+            notifyDataSetChanged()
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
+            val tv = TextView(parent.context).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setPadding(0, 14, 0, 14)
+                textSize = 13f
+            }
+            return Holder(tv)
+        }
+
+        override fun getItemCount(): Int = hits.size
+
+        override fun onBindViewHolder(holder: Holder, position: Int) {
+            val hit = hits[position]
+            val kindLabel = if (hit.kind == com.bilibili.livemonitor.domain.SessionSearch.Kind.SESSION) {
+                "场次"
+            } else {
+                "心情"
+            }
+            holder.text.text = "${dateFmt.format(Date(hit.ts))} · $kindLabel · ${hit.text}"
+        }
     }
 
     // 观播统计弹窗：近 6 个月场次柱图 + 星期×时段开播热力

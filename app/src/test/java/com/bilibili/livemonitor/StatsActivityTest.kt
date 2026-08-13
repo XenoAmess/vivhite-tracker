@@ -363,6 +363,33 @@ class StatsActivityTest {
     }
 
     @Test
+    fun `搜索弹窗 输入关键词过滤场次与心情`() = runBlocking {
+        val sdao = AppDatabase.get(context).streamSessionDao()
+        val mdao = AppDatabase.get(context).moodEventDao()
+        val now = System.currentTimeMillis()
+        sdao.insertSession(StreamSessionEntity(startTs = now - 3_600_000, endTs = now - 600_000, title = "SC2 肉鸽直播之夜"))
+        mdao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = now - 1_800_000, mood = "happy", title = "看了直播", createdAt = 0
+            )
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("summary") {
+            activity.findViewById<TextView>(R.id.tvStatsSummary).text.toString().contains("本周")
+        }
+        activity.findViewById<android.view.View>(R.id.btnSearchRecords).performClick()
+        waitFor("search dialog") {
+            org.robolectric.shadows.ShadowDialog.getLatestDialog() != null
+        }
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        val rv = dialog.findViewById<RecyclerView>(R.id.rvSearchResults)
+        dialog.findViewById<android.widget.EditText>(R.id.etSearchQuery).setText("肉鸽")
+        waitFor("filtered") { rv.adapter!!.itemCount == 1 }
+        dialog.findViewById<android.widget.EditText>(R.id.etSearchQuery).setText("直播")
+        waitFor("two hits") { rv.adapter!!.itemCount == 2 }
+    }
+
+    @Test
     fun `选中魔法期日 提示含第几天`() = runBlocking {
         // 今天起 3 天魔法期
         val start = todayStart()

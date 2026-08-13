@@ -245,8 +245,9 @@ class StreamSessionTrackerTest {
             runBlocking { dao.popularityPoints(openId).size == 2 }
         }
         assertEquals(
+            // IO 协程并行写入且两点 ts 同毫秒级，顺序不保证，按值排序断言
             listOf(100, 120),
-            runBlocking { dao.popularityPoints(openId).map { it.online } }
+            runBlocking { dao.popularityPoints(openId).map { it.online }.sorted() }
         )
     }
 }
