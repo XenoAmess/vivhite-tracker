@@ -123,4 +123,23 @@ class StreamSessionDaoTest {
         dao.deleteAllFollowerSnapshots()
         assertEquals(null, dao.lastFollowerSnapshotTs())
     }
+
+    @Test
+    fun `批量删除 指定日期前 级联子表`() = runBlocking {
+        val old = dao.insertSession(StreamSessionEntity(startTs = 1000, endTs = 2000))
+        val new = dao.insertSession(StreamSessionEntity(startTs = 10_000, endTs = 11_000))
+        dao.insertTitleChange(StreamTitleChangeEntity(sessionId = old, changedAt = 1500, newTitle = "t"))
+        dao.insertPopularityPoint(PopularityPointEntity(sessionId = old, ts = 1500, online = 1))
+        dao.insertPopularityPoint(PopularityPointEntity(sessionId = new, ts = 10_500, online = 2))
+
+        assertEquals(1, dao.sessionsBeforeCount(5000))
+        dao.deleteTitleChangesBefore(5000)
+        dao.deletePopularityBefore(5000)
+        dao.deleteSessionsBefore(5000)
+
+        assertEquals(listOf(new), dao.recentSessions(5).map { it.id })
+        assertEquals(0, dao.titleChanges(old).size)
+        assertEquals(0, dao.popularityPoints(old).size)
+        assertEquals(1, dao.popularityPoints(new).size) // 新场次的人气点保留
+    }
 }

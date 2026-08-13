@@ -33,4 +33,11 @@ interface MoodEventDao {
     /** 清空（测试用） */
     @Query("DELETE FROM mood_events")
     suspend fun deleteAll()
+
+    /** 指定时间之前的心情事件数（删除预览用） */
+    @Query("SELECT COUNT(*) FROM mood_events WHERE event_ts < :before")
+    suspend fun beforeCount(before: Long): Int
+
+    @Query("DELETE FROM mood_events WHERE event_ts < :before")
+    suspend fun deleteBefore(before: Long): Int
 }

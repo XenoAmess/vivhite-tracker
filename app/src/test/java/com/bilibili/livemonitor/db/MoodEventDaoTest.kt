@@ -69,4 +69,14 @@ class MoodEventDaoTest {
         dao.insert(event(2000, "b"))
         assertEquals(listOf("a", "b", "c"), dao.eventsBetween(0, 4000).map { it.title })
     }
+
+    @Test
+    fun `删除指定时间前的心情 计数预览一致`() = runBlocking {
+        dao.insert(event(1000, "旧1"))
+        dao.insert(event(2000, "旧2"))
+        dao.insert(event(10_000, "新"))
+        assertEquals(2, dao.beforeCount(5000))
+        assertEquals(2, dao.deleteBefore(5000))
+        assertEquals(listOf("新"), dao.eventsBetween(0, 20_000).map { it.title })
+    }
 }

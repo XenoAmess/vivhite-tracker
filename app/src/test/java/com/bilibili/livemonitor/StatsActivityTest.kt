@@ -526,4 +526,29 @@ class StatsActivityTest {
         dao.deleteAllFollowerSnapshots()
         Unit
     }
+
+    @Test
+    fun `管理弹窗 清空全部后列表归零`() = runBlocking {
+        val sdao = AppDatabase.get(context).streamSessionDao()
+        val mdao = AppDatabase.get(context).moodEventDao()
+        val now = System.currentTimeMillis()
+        sdao.insertSession(StreamSessionEntity(startTs = now - 3_600_000, endTs = now - 600_000, title = "待清"))
+        mdao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = now - 1_800_000, mood = "happy", title = "待清", createdAt = 0
+            )
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("data loaded") {
+            activity.findViewById<RecyclerView>(R.id.rvSessions).adapter!!.itemCount == 1
+        }
+        // 直接调内部删除入口（确认弹窗是薄壳）
+        activity.deleteBefore(now + 1000)
+        waitFor("cleared") {
+            activity.findViewById<RecyclerView>(R.id.rvSessions).adapter!!.itemCount == 0
+        }
+        assertEquals(0, sdao.recentSessions(5).size)
+        assertEquals(0, mdao.all().size)
+        Unit
+    }
 }

@@ -68,4 +68,23 @@ interface StreamSessionDao {
     /** 清空粉丝快照（测试用） */
     @Query("DELETE FROM follower_snapshots")
     suspend fun deleteAllFollowerSnapshots()
+
+    // ---------- 批量管理（手账页） ----------
+
+    /** 指定时间之前的场次数（删除预览用） */
+    @Query("SELECT COUNT(*) FROM stream_sessions WHERE start_ts < :before")
+    suspend fun sessionsBeforeCount(before: Long): Int
+
+    /** 级联：主题变化/人气点挂在场次上，先删子表 */
+    @Query("DELETE FROM stream_title_changes WHERE session_id IN (SELECT id FROM stream_sessions WHERE start_ts < :before)")
+    suspend fun deleteTitleChangesBefore(before: Long): Int
+
+    @Query("DELETE FROM popularity_points WHERE session_id IN (SELECT id FROM stream_sessions WHERE start_ts < :before)")
+    suspend fun deletePopularityBefore(before: Long): Int
+
+    @Query("DELETE FROM stream_sessions WHERE start_ts < :before")
+    suspend fun deleteSessionsBefore(before: Long): Int
+
+    @Query("DELETE FROM stream_title_changes")
+    suspend fun deleteAllTitleChanges()
 }

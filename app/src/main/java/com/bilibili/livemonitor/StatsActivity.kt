@@ -93,6 +93,7 @@ class StatsActivity : AppCompatActivity() {
         binding.btnExportImage.setOnClickListener { exportStatsImage() }
         binding.btnStatsTrend.setOnClickListener { showStatsTrendDialog() }
         binding.btnSearchRecords.setOnClickListener { showSearchDialog() }
+        binding.btnManageRecords.setOnClickListener { showManageDialog() }
 
         loadAnchorAvatar()
         refreshData()
@@ -363,6 +364,84 @@ class StatsActivity : AppCompatActivity() {
             }
             holder.text.text = "${dateFmt.format(Date(hit.ts))} · $kindLabel · ${hit.text}"
         }
+    }
+
+    // 手账批量管理：按日期区间删除 / 清空全部（场次级联主题变化与人气点，封面保留）
+    private fun showManageDialog() {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_manage_records, null)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("管理记录")
+            .setView(view)
+            .setNegativeButton("关闭", null)
+            .show()
+        view.findViewById<View>(R.id.btnDeleteBeforeDate).setOnClickListener {
+            dialog.dismiss()
+            pickDeleteBeforeDate()
+        }
+        view.findViewById<View>(R.id.btnClearAllRecords).setOnClickListener {
+            dialog.dismiss()
+            confirmClearAll()
+        }
+    }
+
+    private fun pickDeleteBeforeDate() {
+        val c = Calendar.getInstance()
+        android.app.DatePickerDialog(
+            this,
+            { _, y, m, d ->
+                val before = Calendar.getInstance().apply {
+                    set(y, m, d, 0, 0, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                confirmDeleteBefore(before)
+            },
+            c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    private fun confirmDeleteBefore(before: Long) {
+        lifecycleScope.launch {
+            val db = AppDatabase.get(this@StatsActivity)
+            val sessionCount = db.streamSessionDao().sessionsBeforeCount(before)
+            val moodCount = db.moodEventDao().beforeCount(before)
+            val dateText = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(before))
+            AlertDialog.Builder(this@StatsActivity)
+                .setTitle("删除 $dateText 之前的记录")
+                .setMessage("将删除 $sessionCount 场直播场次和 $moodCount 条心情事件，此操作不可恢复。")
+                .setPositiveButton("删除") { _, _ ->
+                    lifecycleScope.launch { deleteBefore(before) }
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+    }
+
+    internal suspend fun deleteBefore(before: Long) {
+        val db = AppDatabase.get(this)
+        // 先删子表（主题变化/人气点挂在场次上）再删主表
+        db.streamSessionDao().deleteTitleChangesBefore(before)
+        db.streamSessionDao().deletePopularityBefore(before)
+        db.streamSessionDao().deleteSessionsBefore(before)
+        db.moodEventDao().deleteBefore(before)
+        refreshData()
+    }
+
+    private fun confirmClearAll() {
+        AlertDialog.Builder(this)
+            .setTitle("清空全部记录")
+            .setMessage("将删除全部场次与心情事件，此操作不可恢复。已收藏的直播封面会保留。")
+            .setPositiveButton("清空") { _, _ ->
+                lifecycleScope.launch {
+                    val db = AppDatabase.get(this@StatsActivity)
+                    db.streamSessionDao().deleteAllTitleChanges()
+                    db.streamSessionDao().deleteAllPopularityPoints()
+                    db.streamSessionDao().deleteAll()
+                    db.moodEventDao().deleteAll()
+                    refreshData()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // 观播统计弹窗：近 6 个月场次柱图 + 星期×时段开播热力
