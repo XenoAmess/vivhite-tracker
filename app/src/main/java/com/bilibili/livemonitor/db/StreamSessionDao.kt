@@ -87,4 +87,12 @@ interface StreamSessionDao {
 
     @Query("DELETE FROM stream_title_changes")
     suspend fun deleteAllTitleChanges()
+
+    /** 全部场次标题（词云数据源；空标题剔除） */
+    @Query("SELECT title FROM stream_sessions WHERE title IS NOT NULL AND title != ''")
+    suspend fun allSessionTitles(): List<String>
+
+    /** 全部主题变化的新标题（词云数据源） */
+    @Query("SELECT new_title FROM stream_title_changes WHERE new_title IS NOT NULL AND new_title != ''")
+    suspend fun allChangeTitles(): List<String>
 }

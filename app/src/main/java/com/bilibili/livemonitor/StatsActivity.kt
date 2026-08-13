@@ -548,6 +548,17 @@ class StatsActivity : AppCompatActivity() {
                 view.findViewById<View>(R.id.tvFollowerTitle).visibility = View.GONE
                 view.findViewById<View>(R.id.followerChart).visibility = View.GONE
             }
+            // 标题高频词云（场次标题 + 主题变化新标题；为空隐藏该区域）
+            val titles = AppDatabase.get(this@StatsActivity).streamSessionDao().allSessionTitles() +
+                AppDatabase.get(this@StatsActivity).streamSessionDao().allChangeTitles()
+            val topWords = com.bilibili.livemonitor.domain.TitleWordCloud.topWords(titles)
+            if (topWords.isNotEmpty()) {
+                view.findViewById<com.bilibili.livemonitor.views.WordCloudView>(R.id.wordCloud)
+                    .setData(topWords)
+            } else {
+                view.findViewById<View>(R.id.tvWordCloudTitle).visibility = View.GONE
+                view.findViewById<View>(R.id.wordCloud).visibility = View.GONE
+            }
             AlertDialog.Builder(this@StatsActivity)
                 .setTitle("观播统计")
                 .setView(view)

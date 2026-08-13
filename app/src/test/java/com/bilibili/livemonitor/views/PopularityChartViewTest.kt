@@ -38,4 +38,24 @@ class PopularityChartViewTest {
         }
         assertTrue("折线与文字应产生墨迹", ink > 0)
     }
+
+    @Test
+    fun `词云有词时有墨迹`() {
+        val width = 700
+        val height = 300
+        val view = WordCloudView(context)
+        view.setData(listOf("失眠" to 5, "杂谈" to 3, "肉鸽" to 2))
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+        )
+        view.layout(0, 0, width, height)
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bmp))
+        var ink = 0
+        for (py in 0 until height) for (px in 0 until width) {
+            if (android.graphics.Color.alpha(bmp.getPixel(px, py)) > 0) ink++
+        }
+        assertTrue("词云应有墨迹", ink > 0)
+    }
 }
