@@ -23,6 +23,8 @@ class LiveMonitorApp : Application() {
         if (PreferenceManager(this).isServiceRunning()) {
             LiveCheckWorker.schedulePeriodic(this)
         }
+        // 月初海报生成（每日检查，月份键去重，KEEP 幂等）
+        com.bilibili.livemonitor.worker.MonthlyPosterWorker.schedule(this)
     }
 
     // 深色模式：在 Activity inflate 前应用（Application.onCreate 是全局生效点）
@@ -103,6 +105,14 @@ class LiveMonitorApp : Application() {
                     NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
                     description = "下播 / 开播预告提醒"
+                },
+                NotificationChannel(
+                    CHANNEL_POSTER_ID,
+                    "手账海报",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "月初自动生成上月手账海报提醒"
+                    setShowBadge(false)
                 }
             )
 
@@ -118,6 +128,7 @@ class LiveMonitorApp : Application() {
         const val CHANNEL_DYNAMIC_ALERT_ID = "dynamic_alert_v2"
         const val CHANNEL_MAGIC_ID = "magic_alert"
         const val CHANNEL_STREAM_LIFECYCLE_ID = "stream_lifecycle"
+        const val CHANNEL_POSTER_ID = "monthly_poster"
         const val NOTIFICATION_ID_SERVICE = 1001
         const val NOTIFICATION_ID_ALERT = 1002
         const val NOTIFICATION_ID_VIDEO = 1003
@@ -125,5 +136,6 @@ class LiveMonitorApp : Application() {
         const val NOTIFICATION_ID_MAGIC = 1005
         const val NOTIFICATION_ID_STREAM_END = 1006
         const val NOTIFICATION_ID_TITLE_CHANGE = 1007
+        const val NOTIFICATION_ID_POSTER = 1008
     }
 }

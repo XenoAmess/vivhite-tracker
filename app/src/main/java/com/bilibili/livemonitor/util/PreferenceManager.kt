@@ -129,6 +129,13 @@ class PreferenceManager(context: Context) {
 
     fun getLastBackupTime(): Long = prefs.getLong(KEY_LAST_BACKUP_TIME, 0L)
 
+    // 月初海报去重：上次生成的月份（"yyyy-MM"，空 = 从未生成）
+    fun setLastPosterMonth(monthKey: String) {
+        prefs.edit().putString(KEY_LAST_POSTER_MONTH, monthKey).apply()
+    }
+
+    fun getLastPosterMonth(): String = prefs.getString(KEY_LAST_POSTER_MONTH, "") ?: ""
+
     // 观播静音绑定的本场直播 live_start_time；与当前不一致 = 新一场 = 自动解除静音
     // 空串 = 老标记（无绑定信息），不参与新会话比对
     fun setSuppressedLiveStart(startTime: String) {
@@ -428,6 +435,7 @@ class PreferenceManager(context: Context) {
         private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
         private const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
         private const val KEY_LAST_BACKUP_TIME = "last_backup_time"
+        private const val KEY_LAST_POSTER_MONTH = "last_poster_month"
 
         // 检测频率档位（秒）
         const val CHECK_INTERVAL_ECO_SECONDS = 300
