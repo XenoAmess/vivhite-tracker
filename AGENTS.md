@@ -45,6 +45,7 @@ Android 单模块 Kotlin 应用：监控 B 站直播间 11258892（白绮）开�
   - `uiautomator dump` 里 emoji 是 XML 实体（`&#128516;`），按文本匹配 chip 会扑空——用坐标点或匹配纯文本部分。
   - 首启连环权限弹窗（精确闹钟/电池优化）挡导航：`adb shell cmd appops set <pkg> SCHEDULE_EXACT_ALARM allow` + `dumpsys deviceidle whitelist +<pkg>` 预授权。
   - 非 exported Activity 不能 `am start`（SecurityException），走主 Activity 然后 UI 点进去。
+  - **Baseline Profile 生成暂缓**（2026-08-14 尝试记录）：macrobenchmark/baselineprofile 模块已删。阻碍：① androidx.baselineprofile Gradle 插件 1.4.1 不认 AGP 9 内置 Kotlin 模块（报 not a supported android module）；② com.android.test 模块挂外部 KGP 撞内置 `kotlin` 扩展（AGENTS.md 顶部已警）；③ API 36 模拟器上 BaselineProfileRule 的 GrantPermissionRule 请求已移除的 WRITE_EXTERNAL_STORAGE 直接失败。以后要接：等 baselineprofile 插件支持 AGP 9，或手工在 src/main/baseline-prof.txt 写规则 + 引 profileinstaller。
 
 ## 架构：检测循环（读代码前先看这里）
 
