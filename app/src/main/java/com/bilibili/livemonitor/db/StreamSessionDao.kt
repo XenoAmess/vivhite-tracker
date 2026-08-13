@@ -42,4 +42,15 @@ interface StreamSessionDao {
 
     @Query("SELECT * FROM stream_title_changes WHERE session_id = :sessionId ORDER BY changed_at ASC")
     suspend fun titleChanges(sessionId: Long): List<StreamTitleChangeEntity>
+
+    @Insert
+    suspend fun insertPopularityPoint(point: PopularityPointEntity)
+
+    /** 某场次的人气采样点，按时间升序（曲线绘制用） */
+    @Query("SELECT * FROM popularity_points WHERE session_id = :sessionId ORDER BY ts ASC")
+    suspend fun popularityPoints(sessionId: Long): List<PopularityPointEntity>
+
+    /** 清空人气点（测试用） */
+    @Query("DELETE FROM popularity_points")
+    suspend fun deleteAllPopularityPoints()
 }

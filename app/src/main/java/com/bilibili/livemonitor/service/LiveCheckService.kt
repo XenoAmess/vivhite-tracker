@@ -308,7 +308,10 @@ class LiveCheckService : Service() {
         AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
 
         when (status) {
-            is BilibiliApi.LiveStatus.Live -> handleResult(true, status.liveStartTime, status.title)
+            is BilibiliApi.LiveStatus.Live -> {
+                handleResult(true, status.liveStartTime, status.title)
+                streamSessionTracker.recordPopularity(status.online)
+            }
             is BilibiliApi.LiveStatus.NotLive -> handleResult(false)
             is BilibiliApi.LiveStatus.Error -> {
                 // 错误不更新状态，由调用方决定是否重试

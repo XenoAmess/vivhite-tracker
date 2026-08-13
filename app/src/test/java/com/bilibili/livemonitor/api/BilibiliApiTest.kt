@@ -24,6 +24,21 @@ class BilibiliApiTest {
     }
 
     @Test
+    fun `parseApiResponse live 解析 online 缺字段为 null`() {
+        val json = """{"code":0,"data":{"room_id":11258892,"live_status":1,"online":1234}}"""
+        assertEquals(
+            BilibiliApi.LiveStatus.Live(online = 1234),
+            BilibiliApi.parseApiResponse(json)
+        )
+        // 缺 online 字段（网页兜底场景）→ null，不炸
+        val noOnline = """{"code":0,"data":{"room_id":11258892,"live_status":1}}"""
+        assertEquals(
+            BilibiliApi.LiveStatus.Live(online = null),
+            BilibiliApi.parseApiResponse(noOnline)
+        )
+    }
+
+    @Test
     fun `parseApiResponse live without live_start_time returns null field`() {
         // 兼容旧响应/异常响应：字段缺失或空白时 liveStartTime=null，不影响状态判定
         val noField = """{"code":0,"data":{"room_id":11258892,"live_status":1}}"""
@@ -151,6 +166,19 @@ class BilibiliApiTest {
     fun `parseFace 无data或坏JSON 返回null`() {
         assertNull(BilibiliApi.parseFace("""{"code":-404}"""))
         assertNull(BilibiliApi.parseFace("not json"))
+    }
+
+    @Test
+    fun `parseApiResponse 提取 online 在线人数`() {
+        val json = """{"code":0,"data":{"live_status":1,"live_start_time":"2026-08-12 20:00:00","title":"测试","online":1234}}"""
+        val status = BilibiliApi.parseApiResponse(json)
+        assertTrue(status is BilibiliApi.LiveStatus.Live)
+        assertEquals(1234, (status as BilibiliApi.LiveStatus.Live).online)
+        // 无 online 字段（网页兜底/老响应）→ null
+        val noOnline = BilibiliApi.parseApiResponse(
+            """{"code":0,"data":{"live_status":1,"live_start_time":"2026-08-12 20:00:00"}}"""
+        )
+        assertEquals(null, (noOnline as BilibiliApi.LiveStatus.Live).online)
     }
 
     @Test

@@ -9,7 +9,12 @@ import java.io.IOException
 open class BilibiliApi : LiveStatusChecker {
 
     sealed class LiveStatus {
-        data class Live(val liveStartTime: String? = null, val title: String? = null) : LiveStatus()
+        // online = 直播间在线人数（get_info 的 data.online，人气曲线数据源；网页兜底拿不到 → null）
+        data class Live(
+            val liveStartTime: String? = null,
+            val title: String? = null,
+            val online: Int? = null
+        ) : LiveStatus()
         object NotLive : LiveStatus()
         data class Error(val reason: String) : LiveStatus()
     }
@@ -181,10 +186,11 @@ open class BilibiliApi : LiveStatusChecker {
                 when (val liveStatus = data.optInt("live_status", -1)) {
                     1 -> {
                         // live_start_time 用于"观播静音绑定本场直播"：新一场开播时自动解除静音
-                        // title 用于直播中主题变化提醒
+                        // title 用于直播中主题变化提醒；online 用于人气曲线记录
                         LiveStatus.Live(
                             liveStartTime = data.optString("live_start_time").takeIf { it.isNotBlank() },
-                            title = parseRoomTitle(response)
+                            title = parseRoomTitle(response),
+                            online = if (data.has("online")) data.optInt("online") else null
                         )
                     }
                     0, 2 -> LiveStatus.NotLive

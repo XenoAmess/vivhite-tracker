@@ -2,6 +2,7 @@ package com.bilibili.livemonitor.service
 
 import android.content.Context
 import com.bilibili.livemonitor.db.AppDatabase
+import com.bilibili.livemonitor.db.PopularityPointEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import com.bilibili.livemonitor.db.StreamTitleChangeEntity
 import com.bilibili.livemonitor.util.AppLogger
@@ -140,6 +141,30 @@ class StreamSessionTracker(
 
     internal fun reconcileEndTs(openStartTs: Long, lastLiveObservedMs: Long): Long =
         if (lastLiveObservedMs >= openStartTs) lastLiveObservedMs else openStartTs
+
+    /**
+     * 人气采样（每次 Live 轮询调用）：online 为 null（网页兜底路径拿不到）或
+     * 无开放场次（进程死亡恢复中）时跳过，不产生孤儿点
+     */
+    fun recordPopularity(online: Int?) {
+        if (online == null) return
+        val dao = AppDatabase.get(context).streamSessionDao()
+        scope.launch {
+            try {
+                dao.findOpenSession()?.let { open ->
+                    dao.insertPopularityPoint(
+                        PopularityPointEntity(
+                            sessionId = open.id,
+                            ts = System.currentTimeMillis(),
+                            online = online
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                AppLogger.w(tag, "record popularity failed", e)
+            }
+        }
+    }
 
     private companion object {
         const val TITLE_CHANGE_MIN_LIVE_MS = 5 * 60_000L // 开播至少 5 分钟后的标题变化才提醒

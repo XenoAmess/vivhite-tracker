@@ -71,7 +71,9 @@ class StatsActivity : AppCompatActivity() {
             insets
         }
 
-        sessionAdapter = SessionAdapter(emptyList(), timeFormat)
+        sessionAdapter = SessionAdapter(emptyList(), timeFormat) { session ->
+            showPopularityDialog(session)
+        }
         binding.rvSessions.layoutManager = LinearLayoutManager(this)
         binding.rvSessions.adapter = sessionAdapter
 
@@ -287,6 +289,27 @@ class StatsActivity : AppCompatActivity() {
         sessionAdapter.update(sessions)
         loadTitleChanges(sessions)
         loadMoodEvents()
+    }
+
+    // 点场次行 → 人气曲线弹窗（60s 轮询采样，无数据时提示）
+    private fun showPopularityDialog(session: StreamSessionEntity) {
+        lifecycleScope.launch {
+            val points = AppDatabase.get(this@StatsActivity).streamSessionDao()
+                .popularityPoints(session.id)
+            if (points.size < 2) {
+                Toast.makeText(this@StatsActivity, "本场暂无人气数据", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val view = LayoutInflater.from(this@StatsActivity)
+                .inflate(R.layout.dialog_popularity_chart, null)
+            view.findViewById<com.bilibili.livemonitor.views.PopularityChartView>(R.id.popularityChart)
+                .setData(points.map { it.ts to it.online })
+            AlertDialog.Builder(this@StatsActivity)
+                .setTitle("本场人气曲线")
+                .setView(view)
+                .setPositiveButton("关闭", null)
+                .show()
+        }
     }
 
     // 当日心情事件（按日归属：[selectedDayStart, +1天)）
@@ -800,7 +823,8 @@ class StatsActivity : AppCompatActivity() {
 
     private class SessionAdapter(
         private var sessions: List<StreamSessionEntity>,
-        private val timeFormat: SimpleDateFormat
+        private val timeFormat: SimpleDateFormat,
+        private val onClick: (StreamSessionEntity) -> Unit
     ) : RecyclerView.Adapter<SessionAdapter.Holder>() {
 
         class Holder(view: View) : RecyclerView.ViewHolder(view) {
@@ -835,6 +859,7 @@ class StatsActivity : AppCompatActivity() {
                 "进行中…"
             }
             holder.tvTitle.text = s.title ?: "（无标题）"
+            holder.itemView.setOnClickListener { onClick(s) }
         }
     }
 }

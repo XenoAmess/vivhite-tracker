@@ -314,6 +314,36 @@ class StatsActivityTest {
     // ---------- 备份导入 ----------
 
     @Test
+    fun `点场次行 有人气数据弹曲线对话框`() = runBlocking {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        val now = System.currentTimeMillis()
+        val sid = dao.insertSession(
+            StreamSessionEntity(startTs = now - 3_600_000, endTs = now - 600_000, title = "测试直播")
+        )
+        dao.insertPopularityPoint(
+            com.bilibili.livemonitor.db.PopularityPointEntity(sessionId = sid, ts = now - 3_000_000, online = 50)
+        )
+        dao.insertPopularityPoint(
+            com.bilibili.livemonitor.db.PopularityPointEntity(sessionId = sid, ts = now - 2_000_000, online = 80)
+        )
+        dao.insertPopularityPoint(
+            com.bilibili.livemonitor.db.PopularityPointEntity(sessionId = sid, ts = now - 1_000_000, online = 65)
+        )
+
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("session list") {
+            activity.findViewById<RecyclerView>(R.id.rvSessions).adapter!!.itemCount == 1
+        }
+        val rv = activity.findViewById<RecyclerView>(R.id.rvSessions)
+        rv.findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+        waitFor("popularity dialog") {
+            org.robolectric.shadows.ShadowDialog.getLatestDialog() != null
+        }
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertNotNull(dialog.findViewById(R.id.popularityChart))
+    }
+
+    @Test
     fun `选中魔法期日 提示含第几天`() = runBlocking {
         // 今天起 3 天魔法期
         val start = todayStart()

@@ -100,4 +100,17 @@ class StreamSessionDaoTest {
         assertEquals(listOf("b1", "b2"), changesA.map { it.newTitle })
         assertEquals(listOf("b场"), dao.titleChanges(b).map { it.newTitle })
     }
+
+    @Test
+    fun `人气点按 session 隔离且时间升序`() = runBlocking {
+        val a = dao.insertSession(StreamSessionEntity(startTs = 1000))
+        val b = dao.insertSession(StreamSessionEntity(startTs = 2000))
+        dao.insertPopularityPoint(PopularityPointEntity(sessionId = a, ts = 1200, online = 80))
+        dao.insertPopularityPoint(PopularityPointEntity(sessionId = a, ts = 1100, online = 50))
+        dao.insertPopularityPoint(PopularityPointEntity(sessionId = b, ts = 2100, online = 200))
+        assertEquals(listOf(50, 80), dao.popularityPoints(a).map { it.online })
+        assertEquals(listOf(200), dao.popularityPoints(b).map { it.online })
+        dao.deleteAllPopularityPoints()
+        assertEquals(0, dao.popularityPoints(a).size)
+    }
 }

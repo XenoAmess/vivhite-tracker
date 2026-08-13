@@ -42,7 +42,10 @@ class StreamSessionTrackerTest {
             onStreamEnd = { streamEndDuration = it },
             onTitleChange = {}
         )
-        runBlocking { AppDatabase.get(context).streamSessionDao().deleteAll() }
+        runBlocking {
+            AppDatabase.get(context).streamSessionDao().deleteAll()
+            AppDatabase.get(context).streamSessionDao().deleteAllPopularityPoints()
+        }
     }
 
     @After
@@ -222,5 +225,28 @@ class StreamSessionTrackerTest {
         }
         assertEquals(0, sessions.size)
         assertNull(streamEndDuration)
+    }
+
+    @Test
+    fun `recordPopularity 挂到开放场次 无开放场次或null不记`() {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        // 无开放场次 → 不记
+        tracker.recordPopularity(100)
+        Thread.sleep(300)
+        assertEquals(0, runBlocking { dao.popularityPoints(1).size })
+
+        // 有开放场次 → 记录
+        runBlocking { dao.insertSession(StreamSessionEntity(startTs = 1000)) }
+        val openId = runBlocking { dao.findOpenSession()!!.id }
+        tracker.recordPopularity(null) // null 不记
+        tracker.recordPopularity(100)
+        tracker.recordPopularity(120)
+        waitFor("2 points") {
+            runBlocking { dao.popularityPoints(openId).size == 2 }
+        }
+        assertEquals(
+            listOf(100, 120),
+            runBlocking { dao.popularityPoints(openId).map { it.online } }
+        )
     }
 }
