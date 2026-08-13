@@ -686,7 +686,8 @@ class StatsActivity : AppCompatActivity() {
     }
 
     // 备份导出：场次 + 心情混合 CSV（格式见 domain/SessionBackup），走 FileProvider 分享
-    private fun exportSessions() {
+    // internal：instrumented 测试直接调，绕开分享面板验证文件内容
+    internal fun exportSessions() {
         lifecycleScope.launch {
             val moods = AppDatabase.get(this@StatsActivity).moodEventDao().all()
             if (loadedSessions.isEmpty() && moods.isEmpty()) {
