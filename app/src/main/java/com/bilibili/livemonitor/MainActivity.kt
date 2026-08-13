@@ -326,6 +326,13 @@ class MainActivity : AppCompatActivity() {
                 onExpand = { view -> bindCheckIntervalSection(view) }
             ),
             SettingsEntry(
+                title = "自动备份",
+                subtitle = computeBackupSubtitle(),
+                iconRes = android.R.drawable.ic_menu_save,
+                expandLayoutRes = R.layout.expand_section_backup,
+                onExpand = { view -> bindBackupSection(view) }
+            ),
+            SettingsEntry(
                 title = "直播提醒",
                 subtitle = "下播 / 标题变化",
                 iconRes = android.R.drawable.ic_lock_idle_lock,
@@ -589,6 +596,62 @@ class MainActivity : AppCompatActivity() {
                 startService(Intent(this, com.bilibili.livemonitor.service.LiveCheckService::class.java))
             }
         }
+    }
+
+    // SAF 选目录 → 长期权限 → 存 prefs（自动备份用）
+    private val backupDirLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        contentResolver.takePersistableUriPermission(
+            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        preferenceManager.setBackupTreeUri(uri.toString())
+        refreshBackupStatusText()
+    }
+
+    private var backupStatusView: android.widget.TextView? = null
+
+    private fun computeBackupSubtitle(): String =
+        if (preferenceManager.isAutoBackupEnabled()) "每周自动备份：开" else "每周自动备份：关"
+
+    private fun refreshBackupStatusText() {
+        val dir = preferenceManager.getBackupTreeUri()
+        val last = preferenceManager.getLastBackupTime()
+        backupStatusView?.text = buildString {
+            append(
+                if (dir.isBlank()) {
+                    "未选择目录"
+                } else {
+                    "目录：${android.net.Uri.parse(dir).lastPathSegment ?: dir}"
+                }
+            )
+            if (last > 0) {
+                append("\n上次备份：" + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(last)))
+            }
+        }
+    }
+
+    private fun bindBackupSection(view: android.view.View) {
+        backupStatusView = view.findViewById(R.id.tvBackupStatus)
+        refreshBackupStatusText()
+        val switch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
+            R.id.switchAutoBackup
+        )
+        switch.isChecked = preferenceManager.isAutoBackupEnabled()
+        switch.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.setAutoBackupEnabled(isChecked)
+            if (isChecked) {
+                if (preferenceManager.getBackupTreeUri().isBlank()) {
+                    Toast.makeText(this, "请先选择备份目录", Toast.LENGTH_SHORT).show()
+                }
+                com.bilibili.livemonitor.worker.BackupWorker.schedule(this)
+            } else {
+                com.bilibili.livemonitor.worker.BackupWorker.cancel(this)
+            }
+        }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickBackupDir)
+            .setOnClickListener { backupDirLauncher.launch(null) }
     }
 
     private fun bindAppearanceSection(view: android.view.View) {

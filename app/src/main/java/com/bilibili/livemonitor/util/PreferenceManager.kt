@@ -110,6 +110,25 @@ class PreferenceManager(context: Context) {
         return prefs.getInt(KEY_CHECK_INTERVAL_SECONDS, CHECK_INTERVAL_STANDARD_SECONDS)
     }
 
+    // 自动备份：开关 + SAF 树目录 uri + 上次备份时间
+    fun setAutoBackupEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_BACKUP_ENABLED, enabled).apply()
+    }
+
+    fun isAutoBackupEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_BACKUP_ENABLED, false)
+
+    fun setBackupTreeUri(uri: String) {
+        prefs.edit().putString(KEY_BACKUP_TREE_URI, uri).apply()
+    }
+
+    fun getBackupTreeUri(): String = prefs.getString(KEY_BACKUP_TREE_URI, "") ?: ""
+
+    fun setLastBackupTime(timeMillis: Long) {
+        prefs.edit().putLong(KEY_LAST_BACKUP_TIME, timeMillis).apply()
+    }
+
+    fun getLastBackupTime(): Long = prefs.getLong(KEY_LAST_BACKUP_TIME, 0L)
+
     // 观播静音绑定的本场直播 live_start_time；与当前不一致 = 新一场 = 自动解除静音
     // 空串 = 老标记（无绑定信息），不参与新会话比对
     fun setSuppressedLiveStart(startTime: String) {
@@ -406,6 +425,9 @@ class PreferenceManager(context: Context) {
         private const val KEY_LAST_LIVE_START_TIME = "last_live_start_time"
         private const val KEY_LAST_LIVE_OBSERVED_TIME = "last_live_observed_time"
         private const val KEY_CHECK_INTERVAL_SECONDS = "check_interval_seconds"
+        private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
+        private const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
+        private const val KEY_LAST_BACKUP_TIME = "last_backup_time"
 
         // 检测频率档位（秒）
         const val CHECK_INTERVAL_ECO_SECONDS = 300

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp"
+    android:paddingBottom="8dp">
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchAutoBackup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="每周自动备份（场次 + 心情 CSV）" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnPickBackupDir"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="选择备份目录"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/tvBackupStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:textSize="12sp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:text="未选择目录" />
+
+</LinearLayout>
