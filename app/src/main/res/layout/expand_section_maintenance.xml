@@ -14,7 +14,7 @@
         android:paddingBottom="8dp"
         android:text="国产 ROM 后台保活：需在系统设置中关闭电池优化并允许自启动"
         android:textSize="12sp"
-        android:textColor="@android:color/darker_gray" />
+        android:textColor="?android:attr/textColorSecondary" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnOpenBackgroundSettings"

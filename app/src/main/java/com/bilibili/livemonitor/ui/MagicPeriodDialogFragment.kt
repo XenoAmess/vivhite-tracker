@@ -8,6 +8,7 @@ import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.DialogFragment
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.domain.MagicPeriod
@@ -159,7 +160,10 @@ class MagicPeriodDialogFragment : DialogFragment() {
                         background = markedBackground(prev, next)
                         setTextColor(0xFFFFFFFF.toInt())
                     } else {
-                        setTextColor(0xFF1A1A1A.toInt())
+                        // 深色模式自适应（替代硬编码 #1A1A1A）
+                        val tv = android.util.TypedValue()
+                        requireContext().theme.resolveAttribute(android.R.attr.textColorPrimary, tv, true)
+                        setTextColor(ContextCompat.getColor(requireContext(), tv.resourceId))
                     }
                     setOnClickListener {
                         if (!marked) {

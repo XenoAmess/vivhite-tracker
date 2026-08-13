@@ -59,6 +59,23 @@ class StatsActivityTest {
     }
 
     @Test
+    fun `日历格文字色跟主题主色 深色模式不自爆`() {
+        // 深色适配回归：日历格文字曾硬编码 #1A1A1A（深色背景下黑字黑底）。
+        // 现在必须等于主题解析的 textColorPrimary
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("calendar rendered") {
+            activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid).childCount > 7
+        }
+        val grid = activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid)
+        val dayCell = (0 until grid.childCount).map { grid.getChildAt(it) as TextView }
+            .first { it.text.toString() == "15" }
+        val tv = android.util.TypedValue()
+        activity.theme.resolveAttribute(android.R.attr.textColorPrimary, tv, true)
+        val expect = androidx.core.content.ContextCompat.getColor(activity, tv.resourceId)
+        assertEquals(expect, dayCell.currentTextColor)
+    }
+
+    @Test
     fun `有场次时统计与列表渲染`() = runBlocking {
         val dao = AppDatabase.get(context).streamSessionDao()
         val now = System.currentTimeMillis()

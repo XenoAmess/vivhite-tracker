@@ -95,7 +95,7 @@
             android:text="直播间: 11258892"
             android:textSize="15sp"
             android:textAlignment="textStart"
-            android:textColor="@android:color/darker_gray"
+            android:textColor="?android:attr/textColorSecondary"
             app:layout_constraintBottom_toBottomOf="@id/cvStatus"
             app:layout_constraintStart_toEndOf="@id/cvStatus"
             app:layout_constraintTop_toBottomOf="@id/tvStatus" />
@@ -109,7 +109,7 @@
             android:text="上次检测: 暂无记录"
             android:textSize="14sp"
             android:textAlignment="textStart"
-            android:textColor="@android:color/darker_gray"
+            android:textColor="?android:attr/textColorSecondary"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/cvStatus" />
@@ -303,7 +303,7 @@
             android:layout_marginTop="14dp"
             android:gravity="center"
             android:text="• 每分钟检查直播状态 • 开播响铃+震动+屏幕提醒\n• 后台运行需关闭电池优化 • 通知栏显示直播状态"
-            android:textColor="@android:color/darker_gray"
+            android:textColor="?android:attr/textColorSecondary"
             android:textSize="13sp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
@@ -317,7 +317,7 @@
             android:gravity="center"
             android:textSize="12sp"
             android:textStyle="italic"
-            android:textColor="@android:color/darker_gray"
+            android:textColor="?android:attr/textColorSecondary"
             app:layout_constraintBottom_toTopOf="@id/versionRow"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
@@ -345,7 +345,7 @@
                 android:focusable="true"
                 android:padding="6dp"
                 android:textSize="12sp"
-                android:textColor="@android:color/darker_gray"
+                android:textColor="?android:attr/textColorSecondary"
                 tools:text="v1.0.61 (a1b2c3d4)" />
 
             <com.google.android.material.button.MaterialButton

@@ -126,7 +126,7 @@
             android:layout_height="wrap_content"
             android:text="开始"
             android:textSize="12sp"
-            android:textColor="@android:color/darker_gray" />
+            android:textColor="?android:attr/textColorSecondary" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -161,7 +161,7 @@
             android:layout_marginTop="6dp"
             android:text="时长（天）"
             android:textSize="12sp"
-            android:textColor="@android:color/darker_gray" />
+            android:textColor="?android:attr/textColorSecondary" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -213,7 +213,7 @@
             android:layout_marginTop="6dp"
             android:text="结束"
             android:textSize="12sp"
-            android:textColor="@android:color/darker_gray" />
+            android:textColor="?android:attr/textColorSecondary" />
 
         <LinearLayout
             android:layout_width="match_parent"

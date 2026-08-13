@@ -160,6 +160,13 @@ class StatsActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    // 主题主文字色（深色模式自适应；替代硬编码 #1A1A1A）
+    private fun primaryTextColor(): Int {
+        val tv = android.util.TypedValue()
+        theme.resolveAttribute(android.R.attr.textColorPrimary, tv, true)
+        return ContextCompat.getColor(this, tv.resourceId)
+    }
+
     private fun renderCalendar() {
         binding.tvMonthTitle.text = monthTitleFormat.format(cal.time)
         binding.calendarGrid.removeAllViews()
@@ -242,7 +249,14 @@ class StatsActivity : AppCompatActivity() {
             }
         }
         tv.background = bg
-        tv.setTextColor(if (selected) android.graphics.Color.WHITE else 0xFF1A1A1A.toInt())
+        // 深色模式：默认文字跟主题主色（粉底魔法期格例外——浅底必须深字）
+        tv.setTextColor(
+            when {
+                selected -> android.graphics.Color.WHITE
+                hasMagic && !hasSession -> 0xFF1A1A1A.toInt()
+                else -> primaryTextColor()
+            }
+        )
         tv.typeface = android.graphics.Typeface.DEFAULT_BOLD
         if (hasSession && !selected) {
             tv.setCompoundDrawablesWithIntrinsicBounds(

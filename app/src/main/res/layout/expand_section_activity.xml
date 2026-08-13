@@ -92,6 +92,6 @@
         android:paddingBottom="8dp"
         android:text="（开播始终响铃，不受此控制）"
         android:textSize="11sp"
-        android:textColor="@android:color/darker_gray" />
+        android:textColor="?android:attr/textColorSecondary" />
 
 </LinearLayout>

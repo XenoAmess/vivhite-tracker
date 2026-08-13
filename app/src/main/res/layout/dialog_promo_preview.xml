@@ -31,7 +31,7 @@
         android:paddingBottom="6dp"
         android:text="选择风格（53 种）"
         android:textSize="12sp"
-        android:textColor="@android:color/darker_gray" />
+        android:textColor="?android:attr/textColorSecondary" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvPromoStyles"
