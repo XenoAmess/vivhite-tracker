@@ -1524,4 +1524,18 @@ class LiveCheckServiceTest {
             com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao().deleteAll()
         }
     }
+
+    @Test
+    fun `S13 每次检测写健康度环形记录`() {
+        prefs.setServiceRunning(true)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.NotLive)
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        controller.startCommand(0, 1)
+        driveCheckUntil(controller, "health record written") {
+            prefs.getCheckRecords().isNotEmpty()
+        }
+        val record = prefs.getCheckRecords().last()
+        assertTrue(record.success)
+        assertFalse(record.isLive)
+    }
 }

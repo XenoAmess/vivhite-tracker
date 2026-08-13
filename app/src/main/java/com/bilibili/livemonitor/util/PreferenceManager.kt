@@ -136,6 +136,42 @@ class PreferenceManager(context: Context) {
 
     fun getLastPosterMonth(): String = prefs.getString(KEY_LAST_POSTER_MONTH, "") ?: ""
 
+    // 监控健康度：检测记录环形缓冲（JSON，最近 500 条）
+    @Synchronized
+    fun appendCheckRecord(ts: Long, success: Boolean, isLive: Boolean, reason: String) {
+        val arr = getCheckRecordsJson()
+        arr.put(org.json.JSONObject().apply {
+            put("ts", ts)
+            put("ok", success)
+            put("live", isLive)
+            put("r", reason)
+        })
+        while (arr.length() > CHECK_RECORDS_CAP) arr.remove(0)
+        prefs.edit().putString(KEY_CHECK_RECORDS, arr.toString()).apply()
+    }
+
+    fun getCheckRecordsJson(): org.json.JSONArray {
+        return try {
+            org.json.JSONArray(prefs.getString(KEY_CHECK_RECORDS, "[]") ?: "[]")
+        } catch (e: Exception) {
+            org.json.JSONArray()
+        }
+    }
+
+    /** 环形 JSON → 结构列表（domain MonitorHealth 的 CheckRecord） */
+    fun getCheckRecords(): List<com.bilibili.livemonitor.domain.MonitorHealth.CheckRecord> {
+        val arr = getCheckRecordsJson()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            com.bilibili.livemonitor.domain.MonitorHealth.CheckRecord(
+                ts = o.optLong("ts"),
+                success = o.optBoolean("ok"),
+                isLive = o.optBoolean("live"),
+                reason = o.optString("r")
+            )
+        }
+    }
+
     // 观播静音绑定的本场直播 live_start_time；与当前不一致 = 新一场 = 自动解除静音
     // 空串 = 老标记（无绑定信息），不参与新会话比对
     fun setSuppressedLiveStart(startTime: String) {
@@ -436,6 +472,8 @@ class PreferenceManager(context: Context) {
         private const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
         private const val KEY_LAST_BACKUP_TIME = "last_backup_time"
         private const val KEY_LAST_POSTER_MONTH = "last_poster_month"
+        private const val KEY_CHECK_RECORDS = "check_records"
+        private const val CHECK_RECORDS_CAP = 500
 
         // 检测频率档位（秒）
         const val CHECK_INTERVAL_ECO_SECONDS = 300

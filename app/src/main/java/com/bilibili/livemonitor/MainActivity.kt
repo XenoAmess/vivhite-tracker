@@ -333,6 +333,13 @@ class MainActivity : AppCompatActivity() {
                 onExpand = { view -> bindBackupSection(view) }
             ),
             SettingsEntry(
+                title = "监控健康度",
+                subtitle = "近 24h 检测成功率 / 实际间隔",
+                iconRes = android.R.drawable.ic_menu_info_details,
+                expandLayoutRes = R.layout.expand_section_health,
+                onExpand = { view -> bindHealthSection(view) }
+            ),
+            SettingsEntry(
                 title = "直播提醒",
                 subtitle = "下播 / 标题变化",
                 iconRes = android.R.drawable.ic_lock_idle_lock,
@@ -596,6 +603,40 @@ class MainActivity : AppCompatActivity() {
                 startService(Intent(this, com.bilibili.livemonitor.service.LiveCheckService::class.java))
             }
         }
+    }
+
+    // 监控健康度：近 24h 汇总（记录由 LiveCheckService 每次检测写 prefs 环形缓冲）
+    private fun bindHealthSection(view: android.view.View) {
+        val tv = view.findViewById<android.widget.TextView>(R.id.tvHealthSummary)
+        val records = preferenceManager.getCheckRecords()
+        val s = com.bilibili.livemonitor.domain.MonitorHealth.summarize(
+            records, System.currentTimeMillis()
+        )
+        if (s.totalChecks == 0) {
+            tv.text = "暂无检测记录"
+            return
+        }
+        val expectedMs = preferenceManager.getCheckIntervalSeconds() * 1000L
+        tv.text = buildString {
+            append("近 24h 检测 ${s.totalChecks} 次 · 成功 ${s.successChecks} 次")
+            append("（成功率 ${if (s.totalChecks > 0) s.successChecks * 100 / s.totalChecks else 0}%）\n")
+            append("直播中检出 ${s.liveChecks} 次\n")
+            if (s.avgIntervalMs > 0) {
+                append(
+                    "实际平均间隔 ${s.avgIntervalMs / 1000}s（期望 ${expectedMs / 1000}s" +
+                        if (s.avgIntervalMs > expectedMs * 2) "，被系统限流" else "）\n"
+                )
+            }
+            s.lastCheckTs?.let {
+                append(
+                    "最近检测：" + java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                        .format(java.util.Date(it)) + "\n"
+                )
+            }
+            if (s.topReasons.isNotEmpty()) {
+                append("失败原因：" + s.topReasons.joinToString("；") { "${it.first}×${it.second}" })
+            }
+        }.trim()
     }
 
     // SAF 选目录 → 长期权限 → 存 prefs（自动备份用）

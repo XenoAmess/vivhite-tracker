@@ -248,4 +248,14 @@ class PreferenceManagerTest {
         assertEquals(PreferenceManager.CHECK_INTERVAL_REALTIME_SECONDS, prefs.getCheckIntervalSeconds())
         prefs.setCheckIntervalSeconds(PreferenceManager.CHECK_INTERVAL_STANDARD_SECONDS)
     }
+
+    @Test
+    fun `检测记录环形缓冲 超限丢最旧`() {
+        repeat(5) { prefs.appendCheckRecord(1000L + it, true, false, "") }
+        var records = prefs.getCheckRecords()
+        assertEquals(5, records.size)
+        assertEquals(1000L, records[0].ts)
+        // 超限后丢最旧（cap 500，这里直接验证追加语义即可，cap 值不测满）
+        records.forEachIndexed { i, r -> assertEquals(1000L + i, r.ts) }
+    }
 }

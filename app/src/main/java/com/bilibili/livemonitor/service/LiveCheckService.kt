@@ -307,6 +307,19 @@ class LiveCheckService : Service() {
 
         AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
 
+        // 监控健康度：每次检测写环形记录（近 24h 自查页数据源）
+        when (status) {
+            is BilibiliApi.LiveStatus.Live -> preferenceManager.appendCheckRecord(
+                System.currentTimeMillis(), true, true, ""
+            )
+            is BilibiliApi.LiveStatus.NotLive -> preferenceManager.appendCheckRecord(
+                System.currentTimeMillis(), true, false, ""
+            )
+            is BilibiliApi.LiveStatus.Error -> preferenceManager.appendCheckRecord(
+                System.currentTimeMillis(), false, lastLiveStatus, status.reason.take(40)
+            )
+        }
+
         when (status) {
             is BilibiliApi.LiveStatus.Live -> {
                 handleResult(true, status.liveStartTime, status.title)
