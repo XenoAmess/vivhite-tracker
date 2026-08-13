@@ -12,6 +12,10 @@ import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.util.BilibiliDeepLinks
 import com.bilibili.livemonitor.util.BiliTargets
 import com.bilibili.livemonitor.util.PreferenceManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * 桌面小组件：一眼看白绮开播状态 + 一键进直播间。
@@ -26,6 +30,9 @@ class LiveStatusWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+
+        // 附加行（今日已播/上次开播）异步 DB 查询用
+        private val widgetScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
         /** Widget 渲染内容（纯数据，可单测） */
         internal data class WidgetContent(
@@ -101,6 +108,37 @@ class LiveStatusWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.btnWidgetOpen, openLive)
 
             manager.updateAppWidget(id, views)
+
+            // 附加行（今日已播/上次开播）依赖 DB，异步查询后二次刷新；
+            // 失败只丢该行，主状态已更新
+            widgetScope.launch {
+                try {
+                    val sessions = com.bilibili.livemonitor.db.AppDatabase.get(context)
+                        .streamSessionDao().recentSessions(50)
+                    val extra = com.bilibili.livemonitor.domain.WidgetExtraDecider
+                        .extraLine(sessions, System.currentTimeMillis())
+                    val v2 = RemoteViews(context.packageName, R.layout.widget_live_status)
+                    v2.setImageViewResource(R.id.ivWidgetIcon, content.iconRes)
+                    v2.setTextViewText(R.id.tvWidgetStatus, content.statusText)
+                    if (content.showLiveTitle) {
+                        v2.setTextViewText(R.id.tvWidgetLiveTitle, content.liveTitle)
+                        v2.setViewVisibility(R.id.tvWidgetLiveTitle, android.view.View.VISIBLE)
+                    } else {
+                        v2.setViewVisibility(R.id.tvWidgetLiveTitle, android.view.View.GONE)
+                    }
+                    if (extra != null) {
+                        v2.setTextViewText(R.id.tvWidgetExtra, extra)
+                        v2.setViewVisibility(R.id.tvWidgetExtra, android.view.View.VISIBLE)
+                    } else {
+                        v2.setViewVisibility(R.id.tvWidgetExtra, android.view.View.GONE)
+                    }
+                    v2.setOnClickPendingIntent(R.id.widgetRoot, openApp)
+                    v2.setOnClickPendingIntent(R.id.btnWidgetOpen, openLive)
+                    manager.updateAppWidget(id, v2)
+                } catch (e: Exception) {
+                    // 静默
+                }
+            }
         }
     }
 }

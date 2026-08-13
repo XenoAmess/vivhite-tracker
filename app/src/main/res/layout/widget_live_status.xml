@@ -52,6 +52,17 @@
             android:maxLines="1"
             android:ellipsize="end"
             android:textColor="@color/widget_text" />
+
+        <TextView
+            android:id="@+id/tvWidgetExtra"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:text=""
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/widget_text" />
     </LinearLayout>
 
     <Button
