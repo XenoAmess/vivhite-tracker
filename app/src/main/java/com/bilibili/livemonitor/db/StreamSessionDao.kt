@@ -95,4 +95,8 @@ interface StreamSessionDao {
     /** 全部主题变化的新标题（词云数据源） */
     @Query("SELECT new_title FROM stream_title_changes WHERE new_title IS NOT NULL AND new_title != ''")
     suspend fun allChangeTitles(): List<String>
+
+    /** 某时间区间的场次（日历按月加载用），按开始时间升序 */
+    @Query("SELECT * FROM stream_sessions WHERE start_ts >= :from AND start_ts < :to ORDER BY start_ts ASC")
+    suspend fun sessionsBetween(from: Long, to: Long): List<StreamSessionEntity>
 }

@@ -85,6 +85,10 @@ class StatsActivityTest {
         waitFor("summary") {
             activity.findViewById<TextView>(R.id.tvStatsSummary).text.toString().contains("本周 1 场")
         }
+        // 列表更新在同一协程里排 summary 之后（且现在有月度 DB 查询）——等列表本身
+        waitFor("session in list") {
+            activity.findViewById<RecyclerView>(R.id.rvSessions).adapter!!.itemCount == 1
+        }
         val text = activity.findViewById<TextView>(R.id.tvStatsSummary).text.toString()
         assertTrue(text, text.contains("本周 1 场"))
         val rv = activity.findViewById<RecyclerView>(R.id.rvSessions)
@@ -618,6 +622,45 @@ class StatsActivityTest {
         val expect = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
             .format(java.util.Date(todayStart()))
         assertEquals("日期：$expect", btnDate.text.toString())
+        Unit
+    }
+
+    @Test
+    fun `日历按月加载 超 200 场的老月份仍可见`() = runBlocking {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        // 本月塞 210 场（顶爆 recent(200) 窗口）
+        val dayStart = todayStart()
+        repeat(210) { i ->
+            dao.insertSession(
+                StreamSessionEntity(
+                    startTs = dayStart + i * 60_000L, endTs = dayStart + i * 60_000L + 60_000L,
+                    title = "本月第 $i 场"
+                )
+            )
+        }
+        // 上月有一场（200 窗口外）
+        val lastMonth = java.util.Calendar.getInstance().apply {
+            timeInMillis = dayStart; add(java.util.Calendar.MONTH, -1)
+        }
+        val oldStart = lastMonth.timeInMillis + 10 * 3_600_000L
+        dao.insertSession(
+            StreamSessionEntity(startTs = oldStart, endTs = oldStart + 3_600_000, title = "上月场")
+        )
+
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("calendar rendered") {
+            activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid).childCount > 7
+        }
+        // 翻回上月
+        activity.findViewById<android.view.View>(R.id.btnPrevMonth).performClick()
+        waitFor("last month loaded") {
+            val hint = activity.findViewById<TextView>(R.id.tvSelectedDayHint).text.toString()
+            hint.contains("1 场直播")
+        }
+        assertTrue(
+            activity.findViewById<TextView>(R.id.tvSelectedDayHint).text.toString()
+                .contains("1 场直播")
+        )
         Unit
     }
 }

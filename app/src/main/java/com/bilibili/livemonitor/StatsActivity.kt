@@ -87,8 +87,8 @@ class StatsActivity : AppCompatActivity() {
         binding.btnAddMoodEvent.setOnClickListener { showMoodEventDialog(null) }
         binding.btnAddManualSession.setOnClickListener { showManualSessionDialog() }
 
-        binding.btnPrevMonth.setOnClickListener { cal.add(Calendar.MONTH, -1); renderCalendar() }
-        binding.btnNextMonth.setOnClickListener { cal.add(Calendar.MONTH, 1); renderCalendar() }
+        binding.btnPrevMonth.setOnClickListener { cal.add(Calendar.MONTH, -1); loadMonthAndRender() }
+        binding.btnNextMonth.setOnClickListener { cal.add(Calendar.MONTH, 1); loadMonthAndRender() }
         binding.btnExportStats.setOnClickListener { exportSessions() }
         binding.btnImportStats.setOnClickListener { importLauncher.launch("*/*") }
         binding.btnExportImage.setOnClickListener { exportStatsImage() }
@@ -141,20 +141,58 @@ class StatsActivity : AppCompatActivity() {
             binding.weekBars.setData(daily, labels)
 
             sessionsByDay.clear()
-            recent.forEach { s ->
-                val day = dayStart(s.startTs)
-                sessionsByDay.getOrPut(day) { mutableListOf() }.add(s)
-            }
-            // 同日场次按时间正序（recentSessions 是倒序，直接 add 会成晚→早，
-            // 与心情列表的早→晚方向打架）：手账阅读体验统一为升序
-            sessionsByDay.values.forEach { list -> list.sortBy { it.startTs } }
+            // 日历按月从 DB 加载（不再依赖 recent(200) 内存过滤——
+            // 否则超 200 场后老月份从日历上消失）
+            val today = dayStart(now)
+            cal.timeInMillis = today
+            loadMonthIntoMap(cal)
             // 完全没有场次时显示首次使用引导
             binding.tvEmptyGuide.visibility = if (recent.isEmpty()) View.VISIBLE else View.GONE
-            // 默认选中：今天；今天无场次则最近一场所在的日期
-            val today = dayStart(now)
+            // 默认选中：今天；今天无场次则本月最近一场所在的日期
             selectedDayStart = if (sessionsByDay.containsKey(today)) today
                 else (sessionsByDay.keys.maxOrNull() ?: today)
-            cal.timeInMillis = selectedDayStart
+            renderCalendar()
+        }
+    }
+
+    /** 把 target 月的场次从 DB 装进 sessionsByDay（清掉该月旧数据再装） */
+    private suspend fun loadMonthIntoMap(target: Calendar) {
+        val monthStart = (target.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+        val list = AppDatabase.get(this).streamSessionDao()
+            .sessionsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+        sessionsByDay.keys.removeAll {
+            it >= monthStart.timeInMillis && it < monthEnd.timeInMillis
+        }
+        // sessionsBetween 已 ASC 升序（同日场次天然时间正序）
+        list.forEach { s ->
+            sessionsByDay.getOrPut(dayStart(s.startTs)) { mutableListOf() }.add(s)
+        }
+    }
+
+    // 翻月：异步装该月数据再渲染；选中日落进当前显示月
+    private fun loadMonthAndRender() {
+        lifecycleScope.launch {
+            loadMonthIntoMap(cal)
+            val monthStart = (cal.clone() as Calendar).apply {
+                set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val monthEnd = (Calendar.getInstance().apply {
+                timeInMillis = monthStart; add(Calendar.MONTH, 1)
+            }).timeInMillis
+            if (selectedDayStart < monthStart || selectedDayStart >= monthEnd) {
+                val today = dayStart(System.currentTimeMillis())
+                selectedDayStart = when {
+                    today in monthStart until monthEnd -> today
+                    // 只在本月范围内挑最近一场（全表 maxOrNull 会跳出当前月）
+                    else -> sessionsByDay.keys.filter { it >= monthStart && it < monthEnd }
+                        .maxOrNull() ?: monthStart
+                }
+            }
             renderCalendar()
         }
     }
