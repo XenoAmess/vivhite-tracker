@@ -199,17 +199,33 @@
             android:paddingStart="8dp"
             android:paddingEnd="8dp" />
 
-        <TextView
-            android:id="@+id/tvSelectedDayHint"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:paddingStart="16dp"
-            android:paddingEnd="16dp"
+            android:paddingEnd="12dp"
             android:paddingTop="6dp"
-            android:paddingBottom="6dp"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary"
-            android:text="点选日期查看当天场次" />
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/tvSelectedDayHint"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:text="点选日期查看当天场次" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddManualSession"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="＋ 补记"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <View
             android:layout_width="match_parent"

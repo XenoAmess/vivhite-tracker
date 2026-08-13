@@ -450,7 +450,8 @@ class StatsActivityTest {
     @Test
     fun `场次行带封面时显示缩略图 无封面隐藏`() = runBlocking {
         val dao = AppDatabase.get(context).streamSessionDao()
-        val now = System.currentTimeMillis()
+        // 锚定今天（now 相对时间在跨午夜时会落到昨天，两个场次分到两天）
+        val dayStart = todayStart()
         // 写一个真 PNG 当封面
         val cover = java.io.File(context.filesDir, "covers/test_cover.png")
         cover.parentFile?.mkdirs()
@@ -460,12 +461,12 @@ class StatsActivityTest {
 
         dao.insertSession(
             StreamSessionEntity(
-                startTs = now - 3_600_000, endTs = now - 600_000,
+                startTs = dayStart + 14 * 3_600_000, endTs = dayStart + 15 * 3_600_000,
                 title = "有封面", coverPath = cover.absolutePath
             )
         )
         dao.insertSession(
-            StreamSessionEntity(startTs = now - 7_200_000, endTs = now - 5_400_000, title = "无封面")
+            StreamSessionEntity(startTs = dayStart + 9 * 3_600_000, endTs = dayStart + 10 * 3_600_000, title = "无封面")
         )
 
         val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
@@ -555,10 +556,10 @@ class StatsActivityTest {
     @Test
     fun `同日多场次 按时间正序排列`() = runBlocking {
         val dao = AppDatabase.get(context).streamSessionDao()
-        val now = System.currentTimeMillis()
-        // 同一天两场：先插晚场再插早场（模拟 DAO 倒序来源）
-        dao.insertSession(StreamSessionEntity(startTs = now - 1_800_000, endTs = now - 600_000, title = "晚场"))
-        dao.insertSession(StreamSessionEntity(startTs = now - 7_200_000, endTs = now - 5_400_000, title = "早场"))
+        // 同一天两场（锚定今天防跨午夜）：先插晚场再插早场（模拟 DAO 倒序来源）
+        val dayStart = todayStart()
+        dao.insertSession(StreamSessionEntity(startTs = dayStart + 14 * 3_600_000, endTs = dayStart + 15 * 3_600_000, title = "晚场"))
+        dao.insertSession(StreamSessionEntity(startTs = dayStart + 9 * 3_600_000, endTs = dayStart + 10 * 3_600_000, title = "早场"))
 
         val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
         waitFor("two sessions") {
@@ -571,6 +572,28 @@ class StatsActivityTest {
             .findViewById<TextView>(R.id.tvSessionTitle).text.toString()
         assertEquals("早场（时间在前）应在列表上方", "早场", firstTitle)
         assertEquals("晚场", secondTitle)
+        Unit
+    }
+
+    @Test
+    fun `手动补记场次 出现在当日列表`() = runBlocking {
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("calendar rendered") {
+            activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid).childCount > 7
+        }
+        activity.findViewById<android.view.View>(R.id.btnAddManualSession).performClick()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        dialog.findViewById<android.widget.EditText>(R.id.etManualSessionTitle)!!
+            .setText("手动补记的")
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        waitFor("manual session in list") {
+            activity.findViewById<RecyclerView>(R.id.rvSessions).adapter!!.itemCount == 1
+        }
+        val title = activity.findViewById<RecyclerView>(R.id.rvSessions)
+            .findViewHolderForAdapterPosition(0)!!.itemView
+            .findViewById<TextView>(R.id.tvSessionTitle).text.toString()
+        assertEquals("手动补记的", title)
         Unit
     }
 }

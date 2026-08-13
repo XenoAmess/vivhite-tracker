@@ -85,6 +85,7 @@ class StatsActivity : AppCompatActivity() {
         binding.rvMoodEvents.layoutManager = LinearLayoutManager(this)
         binding.rvMoodEvents.adapter = moodAdapter
         binding.btnAddMoodEvent.setOnClickListener { showMoodEventDialog(null) }
+        binding.btnAddManualSession.setOnClickListener { showManualSessionDialog() }
 
         binding.btnPrevMonth.setOnClickListener { cal.add(Calendar.MONTH, -1); renderCalendar() }
         binding.btnNextMonth.setOnClickListener { cal.add(Calendar.MONTH, 1); renderCalendar() }
@@ -367,6 +368,74 @@ class StatsActivity : AppCompatActivity() {
             }
             holder.text.text = "${dateFmt.format(Date(hit.ts))} · $kindLabel · ${hit.text}"
         }
+    }
+
+    // 手动补记场次（她播了但 App 没监控到的空档）：日期默认选中日可改，结束必须晚于开始
+    private fun showManualSessionDialog() {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_manual_session, null)
+        val btnDate = view.findViewById<TextView>(R.id.btnManualSessionDate)
+        val btnStart = view.findViewById<TextView>(R.id.btnManualSessionStart)
+        val btnEnd = view.findViewById<TextView>(R.id.btnManualSessionEnd)
+        val etTitle = view.findViewById<EditText>(R.id.etManualSessionTitle)
+        val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+
+        var dayStart = selectedDayStart
+        var startMinutes = 20 * 60
+        var endMinutes = 22 * 60
+        fun refresh() {
+            btnDate.text = "日期：${dateFmt.format(Date(dayStart))}"
+            btnStart.text = "开始：%02d:%02d".format(startMinutes / 60, startMinutes % 60)
+            btnEnd.text = "结束：%02d:%02d".format(endMinutes / 60, endMinutes % 60)
+        }
+        refresh()
+
+        btnDate.setOnClickListener {
+            val c = Calendar.getInstance().apply { timeInMillis = dayStart }
+            android.app.DatePickerDialog(
+                this,
+                { _, y, m, d ->
+                    dayStart = Calendar.getInstance().apply {
+                        set(y, m, d, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+                    refresh()
+                },
+                c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
+            ).show()
+        }
+        fun pickTime(isStart: Boolean) {
+            val base = if (isStart) startMinutes else endMinutes
+            android.app.TimePickerDialog(
+                this,
+                { _, h, m ->
+                    if (isStart) startMinutes = h * 60 + m else endMinutes = h * 60 + m
+                    refresh()
+                },
+                base / 60, base % 60, true
+            ).show()
+        }
+        btnStart.setOnClickListener { pickTime(true) }
+        btnEnd.setOnClickListener { pickTime(false) }
+
+        AlertDialog.Builder(this)
+            .setTitle("手动补记场次")
+            .setView(view)
+            .setPositiveButton("保存") { _, _ ->
+                val startTs = dayStart + startMinutes * 60_000L
+                val endTs = dayStart + endMinutes * 60_000L
+                if (endTs <= startTs) {
+                    Toast.makeText(this, "结束时间必须晚于开始时间", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val title = etTitle.text.toString().trim().ifBlank { null }
+                lifecycleScope.launch {
+                    AppDatabase.get(this@StatsActivity).streamSessionDao().insertSession(
+                        StreamSessionEntity(startTs = startTs, endTs = endTs, title = title)
+                    )
+                    refreshData()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // 手账批量管理：按日期区间删除 / 清空全部（场次级联主题变化与人气点，封面保留）
