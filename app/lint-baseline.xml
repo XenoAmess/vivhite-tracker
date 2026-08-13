@@ -1,0 +1,4015 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 9.3.1" type="baseline" client="gradle" dependencies="false" name="AGP (9.3.1)" variant="all" version="9.3.1">
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 33 (current min is 26): `android.Manifest.permission#POST_NOTIFICATIONS`"
+        errorLine1="        shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)"
+        errorLine2="                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1127"
+            column="46"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 31 (current min is 26): `android.provider.Settings#ACTION_REQUEST_SCHEDULE_EXACT_ALARM`"
+        errorLine1="                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1231"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="OldTargetApi"
+        message="Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the `android.os.Build.VERSION_CODES` javadoc for details."
+        errorLine1="        targetSdk = 36"
+        errorLine2="        ~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="62"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `targetCellWidth` is only used in API level 31 and higher (current min is 26)"
+        errorLine1="    android:targetCellWidth=&quot;4&quot;"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/live_status_widget_info.xml"
+            line="5"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `targetCellHeight` is only used in API level 31 and higher (current min is 26)"
+        errorLine1="    android:targetCellHeight=&quot;1&quot;"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/live_status_widget_info.xml"
+            line="6"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="InflateParams"
+        message="Avoid passing `null` as the view root (needed to resolve layout parameters on the inflated layout&apos;s root element)"
+        errorLine1="        val root = layoutInflater.inflate(R.layout.dialog_settings_drawer, null)"
+        errorLine2="                                                                           ~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="289"
+            column="76"/>
+    </issue>
+
+    <issue
+        id="InflateParams"
+        message="Avoid passing `null` as the view root (needed to resolve layout parameters on the inflated layout&apos;s root element)"
+        errorLine1="        val view = layoutInflater.inflate(R.layout.dialog_share_options, null)"
+        errorLine2="                                                                         ~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="945"
+            column="74"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of `compileSdk` than 36 is available: 37"
+        errorLine1="    compileSdk = 36"
+        errorLine2="    ~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="57"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.core:core-ktx than 1.18.0 is available: 1.19.0"
+        errorLine1="    implementation(&quot;androidx.core:core-ktx:1.18.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="140"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.appcompat:appcompat than 1.7.1 is available: 1.8.0"
+        errorLine1="    implementation(&quot;androidx.appcompat:appcompat:1.7.1&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="141"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer than 1.5.1 is available: 1.11.0"
+        errorLine1="    implementation(&quot;androidx.media3:media3-exoplayer:1.5.1&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="152"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="LockedOrientationActivity"
+        message="Expecting `android:screenOrientation=&quot;unspecified&quot;` or `&quot;fullSensor&quot;` for this activity so the user can use the application in any orientation and provide a great experience on Chrome OS devices"
+        errorLine1="            android:screenOrientation=&quot;portrait&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="95"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios."
+        errorLine1="            android:screenOrientation=&quot;portrait&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="95"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="DrawAllocation"
+        message="Avoid object allocations during draw/layout operations (preallocate and reuse instead)"
+        errorLine1="        val fillPath = Path(linePath).apply {"
+        errorLine2="                       ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/views/PopularityChartView.kt"
+            line="84"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="DrawAllocation"
+        message="Avoid object allocations during draw/layout operations (preallocate and reuse instead)"
+        errorLine1="        val fmt = java.text.SimpleDateFormat(&quot;HH:mm&quot;, java.util.Locale.getDefault())"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/views/PopularityChartView.kt"
+            line="94"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="DrawAllocation"
+        message="Avoid object allocations during draw/layout operations (preallocate and reuse instead)"
+        errorLine1="        canvas.drawText(fmt.format(java.util.Date(minTs)), padL, height - dp(6).toFloat(), textPaint)"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/views/PopularityChartView.kt"
+            line="95"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="DrawAllocation"
+        message="Avoid object allocations during draw/layout operations (preallocate and reuse instead)"
+        errorLine1="        val endText = fmt.format(java.util.Date(maxTs))"
+        errorLine2="                                 ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/views/PopularityChartView.kt"
+            line="96"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="DrawAllocation"
+        message="Avoid object allocations during draw/layout operations (preallocate and reuse instead)"
+        errorLine1="                        Paint(Paint.ANTI_ALIAS_FLAG).apply {"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/views/WeekdayHourHeatmapView.kt"
+            line="79"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="NotifyDataSetChanged"
+        message="It will always be more efficient to use more specific change events if you can. Rely on `notifyDataSetChanged` as a last resort."
+        errorLine1="            rv.adapter?.notifyDataSetChanged()"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/controller/ShareController.kt"
+            line="240"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="NotifyDataSetChanged"
+        message="It will always be more efficient to use more specific change events if you can. Rely on `notifyDataSetChanged` as a last resort."
+        errorLine1="            notifyDataSetChanged()"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="342"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="NotifyDataSetChanged"
+        message="It will always be more efficient to use more specific change events if you can. Rely on `notifyDataSetChanged` as a last resort."
+        errorLine1="            notifyDataSetChanged()"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="858"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="NotifyDataSetChanged"
+        message="It will always be more efficient to use more specific change events if you can. Rely on `notifyDataSetChanged` as a last resort."
+        errorLine1="            notifyDataSetChanged()"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="911"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 26"
+        errorLine1="                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/AlarmScheduler.kt"
+            line="33"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 26"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/service/LiveCheckService.kt"
+            line="784"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 26"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/LiveMonitorApp.kt"
+            line="49"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 26"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1211"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 26"
+        errorLine1="                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1326"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 26. Merge all the resources in this folder into `mipmap-anydpi`.">
+        <location
+            file="src/main/res/mipmap-anydpi-v26"/>
+    </issue>
+
+    <issue
+        id="UseCompoundDrawables"
+        message="This tag and its children can be replaced by one `&lt;TextView/>` and a compound drawable"
+        errorLine1="            &lt;LinearLayout"
+        errorLine2="             ~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="18"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="Overdraw"
+        message="Possible overdraw: Root element paints background `?android:attr/selectableItemBackground` with a theme that also paints a background (inferred theme is `@style/Theme.BilibiliLiveMonitor`)"
+        errorLine1="    android:background=&quot;?android:attr/selectableItemBackground&quot;"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_mood_event.xml"
+            line="8"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="Overdraw"
+        message="Possible overdraw: Root element paints background `?attr/selectableItemBackground` with a theme that also paints a background (inferred theme is `@style/Theme.BilibiliLiveMonitor`)"
+        errorLine1="    android:background=&quot;?attr/selectableItemBackground&quot;>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_promo_style_chip.xml"
+            line="11"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="Overdraw"
+        message="Possible overdraw: Root element paints background `?attr/selectableItemBackground` with a theme that also paints a background (inferred theme is `@style/Theme.BilibiliLiveMonitor`)"
+        errorLine1="    android:background=&quot;?attr/selectableItemBackground&quot;"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_qq_group.xml"
+            line="9"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="Overdraw"
+        message="Possible overdraw: Root element paints background `?attr/selectableItemBackground` with a theme that also paints a background (inferred theme is `@style/Theme.BilibiliLiveMonitor`)"
+        errorLine1="    android:background=&quot;?attr/selectableItemBackground&quot;"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_settings_drawer.xml"
+            line="8"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="Overdraw"
+        message="Possible overdraw: Root element paints background `@color/widget_background` with a theme that also paints a background (inferred theme is `@style/Theme.BilibiliLiveMonitor`)"
+        errorLine1="    android:background=&quot;@color/widget_background&quot;"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/widget_live_status.xml"
+            line="8"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.color.purple_200` appears to be unused"
+        errorLine1="    &lt;color name=&quot;purple_200&quot;>#FFBB86FC&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/colors.xml"
+            line="3"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.color.orange_500` appears to be unused"
+        errorLine1="    &lt;color name=&quot;orange_500&quot;>#FFFF9800&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/colors.xml"
+            line="12"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.layout.dialog_activity_settings` appears to be unused"
+        errorLine1="&lt;LinearLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="^">
+        <location
+            file="src/main/res/layout/dialog_activity_settings.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.mipmap.ic_launcher_on` appears to be unused">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.mipmap.ic_launcher_on_foreground` appears to be unused">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_on_foreground.png"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.mipmap.ic_launcher_on_round` appears to be unused">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_on_round.png"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.drawable.ic_notification_off` appears to be unused"
+        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="^">
+        <location
+            file="src/main/res/drawable/ic_notification_off.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.drawable.ic_notification_on` appears to be unused"
+        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="^">
+        <location
+            file="src/main/res/drawable/ic_notification_on.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UselessParent"
+        message="This `RadioGroup` layout or its `LinearLayout` parent is possibly unnecessary"
+        errorLine1="    &lt;RadioGroup"
+        errorLine2="     ~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_appearance.xml"
+            line="9"
+            column="6"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_off_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_off_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_off_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_off_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_off_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_on_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_on_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_on_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_on_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_on_round.png"/>
+    </issue>
+
+    <issue
+        id="MonochromeLauncherIcon"
+        message="The application adaptive icon is missing a monochrome tag"
+        errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
+        errorLine2="^">
+        <location
+            file="src/main/res/mipmap-anydpi-v26/ic_launcher_off.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="MonochromeLauncherIcon"
+        message="The application adaptive roundIcon is missing a monochrome tag"
+        errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
+        errorLine2="^">
+        <location
+            file="src/main/res/mipmap-anydpi-v26/ic_launcher_off_round.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="IconLocation"
+        message="Found bitmap drawable `res/drawable/img_off.png` in densityless folder">
+        <location
+            file="src/main/res/drawable/img_off.png"/>
+    </issue>
+
+    <issue
+        id="IconLocation"
+        message="Found bitmap drawable `res/drawable/img_on.png` in densityless folder">
+        <location
+            file="src/main/res/drawable/img_on.png"/>
+    </issue>
+
+    <issue
+        id="IconLocation"
+        message="Found bitmap drawable `res/drawable/qq_group_1.png` in densityless folder">
+        <location
+            file="src/main/res/drawable/qq_group_1.png"/>
+    </issue>
+
+    <issue
+        id="IconLocation"
+        message="Found bitmap drawable `res/drawable/qq_group_2.png` in densityless folder">
+        <location
+            file="src/main/res/drawable/qq_group_2.png"/>
+    </issue>
+
+    <issue
+        id="IconLocation"
+        message="Found bitmap drawable `res/drawable/qq_group_3.png` in densityless folder">
+        <location
+            file="src/main/res/drawable/qq_group_3.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_off.png, ic_launcher_off_round.png">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_off_round.png"/>
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_off.png, ic_launcher_off_round.png">
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_off_round.png"/>
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_off.png, ic_launcher_off_round.png">
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_off_round.png"/>
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_off.png, ic_launcher_off_round.png">
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_off_round.png"/>
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_off.png, ic_launcher_off_round.png">
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_off_round.png"/>
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_off.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_on.png, ic_launcher_on_round.png">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_on_round.png"/>
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_on.png, ic_launcher_on_round.png">
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_on_round.png"/>
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_on.png, ic_launcher_on_round.png">
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_on_round.png"/>
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_on.png, ic_launcher_on_round.png">
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_on_round.png"/>
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher_on.png, ic_launcher_on_round.png">
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_on_round.png"/>
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_on.png"/>
+    </issue>
+
+    <issue
+        id="Autofill"
+        message="Missing `autofillHints` attribute"
+        errorLine1="            &lt;EditText"
+        errorLine2="             ~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="32"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="Autofill"
+        message="Missing `autofillHints` attribute"
+        errorLine1="        &lt;EditText"
+        errorLine2="         ~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="70"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="Autofill"
+        message="Missing `autofillHints` attribute"
+        errorLine1="        &lt;EditText"
+        errorLine2="         ~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="80"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="Autofill"
+        message="Missing `autofillHints` attribute"
+        errorLine1="        &lt;EditText"
+        errorLine2="         ~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="89"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="Autofill"
+        message="Missing `autofillHints` attribute"
+        errorLine1="    &lt;EditText"
+        errorLine2="     ~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_record_search.xml"
+            line="11"
+            column="6"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    data = android.net.Uri.parse(&quot;https://live.bilibili.com/${com.bilibili.livemonitor.util.BiliTargets.ROOM_ID}&quot;)"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/AlertActivity.kt"
+            line="94"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    data = android.net.Uri.parse(&quot;https://live.bilibili.com/${com.bilibili.livemonitor.util.BiliTargets.ROOM_ID}&quot;)"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/AlertActivity.kt"
+            line="94"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            is SoundSource.System -> setupUri(context, player, Uri.parse(source.uri))"
+        errorLine2="                                                               ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/AlertSoundProvider.kt"
+            line="94"
+            column="64"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            is SoundSource.File -> setupUri(context, player, Uri.parse(source.uri))"
+        errorLine2="                                                             ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/AlertSoundProvider.kt"
+            line="95"
+            column="62"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            val uri = Uri.parse(&quot;android.resource://${context.packageName}/${sound.resId}&quot;)"
+        errorLine2="                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/AlertSoundProvider.kt"
+            line="104"
+            column="23"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/AnchorAvatarLoader.kt"
+            line="52"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/AnchorAvatarLoader.kt"
+            line="64"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            Uri.parse(&quot;package:${context.packageName}&quot;)"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/AppUpdater.kt"
+            line="36"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val tree = Uri.parse(treeUri)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/worker/BackupWorker.kt"
+            line="56"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        Intent(Intent.ACTION_VIEW, Uri.parse(&quot;bilibili://live/$roomId&quot;)).apply {"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/BilibiliDeepLinks.kt"
+            line="14"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        Intent(Intent.ACTION_VIEW, Uri.parse(&quot;https://live.bilibili.com/$roomId&quot;)).apply {"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/BilibiliDeepLinks.kt"
+            line="20"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        Intent(Intent.ACTION_VIEW, Uri.parse(&quot;bilibili://space/$mid&quot;))"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/BilibiliDeepLinks.kt"
+            line="26"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        Intent(Intent.ACTION_VIEW, Uri.parse(&quot;https://space.bilibili.com/$mid&quot;))"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/BilibiliDeepLinks.kt"
+            line="30"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="            prefs.edit().clear().apply()"
+        errorLine2="            ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/DefaultQqSdkSharer.kt"
+            line="29"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/DefaultQqSdkSharer.kt"
+            line="38"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        return Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {"
+        errorLine2="                                          ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/service/LiveCheckService.kt"
+            line="614"
+            column="43"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/MagicImageRenderer.kt"
+            line="48"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="        c.save()"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/MagicImageRenderer.kt"
+            line="98"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))"
+        errorLine2="                                               ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="238"
+            column="48"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension property `View.isVisible` instead?"
+        errorLine1="            if (container.visibility == android.view.View.VISIBLE) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="387"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    &quot;目录：${android.net.Uri.parse(dir).lastPathSegment ?: dir}&quot;"
+        errorLine2="                          ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="626"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    &quot;目录：${android.net.Uri.parse(dir).lastPathSegment ?: dir}&quot;"
+        errorLine2="                          ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="626"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    data = Uri.parse(&quot;package:$packageName&quot;)"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1232"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    data = Uri.parse(&quot;package:$packageName&quot;)"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1232"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    data = Uri.parse(&quot;package:$packageName&quot;)"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1328"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    data = Uri.parse(&quot;package:$packageName&quot;)"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1328"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            data = Uri.parse(&quot;package:$packageName&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1350"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            data = Uri.parse(&quot;package:$packageName&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1350"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                data = Uri.parse(&quot;package:${context.packageName}&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/OemHelper.kt"
+            line="280"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                data = Uri.parse(&quot;package:${context.packageName}&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/OemHelper.kt"
+            line="280"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            data = Uri.parse(&quot;package:$PACKAGE_NAME&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/OemHelper.kt"
+            line="293"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            data = Uri.parse(&quot;package:$PACKAGE_NAME&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/OemHelper.kt"
+            line="293"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putLong(KEY_ROOM_ID, roomId).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="12"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_SERVICE_RUNNING, running).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="20"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="36"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="46"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_OEM_GUIDE_PROMPTED, prompted).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="68"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_ALERT_SUPPRESSED, suppressed).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="77"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_LAST_LIVE_START_TIME, startTime).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="86"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putLong(KEY_LAST_LIVE_OBSERVED_TIME, timeMillis).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="97"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putInt(KEY_CHECK_INTERVAL_SECONDS, seconds).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="106"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_AUTO_BACKUP_ENABLED, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="115"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_BACKUP_TREE_URI, uri).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="121"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putLong(KEY_LAST_BACKUP_TIME, timeMillis).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="127"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_LAST_POSTER_MONTH, monthKey).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="134"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_SUPPRESSED_LIVE_START, startTime).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="142"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_FIRST_LAUNCH_DONE, done).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="151"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATE, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="160"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_AUTO_DOWNLOAD_UPDATE, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="169"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putLong(KEY_LAST_UPDATE_CHECK_TIME, timeMillis).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="178"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putInt(KEY_DISMISSED_VERSION_CODE, code).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="187"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_ALERT_SOUND_URI, uri).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="196"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_ALERT_SOUND_TITLE, title).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="205"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_PROMO_STYLE, style).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="214"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_MAGIC_PERIODS, json).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="223"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_QUIET_HOURS_ENABLED, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="234"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putInt(KEY_QUIET_START_MINUTES, minutes).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="243"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putInt(KEY_QUIET_END_MINUTES, minutes).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="252"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putLong(KEY_QUIET_MISSED_LIVE_TS, ts).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="261"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_QUIET_MISSED_LIVE_TITLE, title).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="270"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_NOTIFY_STREAM_END, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="281"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_LAST_REMINDED_LIVE_DYNAMIC_ID, id).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="290"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_NOTIFY_TITLE_CHANGE, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="301"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_LAST_LIVE_TITLE, title).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="310"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putInt(KEY_DARK_MODE, mode).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="321"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_MONITOR_VIDEOS, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="332"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_MONITOR_PINNED, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="341"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_MONITOR_DYNAMICS, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="350"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putBoolean(KEY_ALERT_RING_ON_ACTIVITY, enabled).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="359"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putLong(KEY_LAST_VIDEO_AID, aid).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="368"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putLong(KEY_LAST_PINNED_AID, aid).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="377"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_LAST_DYNAMIC_ID, id).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="386"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putStringSet(KEY_MONITOR_DYNAMIC_TYPES, types).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PreferenceManager.kt"
+            line="395"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="186"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.set` instead?"
+        errorLine1="            bmp.setPixel(x, y, if (matrix.get(x, y)) Color.BLACK else lightColor)"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="188"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val bitmap = Bitmap.createBitmap(cover.width, cover.height + bandHeight, Bitmap.Config.ARGB_8888)"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="196"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="    internal fun newBitmap() = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)"
+        errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="208"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.get` instead?"
+        errorLine1="                val pixel = bitmap.getPixel(x, y)"
+        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="275"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="        canvas.save()"
+        errorLine2="        ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="292"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="345"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="354"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.scale` instead?"
+        errorLine1="        return Bitmap.createScaledBitmap(cropped, dstW, dstH, true)"
+        errorLine2="               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="405"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withRotation` instead?"
+        errorLine1="        c.save(); c.rotate(-90f, 64f, HEIGHT / 2f)"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="476"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="        c.save()"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="587"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withTranslation` instead?"
+        errorLine1="        c.save(); c.translate(WIDTH - 200f, 1140f)"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="662"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="        c.save(); c.clipRect(cx - 360, cy - 200, cx + 360, cy + 200)"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="698"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withRotation` instead?"
+        errorLine1="        c.save(); c.rotate(-6f, 900f, 260f)"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="726"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="        c.save(); c.clipPath(fanPath)"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="744"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withRotation` instead?"
+        errorLine1="        c.save(); c.rotate(-6f, 300f, 880f)"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="805"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="            c.save(); c.clipPath(Path().apply { addRoundRect(screen, 20f, 20f, Path.Direction.CW) })"
+        errorLine2="            ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="834"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="        c.save(); c.clipPath(path); c.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xF2FFFFFF.toInt() }); c.restore()"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="884"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withTranslation` instead?"
+        errorLine1="            c.save(); c.translate(600f + (i % 3) * 90f, 300f + (i / 3) * 110f); c.rotate(rot)"
+        errorLine2="            ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="914"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.scale` instead?"
+        errorLine1="            val small = Bitmap.createScaledBitmap(cover, cover.width / 6, cover.height / 6, false)"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1013"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.scale` instead?"
+        errorLine1="            val big = Bitmap.createScaledBitmap(small, cover.width, cover.height, false)"
+        errorLine2="                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1014"
+            column="23"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="            c.save(); c.clipRect(60, 200, WIDTH - 60, 700)"
+        errorLine2="            ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1055"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withTranslation` instead?"
+        errorLine1="        c.save(); c.translate(WIDTH / 2f, 380f); c.rotate(-2f)"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1240"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withSave` instead?"
+        errorLine1="        c.save(); c.clipOutPath(wave2); c.drawRect(0f, HEIGHT - 180f, WIDTH.toFloat(), HEIGHT - 100f, Paint().apply { color = 0xFFF8BBD0.toInt() }); c.restore()"
+        errorLine2="        ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1305"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withTranslation` instead?"
+        errorLine1="            c.save(); c.translate(bx, by)"
+        errorLine2="            ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1330"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withTranslation` instead?"
+        errorLine1="            c.save(); c.translate(WIDTH / 2f, 280f); c.rotate(a); c.drawLine(0f, -160f, 0f, -90f, Paint().apply { color = 0xFFFFD54F.toInt(); strokeWidth = 2f })"
+        errorLine2="            ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1415"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.scale` instead?"
+        errorLine1="            val tiny = Bitmap.createScaledBitmap(cover, tinyWidth, tinyHeight, true)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1580"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.scale` instead?"
+        errorLine1="            val blurred = Bitmap.createScaledBitmap("
+        errorLine2="                          ^">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/PromoImageRenderer.kt"
+            line="1581"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        return Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {"
+        errorLine2="                                          ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/QqGroups.kt"
+            line="30"
+            column="43"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val bmp = Bitmap.createBitmap(WIDTH, computeHeight(data), Bitmap.Config.ARGB_8888)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/StatsImageRenderer.kt"
+            line="93"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withClip` instead?"
+        errorLine1="            c.save()"
+        errorLine2="            ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/StatsImageRenderer.kt"
+            line="105"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.scale` instead?"
+        errorLine1="            val scaled = Bitmap.createScaledBitmap("
+        errorLine2="                         ^">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/StatsImageRenderer.kt"
+            line="109"
+            column="26"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Canvas.withTranslation` instead?"
+        errorLine1="            c.save()"
+        errorLine2="            ~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/StatsImageRenderer.kt"
+            line="170"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                        Intent(Intent.ACTION_VIEW, Uri.parse(&quot;$GITHUB_URL/releases/latest&quot;))"
+        errorLine2="                                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/controller/UpdateController.kt"
+            line="93"
+            column="52"/>
+    </issue>
+
+    <issue
+        id="ConstantLocale"
+        message="Assigning `Locale.getDefault()` to a final static field is suspicious; this code will not work correctly if the user changes locale while the app is running"
+        errorLine1="    private val dateFormat = SimpleDateFormat(&quot;yyyy-MM-dd HH:mm&quot;, Locale.getDefault())"
+        errorLine2="                                                                  ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/util/MagicImageRenderer.kt"
+            line="33"
+            column="67"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="            &quot;v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/AboutActivity.kt"
+            line="34"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="            tvAlertMessage.text = &quot;直播间 ${com.bilibili.livemonitor.util.BiliTargets.ROOM_ID} 正在直播中\n快去看看吧！&quot;"
+        errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/AlertActivity.kt"
+            line="88"
+            column="35"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="            tvLog.text = &quot;（仅显示最近 $TAIL_LINES 行，共 ${lines.size} 行；完整日志请用「导出」）\n\n$tail&quot;"
+        errorLine2="                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/LogActivity.kt"
+            line="87"
+            column="26"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="                tvEditTitle.text = &quot;编辑这一段（${magicRangeFmt.format(Date(p.start))} 起）&quot;"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/ui/MagicPeriodDialogFragment.kt"
+            line="95"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Number formatting does not take into account locale settings. Consider using `String.format` instead."
+        errorLine1="                tvDuration.text = MagicPeriodDecider"
+        errorLine2="                                  ^">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/ui/MagicPeriodDialogFragment.kt"
+            line="100"
+            column="35"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="            tvMonth.text = &quot;${viewYear}-${&quot;%02d&quot;.format(viewMonth)}&quot;"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/ui/MagicPeriodDialogFragment.kt"
+            line="108"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="String literal in `setText` can not be translated. Use Android resources instead."
+        errorLine1="            tvMonth.text = &quot;${viewYear}-${&quot;%02d&quot;.format(viewMonth)}&quot;"
+        errorLine2="                                           ~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/ui/MagicPeriodDialogFragment.kt"
+            line="108"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Number formatting does not take into account locale settings. Consider using `String.format` instead."
+        errorLine1="                    text = day.toString()"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/ui/MagicPeriodDialogFragment.kt"
+            line="145"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="        binding.tvVersion.text = &quot;v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})&quot;"
+        errorLine2="                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="261"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="                tvLastCheck.text = &quot;上次检测: $timeStr ($resultStr)&quot;"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1117"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="        binding.tvQuote.text = &quot;「${quote.text}」—— ${quote.author}&quot;"
+        errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/MainActivity.kt"
+            line="1365"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="            holder.text.text = &quot;${dateFmt.format(Date(hit.ts))} · $kindLabel · ${hit.text}&quot;"
+        errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="365"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="                text = mood.emoji + mood.label"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="532"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="            btnTime.text = &quot;开始：${timeFormat.format(Date(eventTs))}&quot;"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="551"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Number formatting does not take into account locale settings. Consider using `String.format` instead."
+        errorLine1="                    etDuration.setText(durationMin.toString()) // 触发 watcher → refreshEndText"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="597"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="                binding.tvDayTitleChanges.text = &quot;本日主题变化：&quot; + changes.joinToString(&quot;；&quot;) {"
+        errorLine2="                                                 ^">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="678"
+            column="50"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="            holder.tvTitle.text = &quot;$timePart ${MoodCatalog.display(e.mood)} · ${e.title}&quot;"
+        errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="878"
+            column="35"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="                holder.tvReason.text = &quot;原因：${e.reason}&quot;"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="883"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="                holder.tvNote.text = &quot;备注：${e.note}&quot;"
+        errorLine2="                                     ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="889"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="            holder.tvTime.text = timeFormat.format(Date(s.startTs)) +"
+        errorLine2="                                 ^">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/StatsActivity.kt"
+            line="924"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="                        label.text = &quot;增量更新 $percent%&quot;"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/controller/UpdateController.kt"
+            line="185"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="SetTextI18n"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+        errorLine1="                        label.text = &quot;$percent%&quot;"
+        errorLine2="                                     ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/bilibili/livemonitor/controller/UpdateController.kt"
+            line="206"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;牢白播了吗&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;牢白播了吗&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_about.xml"
+            line="30"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;白绮直播间开播监控&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;白绮直播间开播监控&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_about.xml"
+            line="47"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;更新日志&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;更新日志&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_about.xml"
+            line="63"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;开播图标&quot;, should use `@string` resource"
+        errorLine1="            android:contentDescription=&quot;开播图标&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_alert.xml"
+            line="27"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;🎉 白绮开播啦！&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;🎉 白绮开播啦！&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_alert.xml"
+            line="36"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;直播间 11258892 正在直播中\n快去看看吧！&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;直播间 11258892 正在直播中\n快去看看吧！&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_alert.xml"
+            line="51"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;立即前往直播间&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;立即前往直播间&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_alert.xml"
+            line="63"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;我知道了&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;我知道了&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_alert.xml"
+            line="76"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;复制&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;复制&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_log.xml"
+            line="21"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;刷新&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;刷新&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_log.xml"
+            line="29"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;清空&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;清空&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_log.xml"
+            line="36"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;导出&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;导出&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_log.xml"
+            line="44"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;暂无日志&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;暂无日志&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_log.xml"
+            line="61"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;状态图标&quot;, should use `@string` resource"
+        errorLine1="                android:contentDescription=&quot;状态图标&quot; />"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="32"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;牢白播了吗&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;牢白播了吗&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="43"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;分享直播间&quot;, should use `@string` resource"
+        errorLine1="            android:contentDescription=&quot;分享直播间&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="59"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;监控状态: 已停止&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;监控状态: 已停止&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="81"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;直播间: 11258892&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;直播间: 11258892&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="95"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;上次检测: 暂无记录&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;上次检测: 暂无记录&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="109"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;打开直播间&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;打开直播间&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="126"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;打开空间&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;打开空间&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="142"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;开始监控&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;开始监控&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="157"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;魔法期记录&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;魔法期记录&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="174"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;生成并分享魔法期图片&quot;, should use `@string` resource"
+        errorLine1="            android:contentDescription=&quot;生成并分享魔法期图片&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="188"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;日志&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;日志&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="216"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;设置&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;设置&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="240"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;源码&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;源码&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="262"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;绮迹手账&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;绮迹手账&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="280"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;• 每分钟检查直播状态 • 开播响铃+震动+屏幕提醒\n• 后台运行需关闭电池优化 • 通知栏显示直播状态&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;• 每分钟检查直播状态 • 开播响铃+震动+屏幕提醒\n• 后台运行需关闭电池优化 • 通知栏显示直播状态&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="305"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;检查更新&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;检查更新&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="363"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;内测版尝鲜&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;内测版尝鲜&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_main.xml"
+            line="380"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;白绮头像&quot;, should use `@string` resource"
+        errorLine1="                    android:contentDescription=&quot;白绮头像&quot; />"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="32"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;本周 0 场 · 本月 0 场 · 平均 -- · 最长 --&quot;, should use `@string` resource"
+        errorLine1="                    android:text=&quot;本周 0 场 · 本月 0 场 · 平均 -- · 最长 --&quot; />"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="47"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;搜索&quot;, should use `@string` resource"
+        errorLine1="                        android:text=&quot;搜索&quot;"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="71"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;统计&quot;, should use `@string` resource"
+        errorLine1="                        android:text=&quot;统计&quot;"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="82"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;导出&quot;, should use `@string` resource"
+        errorLine1="                        android:text=&quot;导出&quot;"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="92"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;导入&quot;, should use `@string` resource"
+        errorLine1="                        android:text=&quot;导入&quot;"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="109"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;图片&quot;, should use `@string` resource"
+        errorLine1="                        android:text=&quot;图片&quot;"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="120"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;管理&quot;, should use `@string` resource"
+        errorLine1="                        android:text=&quot;管理&quot;"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="129"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;最近 7 天开播场次&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;最近 7 天开播场次&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="149"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;◀&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;◀&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="172"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;上个月&quot;, should use `@string` resource"
+        errorLine1="                android:contentDescription=&quot;上个月&quot; />"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="173"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;2026年8月&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;2026年8月&quot; />"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="183"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;▶&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;▶&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="190"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;下个月&quot;, should use `@string` resource"
+        errorLine1="                android:contentDescription=&quot;下个月&quot; />"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="191"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;点选日期查看当天场次&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;点选日期查看当天场次&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="212"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;当日心情&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;当日心情&quot; />"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="258"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;＋ 添加&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;＋ 添加&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="265"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;暂无心情记录&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;暂无心情记录&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="279"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;还没有任何记录。\n开播后会自动记录每场直播的时长与标题；\n也可以点「＋ 添加」记下当下心情。&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;还没有任何记录。\n开播后会自动记录每场直播的时长与标题；\n也可以点「＋ 添加」记下当下心情。&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/activity_stats.xml"
+            line="299"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;监控新视频投稿&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;监控新视频投稿&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_activity_settings.xml"
+            line="15"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;监控置顶视频变化&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;监控置顶视频变化&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_activity_settings.xml"
+            line="23"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;监控动态&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;监控动态&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_activity_settings.xml"
+            line="31"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;新视频/动态时也响铃&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;新视频/动态时也响铃&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_activity_settings.xml"
+            line="46"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;（开播始终响铃，不受此控制）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;（开播始终响铃，不受此控制）&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_activity_settings.xml"
+            line="52"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;魔法期记录&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;魔法期记录&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="17"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;无精确闹钟权限：魔法期结束提醒可能不准点响铃&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;无精确闹钟权限：魔法期结束提醒可能不准点响铃&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="37"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;去开启&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;去开启&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="47"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;◀&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;◀&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="64"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;▶&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;▶&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="81"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;日&quot;, should use `@string` resource"
+        errorLine1="        &lt;TextView style=&quot;@style/MagicWeekday&quot; android:text=&quot;日&quot; />"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="90"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;一&quot;, should use `@string` resource"
+        errorLine1="        &lt;TextView style=&quot;@style/MagicWeekday&quot; android:text=&quot;一&quot; />"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="91"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;二&quot;, should use `@string` resource"
+        errorLine1="        &lt;TextView style=&quot;@style/MagicWeekday&quot; android:text=&quot;二&quot; />"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="92"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;三&quot;, should use `@string` resource"
+        errorLine1="        &lt;TextView style=&quot;@style/MagicWeekday&quot; android:text=&quot;三&quot; />"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="93"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;四&quot;, should use `@string` resource"
+        errorLine1="        &lt;TextView style=&quot;@style/MagicWeekday&quot; android:text=&quot;四&quot; />"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="94"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;五&quot;, should use `@string` resource"
+        errorLine1="        &lt;TextView style=&quot;@style/MagicWeekday&quot; android:text=&quot;五&quot; />"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="95"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;六&quot;, should use `@string` resource"
+        errorLine1="        &lt;TextView style=&quot;@style/MagicWeekday&quot; android:text=&quot;六&quot; />"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="96"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;编辑这一段&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;编辑这一段&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="120"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;开始&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;开始&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="127"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;时长（天）&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;时长（天）&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="162"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;-&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;-&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="182"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;+&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;+&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="205"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;结束&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;结束&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="214"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;删除这一段&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;删除这一段&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="257"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;收起&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;收起&quot; />"
+        errorLine2="                ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="265"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;完成&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;完成&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_magic_period.xml"
+            line="281"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;删除指定日期之前的记录&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;删除指定日期之前的记录&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_manage_records.xml"
+            line="16"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;清空全部记录（场次 + 心情）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;清空全部记录（场次 + 心情）&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_manage_records.xml"
+            line="25"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;删除只清记录：场次会连带主题变化与人气点；已收藏的直播封面保留。&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;删除只清记录：场次会连带主题变化与人气点；已收藏的直播封面保留。&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_manage_records.xml"
+            line="34"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;开始：20:30&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;开始：20:30&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="21"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;时长（分钟，0=不记时长）&quot;, should use `@string` resource"
+        errorLine1="                android:hint=&quot;时长（分钟，0=不记时长）&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="37"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;结束：--&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;结束：--&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="47"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;心情&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;心情&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="59"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;事件（必填，如：看了场直播）&quot;, should use `@string` resource"
+        errorLine1="            android:hint=&quot;事件（必填，如：看了场直播）&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="75"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;原因（可选）&quot;, should use `@string` resource"
+        errorLine1="            android:hint=&quot;原因（可选）&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="84"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;备注（可选）&quot;, should use `@string` resource"
+        errorLine1="            android:hint=&quot;备注（可选）&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_mood_event_edit.xml"
+            line="93"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;生成宣传图&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;生成宣传图&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_promo_preview.xml"
+            line="13"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;宣传图预览&quot;, should use `@string` resource"
+        errorLine1="        android:contentDescription=&quot;宣传图预览&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_promo_preview.xml"
+            line="24"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;选择风格（53 种）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;选择风格（53 种）&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_promo_preview.xml"
+            line="32"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;取消&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;取消&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_promo_preview.xml"
+            line="57"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;分享&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;分享&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_promo_preview.xml"
+            line="64"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;搜索场次标题 / 心情内容&quot;, should use `@string` resource"
+        errorLine1="        android:hint=&quot;搜索场次标题 / 心情内容&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_record_search.xml"
+            line="15"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;输入关键词开始搜索&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;输入关键词开始搜索&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_record_search.xml"
+            line="27"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;设置&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;设置&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_settings_drawer.xml"
+            line="14"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;分享直播间&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;分享直播间&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="16"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;分享到 QQ（卡片）&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;分享到 QQ（卡片）&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="50"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;真卡片：标题+封面+链接（首次需 QQ 授权）&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;真卡片：标题+封面+链接（首次需 QQ 授权）&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="58"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;QQ空间说说（图文）&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;QQ空间说说（图文）&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="94"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;官方图文说说：文案+封面+链接俱全&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;官方图文说说：文案+封面+链接俱全&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="102"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;图文分享&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;图文分享&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="138"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;开播文案+直播间封面，部分应用可能只发图片&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;开播文案+直播间封面，部分应用可能只发图片&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="146"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;生成宣传图&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;生成宣传图&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="182"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;封面+文案+直播间二维码，任何应用都不丢文案&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;封面+文案+直播间二维码，任何应用都不丢文案&quot;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="190"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;近 6 个月场次&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;近 6 个月场次&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_stats_trend.xml"
+            line="16"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;开播时段分布&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;开播时段分布&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_stats_trend.xml"
+            line="30"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;粉丝数变化&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;粉丝数变化&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_stats_trend.xml"
+            line="45"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;0%&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;0%&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_update_progress.xml"
+            line="13"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;自动检查更新（每日一次）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;自动检查更新（每日一次）&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_update_settings.xml"
+            line="15"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;Wi-Fi 下自动下载更新包&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;Wi-Fi 下自动下载更新包&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_update_settings.xml"
+            line="23"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;监控新视频投稿&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;监控新视频投稿&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="16"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;监控置顶视频变化&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;监控置顶视频变化&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="24"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;监控动态&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;监控动态&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="32"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;动态类型（勾选的才提醒）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;动态类型（勾选的才提醒）&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="46"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;图文动态&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;图文动态&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="56"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;转发动态&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;转发动态&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="64"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;专栏&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;专栏&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="72"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;新视频/动态时也响铃&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;新视频/动态时也响铃&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="87"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;（开播始终响铃，不受此控制）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;（开播始终响铃，不受此控制）&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_activity.xml"
+            line="93"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;跟随系统&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;跟随系统&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_appearance.xml"
+            line="21"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;浅色&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;浅色&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_appearance.xml"
+            line="27"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;深色&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;深色&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_appearance.xml"
+            line="33"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;每周自动备份（场次 + 心情 CSV）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;每周自动备份（场次 + 心情 CSV）&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_backup.xml"
+            line="14"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;选择备份目录&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;选择备份目录&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_backup.xml"
+            line="21"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;未选择目录&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;未选择目录&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_backup.xml"
+            line="31"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;省电（5 分钟）&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;省电（5 分钟）&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_check_interval.xml"
+            line="20"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;标准（1 分钟）&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;标准（1 分钟）&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_check_interval.xml"
+            line="26"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;实时（15 秒）&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;实时（15 秒）&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_check_interval.xml"
+            line="32"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;实时档更耗电且更频繁请求 B 站接口；锁屏/省电策略下系统仍可能限流，实际间隔以系统调度为准。&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;实时档更耗电且更频繁请求 B 站接口；锁屏/省电策略下系统仍可能限流，实际间隔以系统调度为准。&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_check_interval.xml"
+            line="41"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;下播提醒（含时长）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;下播提醒（含时长）&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_live_alerts.xml"
+            line="15"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;直播中标题变化提醒&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;直播中标题变化提醒&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_live_alerts.xml"
+            line="23"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;国产 ROM 后台保活：需在系统设置中关闭电池优化并允许自启动&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;国产 ROM 后台保活：需在系统设置中关闭电池优化并允许自启动&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_maintenance.xml"
+            line="15"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;去后台保活设置&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;去后台保活设置&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_maintenance.xml"
+            line="25"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;去电池优化设置&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;去电池优化设置&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_maintenance.xml"
+            line="36"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;开启勿扰时段&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;开启勿扰时段&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_quiet.xml"
+            line="16"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;勿扰开始&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;勿扰开始&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_quiet.xml"
+            line="28"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;23:00&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;23:00&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_quiet.xml"
+            line="35"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;勿扰结束&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;勿扰结束&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_quiet.xml"
+            line="48"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;07:00&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;07:00&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_quiet.xml"
+            line="55"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;勿扰时段内开播/新动态只发静音通知，不响铃不全屏（跨午夜区间有效）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;勿扰时段内开播/新动态只发静音通知，不响铃不全屏（跨午夜区间有效）&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_quiet.xml"
+            line="63"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;内置铃声&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;内置铃声&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_ringtone.xml"
+            line="15"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;自定义&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;自定义&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_ringtone.xml"
+            line="37"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;从系统铃声库选择&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;从系统铃声库选择&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_ringtone.xml"
+            line="49"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;从音频文件选择&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;从音频文件选择&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_ringtone.xml"
+            line="63"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;恢复默认铃声&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;恢复默认铃声&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_ringtone.xml"
+            line="77"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;自动检查更新（每日一次）&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;自动检查更新（每日一次）&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_update.xml"
+            line="16"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;Wi-Fi 下自动下载更新包&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;Wi-Fi 下自动下载更新包&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/expand_section_update.xml"
+            line="24"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;试听&quot;, should use `@string` resource"
+        errorLine1="        android:contentDescription=&quot;试听&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_builtin_sound.xml"
+            line="31"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;20:30 😄开心 · 看了场直播&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;20:30 😄开心 · 看了场直播&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_mood_event.xml"
+            line="28"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;原因：她唱了我点的歌&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;原因：她唱了我点的歌&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_mood_event.xml"
+            line="37"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;备注：下次还要点&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;备注：下次还要点&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_mood_event.xml"
+            line="47"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;删除心情事件&quot;, should use `@string` resource"
+        errorLine1="        android:contentDescription=&quot;删除心情事件&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_mood_event.xml"
+            line="55"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;群头像&quot;, should use `@string` resource"
+        errorLine1="            android:contentDescription=&quot;群头像&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_qq_group.xml"
+            line="23"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;14:00 ~ 17:23&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;14:00 ~ 17:23&quot; />"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_stream_session.xml"
+            line="31"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;3h23m&quot;, should use `@string` resource"
+        errorLine1="                android:text=&quot;3h23m&quot; />"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_stream_session.xml"
+            line="39"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;（无标题）&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;（无标题）&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_stream_session.xml"
+            line="49"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;当场封面&quot;, should use `@string` resource"
+        errorLine1="        android:contentDescription=&quot;当场封面&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/item_stream_session.xml"
+            line="59"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;牢白播了吗&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;牢白播了吗&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/widget_live_status.xml"
+            line="32"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;未开播&quot;, should use `@string` resource"
+        errorLine1="            android:text=&quot;未开播&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/widget_live_status.xml"
+            line="40"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;进入直播间&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;进入直播间&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/widget_live_status.xml"
+            line="72"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RtlSymmetry"
+        message="When you define `paddingStart` you should probably also define `paddingEnd` for right-to-left symmetry"
+        errorLine1="        android:paddingStart=&quot;4dp&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_promo_preview.xml"
+            line="12"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RtlSymmetry"
+        message="When you define `paddingStart` you should probably also define `paddingEnd` for right-to-left symmetry"
+        errorLine1="        android:paddingStart=&quot;4dp&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_promo_preview.xml"
+            line="30"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RtlSymmetry"
+        message="When you define `paddingStart` you should probably also define `paddingEnd` for right-to-left symmetry"
+        errorLine1="        android:paddingStart=&quot;20dp&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/dialog_share_options.xml"
+            line="13"
+            column="9"/>
+    </issue>
+
+</issues>

@@ -123,6 +123,10 @@ android {
         viewBinding = true
         buildConfig = true
     }
+    lint {
+        // 存量 372 个 warning 冻结到 baseline，只拦新增问题（Agenda 2026-08-13）
+        baseline = file("lint-baseline.xml")
+    }
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // Robolectric 加载大图/多沙箱吃堆内存：默认堆偏紧时 PNG 解码会
