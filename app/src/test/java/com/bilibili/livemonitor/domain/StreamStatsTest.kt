@@ -106,6 +106,53 @@ class StreamStatsTest {
     }
 
     @Test
+    fun `monthlyCounts 近 6 个月分桶 未闭合与窗口外忽略`() {
+        val cal = java.util.Calendar.getInstance()
+        fun sessionInMonth(monthsBack: Int, dayOfMonth: Int): StreamSessionEntity {
+            val c = cal.clone() as java.util.Calendar
+            c.add(java.util.Calendar.MONTH, -monthsBack)
+            c.set(java.util.Calendar.DAY_OF_MONTH, dayOfMonth.coerceAtMost(28))
+            c.set(java.util.Calendar.HOUR_OF_DAY, 12)
+            c.set(java.util.Calendar.MINUTE, 0)
+            c.set(java.util.Calendar.SECOND, 0)
+            c.set(java.util.Calendar.MILLISECOND, 0)
+            val start = c.timeInMillis
+            return StreamSessionEntity(startTs = start, endTs = start + 3_600_000)
+        }
+        val sessions = listOf(
+            sessionInMonth(0, 5), sessionInMonth(0, 10),   // 本月 2 场
+            sessionInMonth(1, 15),                          // 上月 1 场
+            sessionInMonth(5, 1),                           // 最早月 1 场
+            sessionInMonth(6, 1),                           // 窗口外忽略
+            StreamSessionEntity(startTs = now, endTs = null) // 未闭合忽略
+        )
+        val counts = StreamStats.monthlyCounts(sessions, System.currentTimeMillis(), 6)
+        assertEquals(6, counts.size)
+        assertEquals(1, counts[0]) // 最早月
+        assertEquals(1, counts[4]) // 上月
+        assertEquals(2, counts[5]) // 本月
+    }
+
+    @Test
+    fun `weekdayHourHeatmap 星期时段映射 未闭合忽略`() {
+        // epoch day 0 = 周四（(0+4)%7=4），epoch day 1 = 周五
+        val sessions = listOf(
+            StreamSessionEntity(startTs = 6 * 3_600_000, endTs = 7 * 3_600_000),   // 周四 6 点 slot1
+            StreamSessionEntity(startTs = 13 * 3_600_000, endTs = 14 * 3_600_000), // 周四 13 点 slot2
+            StreamSessionEntity(startTs = 20 * 3_600_000, endTs = 21 * 3_600_000), // 周四 20 点 slot3
+            StreamSessionEntity(startTs = day + 3_600_000, endTs = day + 2 * 3_600_000), // 周五 1 点 slot0
+            StreamSessionEntity(startTs = 0, endTs = null)                          // 未闭合忽略
+        )
+        val heat = StreamStats.weekdayHourHeatmap(sessions)
+        assertEquals(0, heat[4][0])  // 周四 0-5 时无
+        assertEquals(1, heat[4][1])  // 周四 6-11 时
+        assertEquals(1, heat[4][2])  // 周四 12-17 时
+        assertEquals(1, heat[4][3])  // 周四 18-23 时
+        assertEquals(1, heat[5][0])  // 周五 0-5 时
+        assertEquals(0, heat[0][0])  // 周日无
+    }
+
+    @Test
     fun `weekdayLabels 与 dailyCounts 桶逐日对齐`() {
         // now = epoch day 1,000,000（UTC）：今天星期 = (1_000_000+4)%7 = 5
         val labels = StreamStats.weekdayLabels(now, 7)

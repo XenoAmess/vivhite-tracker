@@ -87,6 +87,53 @@ object StreamStats {
     }
 
     /**
+     * 近 [months] 个自然月每月场次数（含本月，下标 0 = 最早月）。只算已闭合场次。
+     * 月界用本地 Calendar（月长不等，不能用固定 30 天窗口近似）。
+     */
+    fun monthlyCounts(
+        sessions: List<StreamSessionEntity>,
+        now: Long,
+        months: Int
+    ): List<Int> {
+        val monthStart = java.util.Calendar.getInstance().apply {
+            timeInMillis = now
+            set(java.util.Calendar.DAY_OF_MONTH, 1)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+            add(java.util.Calendar.MONTH, -(months - 1))
+        }
+        val buckets = IntArray(months)
+        sessions.filter { it.endTs != null && it.endTs!! > it.startTs }.forEach { s ->
+            val c = java.util.Calendar.getInstance().apply { timeInMillis = s.startTs }
+            val idx = (c.get(java.util.Calendar.YEAR) - monthStart.get(java.util.Calendar.YEAR)) * 12 +
+                (c.get(java.util.Calendar.MONTH) - monthStart.get(java.util.Calendar.MONTH))
+            if (idx in 0 until months) buckets[idx]++
+        }
+        return buckets.toList()
+    }
+
+    /**
+     * 开播规律热力：星期（0=周日..6=周六）× 时段（0:0-5 1:6-11 2:12-17 3:18-23）
+     * 的开播次数矩阵 [7][4]。只算已闭合场次；星期映射同 [favoriteWeekday]。
+     */
+    fun weekdayHourHeatmap(
+        sessions: List<StreamSessionEntity>,
+        localDayOffsetMs: Long = 0
+    ): Array<IntArray> {
+        val heat = Array(7) { IntArray(4) }
+        sessions.filter { it.endTs != null && it.endTs!! > it.startTs }.forEach { s ->
+            val localMs = s.startTs + localDayOffsetMs
+            val epochDay = localMs / DAY_MS
+            val weekday = ((epochDay + 4) % 7).toInt()
+            val hour = ((localMs % DAY_MS) / 3_600_000L).toInt()
+            heat[weekday][hour / 6]++
+        }
+        return heat
+    }
+
+    /**
      * 与 [dailyCounts] 逐桶对齐的星期标签（0=周日..6=周六，下标 0 = 最早一天）。
      * 桶 j 对应本地日 day0+j，星期映射同 [favoriteWeekday]：(epochDay+4)%7。
      */

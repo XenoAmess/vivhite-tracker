@@ -91,6 +91,7 @@ class StatsActivity : AppCompatActivity() {
         binding.btnExportStats.setOnClickListener { exportSessions() }
         binding.btnImportStats.setOnClickListener { importLauncher.launch("*/*") }
         binding.btnExportImage.setOnClickListener { exportStatsImage() }
+        binding.btnStatsTrend.setOnClickListener { showStatsTrendDialog() }
 
         loadAnchorAvatar()
         refreshData()
@@ -289,6 +290,36 @@ class StatsActivity : AppCompatActivity() {
         sessionAdapter.update(sessions)
         loadTitleChanges(sessions)
         loadMoodEvents()
+    }
+
+    // 观播统计弹窗：近 6 个月场次柱图 + 星期×时段开播热力
+    private fun showStatsTrendDialog() {
+        lifecycleScope.launch {
+            val now = System.currentTimeMillis()
+            val sessions = AppDatabase.get(this@StatsActivity).streamSessionDao()
+                .closedSessionsSince(now - 200L * DAY_MS) // 覆盖 6 个自然月的余量窗口
+            val monthCounts = StreamStats.monthlyCounts(sessions, now, 6)
+            val monthLabels = (5 downTo 0).map { back ->
+                val c = Calendar.getInstance().apply {
+                    timeInMillis = now
+                    add(Calendar.MONTH, -back)
+                }
+                "${c.get(Calendar.MONTH) + 1}月"
+            }
+            val localOffset = java.util.TimeZone.getDefault().getOffset(now).toLong()
+            val heat = StreamStats.weekdayHourHeatmap(sessions, localOffset)
+            val view = LayoutInflater.from(this@StatsActivity)
+                .inflate(R.layout.dialog_stats_trend, null)
+            view.findViewById<com.bilibili.livemonitor.views.WeekStreamBarsView>(R.id.monthBars)
+                .setData(monthCounts, monthLabels)
+            view.findViewById<com.bilibili.livemonitor.views.WeekdayHourHeatmapView>(R.id.weekdayHourHeatmap)
+                .setData(heat)
+            AlertDialog.Builder(this@StatsActivity)
+                .setTitle("观播统计")
+                .setView(view)
+                .setPositiveButton("关闭", null)
+                .show()
+        }
     }
 
     // 点场次行 → 人气曲线弹窗（60s 轮询采样，无数据时提示）

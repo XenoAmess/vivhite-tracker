@@ -344,6 +344,25 @@ class StatsActivityTest {
     }
 
     @Test
+    fun `点统计按钮 弹观播统计对话框`() = runBlocking {
+        val now = System.currentTimeMillis()
+        AppDatabase.get(context).streamSessionDao().insertSession(
+            StreamSessionEntity(startTs = now - 3_600_000, endTs = now - 600_000, title = "测试直播")
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("summary") {
+            activity.findViewById<TextView>(R.id.tvStatsSummary).text.toString().contains("本周")
+        }
+        activity.findViewById<android.view.View>(R.id.btnStatsTrend).performClick()
+        waitFor("stats trend dialog") {
+            org.robolectric.shadows.ShadowDialog.getLatestDialog() != null
+        }
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertNotNull(dialog.findViewById(R.id.monthBars))
+        assertNotNull(dialog.findViewById(R.id.weekdayHourHeatmap))
+    }
+
+    @Test
     fun `选中魔法期日 提示含第几天`() = runBlocking {
         // 今天起 3 天魔法期
         val start = todayStart()
