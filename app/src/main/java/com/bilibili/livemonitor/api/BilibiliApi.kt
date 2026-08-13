@@ -121,6 +121,15 @@ open class BilibiliApi : LiveStatusChecker {
         )?.let { parseFace(it) }
     }
 
+    /** 取粉丝数（Master/info 的 data.follower_num；未登录可用）。null = 网络/API 异常 */
+    suspend fun fetchFollowerNum(mid: Long): Long? = withContext(Dispatchers.IO) {
+        HttpClient.get(
+            "https://api.live.bilibili.com/live_user/v1/Master/info?uid=$mid",
+            timeoutMs = HTTP_TIMEOUT_MS,
+            referer = "https://live.bilibili.com/"
+        )?.let { parseFollowerNum(it) }
+    }
+
     companion object {
         // B 站 API 连接/读取超时（统一走 HttpClient，UA/Referer 由 HttpClient 管理）
         private const val HTTP_TIMEOUT_MS = 5000
@@ -165,6 +174,19 @@ open class BilibiliApi : LiveStatusChecker {
                 val json = JSONObject(response)
                 val data = json.optJSONObject("data") ?: return null
                 data.optString("face").takeIf { it.isNotBlank() }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        // internal 便于单测：从 Master/info 响应里解析粉丝数（data.follower_num）
+        internal fun parseFollowerNum(response: String): Long? {
+            return try {
+                val json = JSONObject(response)
+                if (json.optInt("code", Int.MIN_VALUE) != 0) return null
+                val data = json.optJSONObject("data") ?: return null
+                if (!data.has("follower_num")) return null
+                data.optLong("follower_num").takeIf { it > 0 }
             } catch (e: Exception) {
                 null
             }

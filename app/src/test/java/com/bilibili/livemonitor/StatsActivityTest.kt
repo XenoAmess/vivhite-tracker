@@ -487,4 +487,43 @@ class StatsActivityTest {
         cover.delete()
         Unit
     }
+
+    @Test
+    fun `统计弹窗 粉丝快照够 2 个才显示粉丝区`() = runBlocking {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        dao.deleteAllFollowerSnapshots()
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("summary") {
+            activity.findViewById<TextView>(R.id.tvStatsSummary).text.toString().contains("本周")
+        }
+        activity.findViewById<android.view.View>(R.id.btnStatsTrend).performClick()
+        waitFor("trend dialog") {
+            org.robolectric.shadows.ShadowDialog.getLatestDialog() != null
+        }
+        var dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertEquals(
+            android.view.View.GONE,
+            dialog.findViewById<android.view.View>(R.id.tvFollowerTitle).visibility
+        )
+        dialog.dismiss()
+
+        dao.insertFollowerSnapshot(
+            com.bilibili.livemonitor.db.FollowerSnapshotEntity(ts = 1000, followerNum = 22300)
+        )
+        dao.insertFollowerSnapshot(
+            com.bilibili.livemonitor.db.FollowerSnapshotEntity(ts = 2000, followerNum = 22420)
+        )
+        activity.findViewById<android.view.View>(R.id.btnStatsTrend).performClick()
+        waitFor("trend dialog 2") {
+            val d = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            d != null && d.isShowing
+        }
+        dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertEquals(
+            android.view.View.VISIBLE,
+            dialog.findViewById<android.view.View>(R.id.tvFollowerTitle).visibility
+        )
+        dao.deleteAllFollowerSnapshots()
+        Unit
+    }
 }

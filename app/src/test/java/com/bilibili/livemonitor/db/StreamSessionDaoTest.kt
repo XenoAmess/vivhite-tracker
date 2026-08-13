@@ -113,4 +113,14 @@ class StreamSessionDaoTest {
         dao.deleteAllPopularityPoints()
         assertEquals(0, dao.popularityPoints(a).size)
     }
+
+    @Test
+    fun `粉丝快照升序与最近时间`() = runBlocking {
+        dao.insertFollowerSnapshot(FollowerSnapshotEntity(ts = 2000, followerNum = 22420))
+        dao.insertFollowerSnapshot(FollowerSnapshotEntity(ts = 1000, followerNum = 22300))
+        assertEquals(listOf(22300L, 22420L), dao.followerSnapshots().map { it.followerNum })
+        assertEquals(2000L, dao.lastFollowerSnapshotTs())
+        dao.deleteAllFollowerSnapshots()
+        assertEquals(null, dao.lastFollowerSnapshotTs())
+    }
 }

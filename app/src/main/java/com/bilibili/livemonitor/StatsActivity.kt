@@ -387,6 +387,16 @@ class StatsActivity : AppCompatActivity() {
                 .setData(monthCounts, monthLabels)
             view.findViewById<com.bilibili.livemonitor.views.WeekdayHourHeatmapView>(R.id.weekdayHourHeatmap)
                 .setData(heat)
+            // 粉丝数变化（每日快照，快照 <2 个时隐藏该区域）
+            val followers = AppDatabase.get(this@StatsActivity).streamSessionDao()
+                .followerSnapshots()
+            if (followers.size >= 2) {
+                view.findViewById<com.bilibili.livemonitor.views.PopularityChartView>(R.id.followerChart)
+                    .setData(followers.map { it.ts to it.followerNum.toInt() })
+            } else {
+                view.findViewById<View>(R.id.tvFollowerTitle).visibility = View.GONE
+                view.findViewById<View>(R.id.followerChart).visibility = View.GONE
+            }
             AlertDialog.Builder(this@StatsActivity)
                 .setTitle("观播统计")
                 .setView(view)

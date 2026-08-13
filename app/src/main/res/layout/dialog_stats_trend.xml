@@ -35,4 +35,19 @@
         android:layout_height="180dp"
         android:paddingTop="4dp" />
 
+    <TextView
+        android:id="@+id/tvFollowerTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingTop="8dp"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:text="粉丝数变化" />
+
+    <com.bilibili.livemonitor.views.PopularityChartView
+        android:id="@+id/followerChart"
+        android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:paddingTop="4dp" />
+
 </LinearLayout>

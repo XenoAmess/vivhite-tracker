@@ -172,6 +172,30 @@ class StreamSessionTracker(
     }
     internal var coverStore: com.bilibili.livemonitor.util.CoverStore =
         com.bilibili.livemonitor.util.CoverStore()
+    // 粉丝数源（Master/info follower_num），单测注入假数据
+    internal var followerNumFetcher: suspend (Long) -> Long? = { mid ->
+        com.bilibili.livemonitor.api.BilibiliApi().fetchFollowerNum(mid)
+    }
+
+    /** 粉丝数每日快照：距上次满 20h 才采（FollowerDecider 天闸），失败静默 */
+    fun maybeSnapshotFollower(now: Long = System.currentTimeMillis()) {
+        scope.launch {
+            try {
+                val dao = AppDatabase.get(context).streamSessionDao()
+                val lastTs = dao.lastFollowerSnapshotTs()
+                if (!com.bilibili.livemonitor.domain.FollowerDecider.shouldSnapshot(lastTs, now)) {
+                    return@launch
+                }
+                val num = followerNumFetcher(com.bilibili.livemonitor.util.BiliTargets.MONITOR_MID)
+                    ?: return@launch
+                dao.insertFollowerSnapshot(
+                    com.bilibili.livemonitor.db.FollowerSnapshotEntity(ts = now, followerNum = num)
+                )
+            } catch (e: Exception) {
+                AppLogger.w(tag, "snapshot follower failed", e)
+            }
+        }
+    }
 
     /**
      * 开播封面收藏（幂等）：当前开放场次没有 cover_path 才拉一次；

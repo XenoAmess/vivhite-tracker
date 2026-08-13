@@ -285,4 +285,38 @@ class StreamSessionTrackerTest {
         assertEquals("已有封面幂等跳过", 1, fetchCount)
         java.io.File(context.filesDir, "covers/fake.jpg").delete()
     }
+
+    @Test
+    fun `maybeSnapshotFollower 天闸 20h 内不重复采`() {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        runBlocking { dao.deleteAllFollowerSnapshots() }
+        var fetchCount = 0
+        tracker.followerNumFetcher = { fetchCount++; 22420L }
+
+        val now = System.currentTimeMillis()
+        tracker.maybeSnapshotFollower(now)
+        waitFor("first snapshot") {
+            runBlocking { dao.followerSnapshots().isNotEmpty() }
+        }
+        assertEquals(1, fetchCount)
+
+        // 1h 后：天闸未过 → 不再采
+        tracker.maybeSnapshotFollower(now + 3_600_000)
+        Thread.sleep(300)
+        assertEquals("20h 内不重复采", 1, fetchCount)
+
+        // 21h 后：过闸 → 再采
+        tracker.maybeSnapshotFollower(now + 21 * 3_600_000)
+        waitFor("second snapshot") {
+            runBlocking { dao.followerSnapshots().size == 2 }
+        }
+        assertEquals(2, fetchCount)
+
+        // 拉取失败不写点
+        tracker.followerNumFetcher = { fetchCount++; null }
+        tracker.maybeSnapshotFollower(now + 42 * 3_600_000)
+        Thread.sleep(300)
+        assertEquals(2, runBlocking { dao.followerSnapshots().size })
+        runBlocking { dao.deleteAllFollowerSnapshots() }
+    }
 }

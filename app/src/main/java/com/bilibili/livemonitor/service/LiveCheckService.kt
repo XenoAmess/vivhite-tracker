@@ -312,8 +312,12 @@ class LiveCheckService : Service() {
                 handleResult(true, status.liveStartTime, status.title)
                 streamSessionTracker.recordPopularity(status.online)
                 streamSessionTracker.collectStreamCover(roomId)
+                streamSessionTracker.maybeSnapshotFollower()
             }
-            is BilibiliApi.LiveStatus.NotLive -> handleResult(false)
+            is BilibiliApi.LiveStatus.NotLive -> {
+                handleResult(false)
+                streamSessionTracker.maybeSnapshotFollower()
+            }
             is BilibiliApi.LiveStatus.Error -> {
                 // 错误不更新状态，由调用方决定是否重试
             }

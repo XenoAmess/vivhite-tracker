@@ -221,4 +221,12 @@ class BilibiliApiTest {
     fun `parseRoomTitle 非法 JSON 返回 null`() {
         assertNull(BilibiliApi.parseRoomTitle("not a json"))
     }
+
+    @Test
+    fun `parseFollowerNum 正常解析与容错`() {
+        assertEquals(22420L, BilibiliApi.parseFollowerNum("""{"code":0,"data":{"follower_num":22420}}"""))
+        assertNull(BilibiliApi.parseFollowerNum("""{"code":-799}"""))
+        assertNull(BilibiliApi.parseFollowerNum("""{"code":0,"data":{}}"""))
+        assertNull(BilibiliApi.parseFollowerNum("not json"))
+    }
 }

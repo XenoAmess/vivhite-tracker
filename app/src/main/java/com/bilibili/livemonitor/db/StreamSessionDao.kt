@@ -53,4 +53,19 @@ interface StreamSessionDao {
     /** 清空人气点（测试用） */
     @Query("DELETE FROM popularity_points")
     suspend fun deleteAllPopularityPoints()
+
+    @Insert
+    suspend fun insertFollowerSnapshot(snapshot: FollowerSnapshotEntity)
+
+    /** 全部粉丝快照，按时间升序（曲线绘制用） */
+    @Query("SELECT * FROM follower_snapshots ORDER BY ts ASC")
+    suspend fun followerSnapshots(): List<FollowerSnapshotEntity>
+
+    /** 最近一次快照时间（天闸用）；无记录返回 null */
+    @Query("SELECT MAX(ts) FROM follower_snapshots")
+    suspend fun lastFollowerSnapshotTs(): Long?
+
+    /** 清空粉丝快照（测试用） */
+    @Query("DELETE FROM follower_snapshots")
+    suspend fun deleteAllFollowerSnapshots()
 }

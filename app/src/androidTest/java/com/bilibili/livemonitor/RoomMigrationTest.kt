@@ -37,14 +37,14 @@ class RoomMigrationTest {
         // 全链迁移 + 按 v4 schema 校验
         helper.runMigrationsAndValidate(
             dbName, 4, true,
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
         ).close()
         // 校验过后用 Room 正常打开做 DAO 断言
         val db = androidx.room.Room.databaseBuilder(
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
         ).build()
         val sessions = db.streamSessionDao().recentSessions(5)
         assertEquals(1, sessions.size)
@@ -84,7 +84,7 @@ class RoomMigrationTest {
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
         ).build()
         // v2 心情数据迁移后 duration_min 补默认 0
         val moods = db.moodEventDao().eventsBetween(0, 10_000)
@@ -108,7 +108,7 @@ class RoomMigrationTest {
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
         ).build()
 
         val moods = db.moodEventDao().eventsBetween(0, 10_000)
@@ -135,7 +135,7 @@ class RoomMigrationTest {
         val db = androidx.room.Room.databaseBuilder(
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
-        ).addMigrations(AppDatabase.MIGRATION_4_5).build()
+        ).addMigrations(AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6).build()
 
         val sessions = db.streamSessionDao().recentSessions(5)
         assertEquals(1, sessions.size)
@@ -147,6 +147,32 @@ class RoomMigrationTest {
             "/tmp/cover.jpg",
             db.streamSessionDao().recentSessions(5).first().coverPath
         )
+        db.close()
+        Unit
+    }
+
+    @Test
+    fun migrate5To6() = runBlocking {
+        helper.createDatabase(dbName, 5).apply {
+            execSQL("INSERT INTO stream_sessions (start_ts, end_ts, title, cover_path) VALUES (1000, 2000, 'v5场次', '/tmp/c.jpg')")
+            close()
+        }
+        helper.runMigrationsAndValidate(
+            dbName, 6, true, AppDatabase.MIGRATION_5_6
+        ).close()
+        val db = androidx.room.Room.databaseBuilder(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext(),
+            AppDatabase::class.java, dbName
+        ).addMigrations(AppDatabase.MIGRATION_5_6).build()
+
+        val sessions = db.streamSessionDao().recentSessions(5)
+        assertEquals(1, sessions.size)
+        assertEquals("/tmp/c.jpg", sessions[0].coverPath)
+        // v6 新表可写
+        db.streamSessionDao().insertFollowerSnapshot(
+            FollowerSnapshotEntity(ts = 100, followerNum = 22420)
+        )
+        assertEquals(1, db.streamSessionDao().followerSnapshots().size)
         db.close()
         Unit
     }

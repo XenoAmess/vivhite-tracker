@@ -12,9 +12,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         StreamSessionEntity::class,
         StreamTitleChangeEntity::class,
         MoodEventEntity::class,
-        PopularityPointEntity::class
+        PopularityPointEntity::class,
+        FollowerSnapshotEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -79,14 +80,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v5→v6：粉丝数每日快照表 */
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `follower_snapshots` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `ts` INTEGER NOT NULL,
+                        `follower_num` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "vivhite.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
-                    .build().also { INSTANCE = it }
+                ).addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+                ).build().also { INSTANCE = it }
             }
         }
     }
