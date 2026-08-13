@@ -41,13 +41,14 @@ val gitHash = providers.exec {
 // 把版本信息写进 build/outputs/version-info.properties，CI workflow 从这里读取，
 // 消除 android-release.yml / android-ci.yml / 增量脚本 里各自复刻的版本推导。
 // 目标 File 在配置期算成 java.io.File 再进 doLast，避免捕获 Provider 破坏 configuration cache
-val versionInfoFile = layout.buildDirectory.file("outputs/version-info.properties").get().asFile
+// configuration cache 兼容：doLast 闭包只许捕获可序列化局部变量
+//（顶层脚本 val 会把脚本对象带进闭包 → 不可序列化）
 val writeVersionInfo = tasks.register("writeVersionInfo") {
-    outputs.file(versionInfoFile)
+    val outFile = layout.buildDirectory.file("outputs/version-info.properties").get().asFile
+    val content = "versionCode=$gitVersionCode\nversionName=$gitVersionName\ngitHash=$gitHash\n"
+    outputs.file(outFile)
     doLast {
-        versionInfoFile.writeText(
-            "versionCode=$gitVersionCode\nversionName=$gitVersionName\ngitHash=$gitHash\n"
-        )
+        outFile.writeText(content)
     }
 }
 
