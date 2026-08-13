@@ -129,7 +129,7 @@ object StatsImageRenderer {
         )
         val titleX = PAD + AVATAR_SIZE + 20f
         c.drawText(
-            "牢白播了吗 · 绮迹手账", titleX, y + 76f,
+            "绮迹手账", titleX, y + 76f,
             helper.paintText(46f, TEXT_MAIN, bold = true)
         )
         c.drawText(data.monthTitle, titleX, y + 124f, helper.paintText(28f, ACCENT, bold = true))
