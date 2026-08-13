@@ -39,6 +39,12 @@ Android 单模块 Kotlin 应用：监控 B 站直播间 11258892（白绮）开�
 - 功能改动收尾后：`JAVA_HOME=~/.jdks/jbr-17.0.14 ./gradlew connectedDebugAndroidTest` 跑 instrumented 套件；**视觉类改动额外截图人工核对**：
   `adb exec-out screencap -p > /tmp/screen.png` 后读图确认排版。
 - pgrep 检查模拟器进程时注意：模式串会匹配到自己的 shell 命令（用 `adb devices` 判断更靠谱）。
+- **模拟器 /data 写满会导致装不上测试包**（`Requested internal only, but not enough space`）：生产镜像无 root 查不了目录占用，直接 kill 后加 `-wipe-data` 重启（测试环境数据无所谓）。
+- **instrumented UI 自动化踩坑**（2026-08 已踩完）：
+  - androidTest 类路径没有 Robolectric，`ShadowDialog` 不可用；对话框交互用 Espresso `inRoot(isDialog())`（`matcher.RootMatchers`，不是 assertion 包）。
+  - `uiautomator dump` 里 emoji 是 XML 实体（`&#128516;`），按文本匹配 chip 会扑空——用坐标点或匹配纯文本部分。
+  - 首启连环权限弹窗（精确闹钟/电池优化）挡导航：`adb shell cmd appops set <pkg> SCHEDULE_EXACT_ALARM allow` + `dumpsys deviceidle whitelist +<pkg>` 预授权。
+  - 非 exported Activity 不能 `am start`（SecurityException），走主 Activity 然后 UI 点进去。
 
 ## 架构：检测循环（读代码前先看这里）
 
