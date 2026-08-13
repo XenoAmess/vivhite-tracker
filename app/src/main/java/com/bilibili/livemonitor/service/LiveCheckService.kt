@@ -859,7 +859,8 @@ class LiveCheckService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val triggerAt = System.currentTimeMillis() + CHECK_INTERVAL
+            val triggerAt = System.currentTimeMillis() +
+                preferenceManager.getCheckIntervalSeconds() * 1000L
             com.bilibili.livemonitor.util.AlarmScheduler.schedule(
                 this, triggerAt, pendingIntent, "scheduleNextCheckAlarm"
             )
@@ -936,7 +937,6 @@ class LiveCheckService : Service() {
         const val EXTRA_MONITORING_GENERATION = "monitoring_generation"
         private const val DEFAULT_ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
         private const val NO_MONITORING_GENERATION = -1L
-        private const val CHECK_INTERVAL = 60_000L // 60秒
         private const val DYNAMIC_CHECK_INTERVAL = 5 * 60_000L // 5分钟
         private const val CHECK_TIMEOUT = 25_000L // 单次检测超时25秒
         private const val ERROR_RETRY_DELAY = 15_000L // 错误后15秒重试

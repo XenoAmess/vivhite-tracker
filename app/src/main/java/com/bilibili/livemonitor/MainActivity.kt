@@ -319,6 +319,13 @@ class MainActivity : AppCompatActivity() {
                 onExpand = { view -> bindQuietSection(view) }
             ),
             SettingsEntry(
+                title = "检测频率",
+                subtitle = computeCheckIntervalSubtitle(),
+                iconRes = android.R.drawable.ic_menu_recent_history,
+                expandLayoutRes = R.layout.expand_section_check_interval,
+                onExpand = { view -> bindCheckIntervalSection(view) }
+            ),
+            SettingsEntry(
                 title = "直播提醒",
                 subtitle = "下播 / 标题变化",
                 iconRes = android.R.drawable.ic_lock_idle_lock,
@@ -552,6 +559,35 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNotifyTitleChange).apply {
             isChecked = preferenceManager.isNotifyTitleChange()
             setOnCheckedChangeListener { _, c -> preferenceManager.setNotifyTitleChange(c) }
+        }
+    }
+
+    private fun computeCheckIntervalSubtitle(): String =
+        when (preferenceManager.getCheckIntervalSeconds()) {
+            PreferenceManager.CHECK_INTERVAL_ECO_SECONDS -> "省电（5 分钟）"
+            PreferenceManager.CHECK_INTERVAL_REALTIME_SECONDS -> "实时（15 秒）"
+            else -> "标准（1 分钟）"
+        }
+
+    private fun bindCheckIntervalSection(view: android.view.View) {
+        val rg = view.findViewById<android.widget.RadioGroup>(R.id.rgCheckInterval)
+        val checkedId = when (preferenceManager.getCheckIntervalSeconds()) {
+            PreferenceManager.CHECK_INTERVAL_ECO_SECONDS -> R.id.rbIntervalEco
+            PreferenceManager.CHECK_INTERVAL_REALTIME_SECONDS -> R.id.rbIntervalRealtime
+            else -> R.id.rbIntervalStandard
+        }
+        rg.check(checkedId)
+        rg.setOnCheckedChangeListener { _, id ->
+            val seconds = when (id) {
+                R.id.rbIntervalEco -> PreferenceManager.CHECK_INTERVAL_ECO_SECONDS
+                R.id.rbIntervalRealtime -> PreferenceManager.CHECK_INTERVAL_REALTIME_SECONDS
+                else -> PreferenceManager.CHECK_INTERVAL_STANDARD_SECONDS
+            }
+            preferenceManager.setCheckIntervalSeconds(seconds)
+            // 立即生效：下一次 Alarm 排程（服务与 Receiver 都实时读 prefs）
+            if (preferenceManager.isServiceRunning()) {
+                startService(Intent(this, com.bilibili.livemonitor.service.LiveCheckService::class.java))
+            }
         }
     }
 

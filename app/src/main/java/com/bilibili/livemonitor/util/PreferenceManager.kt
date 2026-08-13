@@ -101,6 +101,15 @@ class PreferenceManager(context: Context) {
         return prefs.getLong(KEY_LAST_LIVE_OBSERVED_TIME, 0L)
     }
 
+    // 直播检测间隔（秒）：省电 300 / 标准 60（默认）/ 实时 15
+    fun setCheckIntervalSeconds(seconds: Int) {
+        prefs.edit().putInt(KEY_CHECK_INTERVAL_SECONDS, seconds).apply()
+    }
+
+    fun getCheckIntervalSeconds(): Int {
+        return prefs.getInt(KEY_CHECK_INTERVAL_SECONDS, CHECK_INTERVAL_STANDARD_SECONDS)
+    }
+
     // 观播静音绑定的本场直播 live_start_time；与当前不一致 = 新一场 = 自动解除静音
     // 空串 = 老标记（无绑定信息），不参与新会话比对
     fun setSuppressedLiveStart(startTime: String) {
@@ -396,6 +405,12 @@ class PreferenceManager(context: Context) {
         private const val KEY_ALERT_SUPPRESSED = "alert_suppressed"
         private const val KEY_LAST_LIVE_START_TIME = "last_live_start_time"
         private const val KEY_LAST_LIVE_OBSERVED_TIME = "last_live_observed_time"
+        private const val KEY_CHECK_INTERVAL_SECONDS = "check_interval_seconds"
+
+        // 检测频率档位（秒）
+        const val CHECK_INTERVAL_ECO_SECONDS = 300
+        const val CHECK_INTERVAL_STANDARD_SECONDS = 60
+        const val CHECK_INTERVAL_REALTIME_SECONDS = 15
         private const val KEY_SUPPRESSED_LIVE_START = "suppressed_live_start"
 
         // ===== 应用更新检查 =====

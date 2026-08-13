@@ -238,4 +238,14 @@ class PreferenceManagerTest {
         prefs.setDarkMode(PreferenceManager.DARK_MODE_DARK)
         assertEquals(PreferenceManager.DARK_MODE_DARK, prefs.getDarkMode())
     }
+
+    @Test
+    fun `检测频率默认标准档 round trip`() {
+        assertEquals(PreferenceManager.CHECK_INTERVAL_STANDARD_SECONDS, prefs.getCheckIntervalSeconds())
+        prefs.setCheckIntervalSeconds(PreferenceManager.CHECK_INTERVAL_ECO_SECONDS)
+        assertEquals(PreferenceManager.CHECK_INTERVAL_ECO_SECONDS, prefs.getCheckIntervalSeconds())
+        prefs.setCheckIntervalSeconds(PreferenceManager.CHECK_INTERVAL_REALTIME_SECONDS)
+        assertEquals(PreferenceManager.CHECK_INTERVAL_REALTIME_SECONDS, prefs.getCheckIntervalSeconds())
+        prefs.setCheckIntervalSeconds(PreferenceManager.CHECK_INTERVAL_STANDARD_SECONDS)
+    }
 }

@@ -50,7 +50,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 context, ALARM_REQUEST_CODE, Intent(context, AlarmReceiver::class.java),
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
             )
-            val triggerAt = System.currentTimeMillis() + ALARM_INTERVAL
+            val triggerAt = System.currentTimeMillis() +
+                PreferenceManager(context).getCheckIntervalSeconds() * 1000L
             com.bilibili.livemonitor.util.AlarmScheduler.schedule(
                 context, triggerAt, pendingIntent, "scheduleNextAlarm"
             )
@@ -60,7 +61,6 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        private const val ALARM_INTERVAL = 60_000L // 60秒
         private const val ALARM_REQUEST_CODE = 2001
         private const val TAG = "AlarmReceiver"
     }

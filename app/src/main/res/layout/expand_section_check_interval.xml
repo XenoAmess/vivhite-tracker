@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp">
+
+    <RadioGroup
+        android:id="@+id/rgCheckInterval"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="8dp">
+
+        <RadioButton
+            android:id="@+id/rbIntervalEco"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="省电（5 分钟）" />
+
+        <RadioButton
+            android:id="@+id/rbIntervalStandard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="标准（1 分钟）" />
+
+        <RadioButton
+            android:id="@+id/rbIntervalRealtime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="实时（15 秒）" />
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="8dp"
+        android:textSize="12sp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:text="实时档更耗电且更频繁请求 B 站接口；锁屏/省电策略下系统仍可能限流，实际间隔以系统调度为准。" />
+
+</LinearLayout>
