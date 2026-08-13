@@ -4,6 +4,11 @@ plugins {
     jacoco
 }
 
+// Room schema 导出入仓（迁移测试 MigrationTestHelper 依赖 schema JSON）
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 jacoco {
     toolVersion = "0.8.12"
 }
@@ -152,6 +157,8 @@ dependencies {
     testImplementation("androidx.work:work-testing:2.11.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
+    // Room 迁移测试（MigrationTestHelper 读 schemas/ 里的版本化 schema JSON）
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
 }
 
 tasks.withType<Test>().configureEach {
@@ -203,6 +210,8 @@ val generateChangelog = tasks.register("generateChangelog") {
     }
 }
 android.sourceSets.getByName("main").assets.directories.add(changelogDir.get().asFile.absolutePath)
+// Room schema JSON 作为 androidTest assets（MigrationTestHelper 按版本读）
+android.sourceSets.getByName("androidTest").assets.directories.add("$projectDir/schemas")
 tasks.named("preBuild").configure {
     dependsOn(generateChangelog)
     dependsOn(writeVersionInfo)

@@ -15,13 +15,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PopularityPointEntity::class
     ],
     version = 4,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun streamSessionDao(): StreamSessionDao
 
     abstract fun moodEventDao(): MoodEventDao
+
 
     companion object {
         @Volatile
