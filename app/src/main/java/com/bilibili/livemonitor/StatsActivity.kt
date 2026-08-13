@@ -144,6 +144,9 @@ class StatsActivity : AppCompatActivity() {
                 val day = dayStart(s.startTs)
                 sessionsByDay.getOrPut(day) { mutableListOf() }.add(s)
             }
+            // 同日场次按时间正序（recentSessions 是倒序，直接 add 会成晚→早，
+            // 与心情列表的早→晚方向打架）：手账阅读体验统一为升序
+            sessionsByDay.values.forEach { list -> list.sortBy { it.startTs } }
             // 完全没有场次时显示首次使用引导
             binding.tvEmptyGuide.visibility = if (recent.isEmpty()) View.VISIBLE else View.GONE
             // 默认选中：今天；今天无场次则最近一场所在的日期

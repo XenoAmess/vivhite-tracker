@@ -475,13 +475,13 @@ class StatsActivityTest {
         val rv = activity.findViewById<RecyclerView>(R.id.rvSessions)
         val first = rv.findViewHolderForAdapterPosition(0)!!.itemView
         val second = rv.findViewHolderForAdapterPosition(1)!!.itemView
-        // 列表倒序（新的在前）：有封面行 VISIBLE，无封面行 GONE
+        // 列表按时间正序（早场在前）：无封面行（更早）GONE，有封面行 VISIBLE
         assertEquals(
-            android.view.View.VISIBLE,
+            android.view.View.GONE,
             first.findViewById<android.widget.ImageView>(R.id.ivSessionCover).visibility
         )
         assertEquals(
-            android.view.View.GONE,
+            android.view.View.VISIBLE,
             second.findViewById<android.widget.ImageView>(R.id.ivSessionCover).visibility
         )
         cover.delete()
@@ -549,6 +549,28 @@ class StatsActivityTest {
         }
         assertEquals(0, sdao.recentSessions(5).size)
         assertEquals(0, mdao.all().size)
+        Unit
+    }
+
+    @Test
+    fun `同日多场次 按时间正序排列`() = runBlocking {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        val now = System.currentTimeMillis()
+        // 同一天两场：先插晚场再插早场（模拟 DAO 倒序来源）
+        dao.insertSession(StreamSessionEntity(startTs = now - 1_800_000, endTs = now - 600_000, title = "晚场"))
+        dao.insertSession(StreamSessionEntity(startTs = now - 7_200_000, endTs = now - 5_400_000, title = "早场"))
+
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("two sessions") {
+            activity.findViewById<RecyclerView>(R.id.rvSessions).adapter!!.itemCount == 2
+        }
+        val rv = activity.findViewById<RecyclerView>(R.id.rvSessions)
+        val firstTitle = rv.findViewHolderForAdapterPosition(0)!!.itemView
+            .findViewById<TextView>(R.id.tvSessionTitle).text.toString()
+        val secondTitle = rv.findViewHolderForAdapterPosition(1)!!.itemView
+            .findViewById<TextView>(R.id.tvSessionTitle).text.toString()
+        assertEquals("早场（时间在前）应在列表上方", "早场", firstTitle)
+        assertEquals("晚场", secondTitle)
         Unit
     }
 }

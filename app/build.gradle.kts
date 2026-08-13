@@ -190,12 +190,19 @@ val generateChangelog = tasks.register("generateChangelog") {
         // 改用 ProcessBuilder 在任务动作内跑 git
         fun git(vararg args: String): String = runCatching {
             val pb = ProcessBuilder(listOf("git", *args))
+            // 本机 shell 环境给子进程注了 proxychains（LD_PRELOAD），启动横幅会
+            // 混进 git 输出污染 changelog——摘掉它（本地 git 操作不需要代理）
+            pb.environment().remove("LD_PRELOAD")
             pb.redirectErrorStream(true)
             val proc = pb.start()
             proc.outputStream.close()
             val output = proc.inputStream.readBytes().toString(Charsets.UTF_8)
             proc.waitFor()
-            output.trim()
+            // 防御性过滤：任何非 git 输出的工具横幅行都不进 changelog
+            output.lines()
+                .filter { it.isNotBlank() && !it.startsWith("[proxychains") }
+                .joinToString("\n")
+                .trim()
         }.getOrDefault("")
         val tags = git("tag", "-l", "v*", "--sort=-creatordate")
             .lines().filter { it.isNotBlank() }
