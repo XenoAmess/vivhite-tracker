@@ -28,7 +28,7 @@ abstract class AppDatabase : RoomDatabase() {
         private var INSTANCE: AppDatabase? = null
 
         /** v1→v2：新增心情事件表（场次/标题变化数据不动） */
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """
@@ -47,7 +47,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /** v2→v3：心情事件加时长（分钟，默认 0 = 不记时长） */
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `mood_events` ADD COLUMN `duration_min` INTEGER NOT NULL DEFAULT 0"
@@ -56,7 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /** v3→v4：直播人气采样点表 */
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """

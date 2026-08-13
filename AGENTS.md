@@ -31,6 +31,15 @@ Android 单模块 Kotlin 应用：监控 B 站直播间 11258892（白绮）开�
 - **所有** workflow 的 checkout 都必须 `fetch-depth: 0`（versionCode = `git rev-list --count HEAD`、versionName = `git describe --tags` 都依赖完整 git 历史，浅克隆会让前者塌成 1、后者直接报错）。
 - `versionCode` = `git rev-list --count HEAD`（`app/build.gradle.kts`），单调递增保证覆盖安装；`versionName` 从最近 tag 推导（`v1.1.2` → `1.1.2`，tag 后有 N commit → `1.1.2+N`，无 tag → `0.0.0+commit数`），让 tag 与显示对齐。构建必须能在项目目录执行 git。
 
+## 模拟器自测（每个功能改完都要做）
+
+- **模拟器必须无窗口后台运行**（用户明确要求：不许把模拟器窗口弹到前台）。启动命令：
+  `nohup $ANDROID_HOME/emulator/emulator -avd Medium_Phone_API_36.1 -no-window -no-audio -no-snapshot-load -gpu swiftshader_indirect > /tmp/emulator.log 2>&1 &`
+  等开机：`adb shell getprop sys.boot_completed` 返回 1。
+- 功能改动收尾后：`JAVA_HOME=~/.jdks/jbr-17.0.14 ./gradlew connectedDebugAndroidTest` 跑 instrumented 套件；**视觉类改动额外截图人工核对**：
+  `adb exec-out screencap -p > /tmp/screen.png` 后读图确认排版。
+- pgrep 检查模拟器进程时注意：模式串会匹配到自己的 shell 命令（用 `adb devices` 判断更靠谱）。
+
 ## 架构：检测循环（读代码前先看这里）
 
 ```
