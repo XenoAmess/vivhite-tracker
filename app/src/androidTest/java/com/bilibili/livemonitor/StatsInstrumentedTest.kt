@@ -4,7 +4,6 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.replaceText
-import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withClassName
@@ -15,7 +14,6 @@ import com.bilibili.livemonitor.db.AppDatabase
 import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import kotlinx.coroutines.runBlocking
-import org.hamcrest.Matchers.containsString
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -65,9 +63,13 @@ class StatsInstrumentedTest {
             assertEquals("instrumented 添加", added.title)
             assertEquals("happy", added.mood)
 
-            // 编辑：等列表渲染出条目再点（CI 模拟器慢，点早会找不着）
+            // 编辑：等列表渲染出条目再点（CI 模拟器慢，点早会找不着）；
+            // 条目在屏外时 Espresso 可见度/scrollTo 都会失败——直接点 ViewHolder
             waitForMoodList("add visible", scenario, 1)
-            onView(withText(containsString("instrumented 添加"))).perform(scrollTo(), click())
+            scenario.onActivity {
+                it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
+                    .findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+            }
             onView(withId(R.id.etMoodEventTitle)).inRoot(isDialog())
                 .perform(replaceText("instrumented 编辑后"))
             onView(withText("保存")).inRoot(isDialog()).perform(click())
@@ -75,8 +77,12 @@ class StatsInstrumentedTest {
                 runBlocking { dao.all().firstOrNull()?.title == "instrumented 编辑后" }
             }
 
-            // 删除：点删除图标 → 确认
-            onView(withId(R.id.btnMoodEventDelete)).perform(click())
+            // 删除：点删除图标 → 确认（同上，走 ViewHolder 直点绕可见性约束）
+            scenario.onActivity {
+                it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
+                    .findViewHolderForAdapterPosition(0)!!.itemView
+                    .findViewById<android.view.View>(R.id.btnMoodEventDelete).performClick()
+            }
             onView(withText("删除")).inRoot(isDialog()).perform(click())
             waitForDao("delete") { runBlocking { dao.all().isEmpty() } }
             assertEquals(0, dao.all().size)
@@ -149,8 +155,11 @@ class StatsInstrumentedTest {
         ActivityScenario.launch(StatsActivity::class.java).use { scenario ->
             // 等列表渲染出条目再点（CI 模拟器慢，点早会找不着）
             waitForMoodList("mood visible", scenario, 1)
-            // 点条目 → 编辑弹窗 → 日期按钮
-            onView(withText(containsString("挪日期"))).perform(scrollTo(), click())
+            // 点条目 → 编辑弹窗 → 日期按钮（ViewHolder 直点绕可见性约束）
+            scenario.onActivity {
+                it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
+                    .findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+            }
             onView(withId(R.id.btnMoodEventDate)).inRoot(isDialog()).perform(click())
             // DatePicker 改为昨天（PickerActions month 是 1 基）
             val yesterday = java.util.Calendar.getInstance().apply {
