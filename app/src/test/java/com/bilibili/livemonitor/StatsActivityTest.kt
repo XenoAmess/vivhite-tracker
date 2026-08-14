@@ -663,4 +663,61 @@ class StatsActivityTest {
         )
         Unit
     }
+
+    @Test
+    fun `导入ZIP 全量恢复 含主题变化人气粉丝封面`() = runBlocking {
+        val sdao = AppDatabase.get(context).streamSessionDao()
+        val mdao = AppDatabase.get(context).moodEventDao()
+        val coverBytes = ByteArray(256) { (it % 251).toByte() }
+        val data = com.bilibili.livemonitor.domain.FullBackup.Data(
+            sessions = listOf(
+                StreamSessionEntity(
+                    startTs = 1_700_000_000_000, endTs = 1_700_003_600_000,
+                    title = "ZIP场", coverPath = "ff00aa.jpg"
+                )
+            ),
+            moods = listOf(
+                com.bilibili.livemonitor.db.MoodEventEntity(
+                    eventTs = 1_700_001_800_000, durationMin = 30, mood = "happy",
+                    title = "ZIP心情", createdAt = 1_700_001_800_000
+                )
+            ),
+            titleChanges = listOf(
+                com.bilibili.livemonitor.domain.FullBackup.TitleChangeRow(
+                    sessionStart = 1_700_000_000_000, sessionEnd = 1_700_003_600_000,
+                    changedAt = 1_700_000_600_000, oldTitle = "开", newTitle = "换"
+                )
+            ),
+            popularity = listOf(
+                com.bilibili.livemonitor.domain.FullBackup.PopularityRow(
+                    sessionStart = 1_700_000_000_000, sessionEnd = 1_700_003_600_000,
+                    ts = 1_700_000_060_000, online = 777
+                )
+            ),
+            followers = listOf(
+                com.bilibili.livemonitor.db.FollowerSnapshotEntity(ts = 1_700_000_000_000, followerNum = 22420)
+            ),
+            prefsJson = null,
+            covers = mapOf("ff00aa.jpg" to coverBytes)
+        )
+
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("summary") {
+            activity.findViewById<TextView>(R.id.tvStatsSummary).text.toString().contains("本周")
+        }
+        activity.doImportZip(data)
+
+        val sessions = sdao.recentSessions(5)
+        assertEquals(1, sessions.size)
+        assertEquals("ZIP场", sessions[0].title)
+        assertTrue("封面路径已拼回", sessions[0].coverPath!!.endsWith("ff00aa.jpg"))
+        assertEquals(1, mdao.all().size)
+        assertEquals(1, sdao.titleChanges(sessions[0].id).size)
+        assertEquals(777, sdao.popularityPoints(sessions[0].id).first().online)
+        assertEquals(1, sdao.followerSnapshots().size)
+        val restored = java.io.File(context.filesDir, "covers/ff00aa.jpg")
+        assertTrue(restored.exists() && restored.readBytes().contentEquals(coverBytes))
+        restored.delete()
+        Unit
+    }
 }

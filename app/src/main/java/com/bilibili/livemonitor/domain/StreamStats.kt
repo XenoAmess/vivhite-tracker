@@ -147,6 +147,27 @@ object StreamStats {
     }
 
     /**
+     * 本月逐日人气峰值（月度人气曲线数据源）：ts 落在当月的人气点按日聚合取 max，
+     * 返回 (日, 峰值) 列表按日升序；无数据的日不出现在列表（折线跨空点直连）。
+     */
+    fun dailyPeakOnline(
+        points: List<Pair<Long, Int>>, // (ts, online)
+        monthStartMs: Long,
+        daysInMonth: Int
+    ): List<Pair<Int, Int>> {
+        val peakByDay = mutableMapOf<Int, Int>()
+        points.forEach { (ts, online) ->
+            // floorDiv：月初前的负偏移必须落到 -1（普通整除向零截断会错归到 1 日）
+            val dayOffset = Math.floorDiv(ts - monthStartMs, DAY_MS).toInt()
+            if (dayOffset in 0 until daysInMonth) {
+                val dom = dayOffset + 1
+                peakByDay[dom] = maxOf(peakByDay[dom] ?: 0, online)
+            }
+        }
+        return peakByDay.entries.sortedBy { it.key }.map { it.key to it.value }
+    }
+
+    /**
      * 星期偏好：0=周日..6=周六，各自累计已闭合场次数；无场次返回 null。
      * 星期映射 (epochDay+4)%7（epochDay 0 = 1970-01-01 周四 → 4）。
      */

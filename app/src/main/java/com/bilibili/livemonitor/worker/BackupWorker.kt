@@ -7,8 +7,6 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.bilibili.livemonitor.db.AppDatabase
-import com.bilibili.livemonitor.domain.SessionBackup
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.PreferenceManager
 import java.text.SimpleDateFormat
@@ -17,9 +15,10 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * 自动备份：每周把「场次 + 心情」混合 CSV 写到用户选的 SAF 目录。
- * 文件名 vivhite_backup_yyyyMMdd.csv（同日覆盖写由 DocumentsContract 去重命名处理）。
- * 未开开关/未选目录 → 直接成功跳过；写失败 → retry 一次（下次周期兜底）。
+ * 自动备份：每天把全量数据（场次+心情+主题变化+人气点+粉丝快照+
+ * 魔法期与设置快照+封面原图）打成 ZIP 写到用户选的 SAF 目录。
+ * 文件名 vivhite_backup_yyyyMMdd.zip。未开开关/未选目录 → 直接成功跳过；
+ * 写失败 → retry（明天兜底）。
  */
 class BackupWorker(
     context: Context,
@@ -34,15 +33,13 @@ class BackupWorker(
             return Result.success()
         }
         return try {
-            val db = AppDatabase.get(applicationContext)
-            val sessions = db.streamSessionDao().recentSessions(500)
-            val moods = db.moodEventDao().all()
-            val csv = SessionBackup.toCsv(sessions, moods)
+            val zipBytes = com.bilibili.livemonitor.util.FullBackupBuilder
+                .build(applicationContext)
             val name = "vivhite_backup_" +
-                SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date()) + ".csv"
-            writeToTree(treeUri, name, csv)
+                SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date()) + ".zip"
+            writeToTree(treeUri, name, zipBytes)
             prefs.setLastBackupTime(System.currentTimeMillis())
-            AppLogger.d(TAG, "auto backup done: $name (${sessions.size} sessions, ${moods.size} moods)")
+            AppLogger.d(TAG, "auto backup done: $name (${zipBytes.size} bytes)")
             Result.success()
         } catch (e: Exception) {
             AppLogger.w(TAG, "auto backup failed", e)
@@ -51,17 +48,17 @@ class BackupWorker(
     }
 
     // internal 便于单测（可注入假 tree uri 验证失败路径）；纯 framework API，无新依赖
-    internal fun writeToTree(treeUri: String, fileName: String, content: String) {
+    internal fun writeToTree(treeUri: String, fileName: String, content: ByteArray) {
         val resolver = applicationContext.contentResolver
         val tree = Uri.parse(treeUri)
         val parentDoc = android.provider.DocumentsContract.buildDocumentUriUsingTree(
             tree, android.provider.DocumentsContract.getTreeDocumentId(tree)
         )
         val fileUri = android.provider.DocumentsContract.createDocument(
-            resolver, parentDoc, "text/csv", fileName
+            resolver, parentDoc, "application/zip", fileName
         ) ?: throw java.io.IOException("createDocument returned null")
         resolver.openOutputStream(fileUri, "wt")?.use {
-            it.write(content.toByteArray(Charsets.UTF_8))
+            it.write(content)
         } ?: throw java.io.IOException("openOutputStream returned null")
     }
 
@@ -73,7 +70,7 @@ class BackupWorker(
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequestBuilder<BackupWorker>(7, TimeUnit.DAYS).build()
+                PeriodicWorkRequestBuilder<BackupWorker>(1, TimeUnit.DAYS).build()
             )
         }
 

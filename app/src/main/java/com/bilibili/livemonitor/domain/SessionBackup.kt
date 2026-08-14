@@ -26,7 +26,7 @@ object SessionBackup {
 
     private const val DATE_PATTERN = "yyyy-MM-dd HH:mm"
 
-    data class SessionRow(val startTs: Long, val endTs: Long?, val title: String?)
+    data class SessionRow(val startTs: Long, val endTs: Long?, val title: String?, val coverName: String? = null)
 
     data class MoodRow(
         val eventTs: Long,
@@ -52,8 +52,12 @@ object SessionBackup {
             val start = fmt.format(Date(s.startTs))
             val end = s.endTs?.let { fmt.format(Date(it)) } ?: IN_PROGRESS
             val minutes = s.endTs?.let { ((it - s.startTs) / 60_000L).toString() } ?: ""
+            // 第 9-11 列（可选，全量备份用）：封面 hash 名、start_ms、end_ms 原值
+            // （人读日期列只到分钟，raw 列保证 ZIP 恢复精确到毫秒；老解析器按列号取，多出的列忽略）
+            val coverName = s.coverPath?.substringAfterLast('/')?.ifBlank { null } ?: ""
             rows += s.startTs to listOf(
-                TYPE_SESSION, start, end, minutes, s.title ?: "", "", "", ""
+                TYPE_SESSION, start, end, minutes, s.title ?: "", "", "", "", coverName,
+                s.startTs.toString(), s.endTs?.toString() ?: ""
             ).joinToString(",") { field(it) }
         }
         moods.forEach { m ->
@@ -64,9 +68,11 @@ object SessionBackup {
                 ""
             }
             val duration = if (m.durationMin > 0) m.durationMin.toString() else ""
+            // 心情行第 9 列（可选）：event_ts 原值（毫秒精度恢复）
             rows += m.eventTs to listOf(
                 TYPE_MOOD, start, end, duration, m.title,
-                MoodCatalog.display(m.mood), m.reason ?: "", m.note ?: ""
+                MoodCatalog.display(m.mood), m.reason ?: "", m.note ?: "",
+                m.eventTs.toString()
             ).joinToString(",") { field(it) }
         }
         return buildString {
@@ -75,7 +81,7 @@ object SessionBackup {
         }
     }
 
-    private fun field(value: String): String {
+    internal fun field(value: String): String {
         return if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) {
             "\"" + value.replace("\"", "\"\"") + "\""
         } else {
@@ -104,24 +110,30 @@ object SessionBackup {
             if (isNewFormat) {
                 when (record[0].trim()) {
                     TYPE_SESSION -> {
-                        val start = record.getOrNull(1)?.let { parseTs(it) }
+                        // 优先用第 9/10 列的 raw 毫秒（全量备份精确恢复），否则按日期列解析
+                        val start = record.getOrNull(9)?.toLongOrNull()
+                            ?: record.getOrNull(1)?.let { parseTs(it) }
                         val endRaw = record.getOrNull(2)?.trim().orEmpty()
                         if (start == null || endRaw == IN_PROGRESS) {
                             skipped++
                             continue
                         }
-                        val end = if (endRaw.isEmpty()) null else parseTs(endRaw)
+                        val end = record.getOrNull(10)?.toLongOrNull()
+                            ?: if (endRaw.isEmpty()) null else parseTs(endRaw)
                         if (endRaw.isNotEmpty() && end == null) {
                             skipped++
                             continue
                         }
                         sessions += SessionRow(
                             startTs = start, endTs = end,
-                            title = record.getOrNull(4)?.ifBlank { null }
+                            title = record.getOrNull(4)?.ifBlank { null },
+                            coverName = record.getOrNull(8)?.ifBlank { null }
                         )
                     }
                     TYPE_MOOD -> {
-                        val start = record.getOrNull(1)?.let { parseTs(it) }
+                        // 优先第 9 列 raw 毫秒
+                        val start = record.getOrNull(8)?.toLongOrNull()
+                            ?: record.getOrNull(1)?.let { parseTs(it) }
                         val title = record.getOrNull(4)?.trim().orEmpty()
                         if (start == null || title.isEmpty()) {
                             skipped++

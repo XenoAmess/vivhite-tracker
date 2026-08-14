@@ -136,6 +136,63 @@ class PreferenceManager(context: Context) {
 
     fun getLastPosterMonth(): String = prefs.getString(KEY_LAST_POSTER_MONTH, "") ?: ""
 
+    // ============ 全量备份快照（FullBackup prefs.json） ============
+
+    /** 魔法期 + 全部设置项 → JSON 字符串（备份用） */
+    fun exportSnapshot(): String {
+        val o = org.json.JSONObject()
+        o.put("magic_periods", getMagicPeriodsJson())
+        o.put("quiet_enabled", isQuietHoursEnabled())
+        o.put("quiet_start", getQuietStartMinutes())
+        o.put("quiet_end", getQuietEndMinutes())
+        o.put("check_interval_seconds", getCheckIntervalSeconds())
+        o.put("dark_mode", getDarkMode())
+        o.put("monitor_videos", isMonitorVideos())
+        o.put("monitor_dynamics", isMonitorDynamics())
+        o.put("monitor_pinned", isMonitorPinned())
+        o.put("dynamic_types", org.json.JSONArray(getMonitorDynamicTypes().toList()))
+        o.put("alert_ring_on_activity", isAlertRingOnActivity())
+        o.put("notify_stream_end", isNotifyStreamEnd())
+        o.put("notify_title_change", isNotifyTitleChange())
+        o.put("auto_check_update", isAutoCheckUpdate())
+        o.put("auto_download_update", isAutoDownloadUpdate())
+        o.put("alert_sound_uri", getAlertSoundUri())
+        o.put("alert_sound_title", getAlertSoundTitle())
+        o.put("auto_backup_enabled", isAutoBackupEnabled())
+        o.put("backup_tree_uri", getBackupTreeUri())
+        return o.toString()
+    }
+
+    /** 从快照 JSON 恢复设置（导入用；缺失键保持现状不动） */
+    fun importSnapshot(json: String) {
+        try {
+            val o = org.json.JSONObject(json)
+            if (o.has("quiet_enabled")) setQuietHoursEnabled(o.getBoolean("quiet_enabled"))
+            if (o.has("quiet_start")) setQuietStartMinutes(o.getInt("quiet_start"))
+            if (o.has("quiet_end")) setQuietEndMinutes(o.getInt("quiet_end"))
+            if (o.has("check_interval_seconds")) setCheckIntervalSeconds(o.getInt("check_interval_seconds"))
+            if (o.has("dark_mode")) setDarkMode(o.getInt("dark_mode"))
+            if (o.has("monitor_videos")) setMonitorVideos(o.getBoolean("monitor_videos"))
+            if (o.has("monitor_dynamics")) setMonitorDynamics(o.getBoolean("monitor_dynamics"))
+            if (o.has("monitor_pinned")) setMonitorPinned(o.getBoolean("monitor_pinned"))
+            if (o.has("dynamic_types")) {
+                val arr = o.getJSONArray("dynamic_types")
+                setMonitorDynamicTypes((0 until arr.length()).map { arr.getString(it) }.toSet())
+            }
+            if (o.has("alert_ring_on_activity")) setAlertRingOnActivity(o.getBoolean("alert_ring_on_activity"))
+            if (o.has("notify_stream_end")) setNotifyStreamEnd(o.getBoolean("notify_stream_end"))
+            if (o.has("notify_title_change")) setNotifyTitleChange(o.getBoolean("notify_title_change"))
+            if (o.has("auto_check_update")) setAutoCheckUpdate(o.getBoolean("auto_check_update"))
+            if (o.has("auto_download_update")) setAutoDownloadUpdate(o.getBoolean("auto_download_update"))
+            if (o.has("alert_sound_uri")) setAlertSoundUri(o.getString("alert_sound_uri"))
+            if (o.has("alert_sound_title")) setAlertSoundTitle(o.getString("alert_sound_title"))
+            if (o.has("auto_backup_enabled")) setAutoBackupEnabled(o.getBoolean("auto_backup_enabled"))
+            if (o.has("backup_tree_uri")) setBackupTreeUri(o.getString("backup_tree_uri"))
+        } catch (e: Exception) {
+            AppLogger.w("PreferenceManager", "importSnapshot failed", e)
+        }
+    }
+
     // 监控健康度：检测记录环形缓冲（JSON，最近 500 条）
     @Synchronized
     fun appendCheckRecord(ts: Long, success: Boolean, isLive: Boolean, reason: String) {

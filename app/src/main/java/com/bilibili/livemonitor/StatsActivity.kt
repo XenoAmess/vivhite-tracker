@@ -595,6 +595,31 @@ class StatsActivity : AppCompatActivity() {
                 view.findViewById<View>(R.id.tvFollowerTitle).visibility = View.GONE
                 view.findViewById<View>(R.id.followerChart).visibility = View.GONE
             }
+            // 本月人气峰值（逐日聚合，<2 个有效日隐藏）
+            val monthStart = Calendar.getInstance().apply {
+                timeInMillis = selectedDayStart
+                set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }
+            val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+            val dailyPop = StreamStats.dailyPeakOnline(
+                AppDatabase.get(this@StatsActivity).streamSessionDao()
+                    .popularityBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+                    .map { it.ts to it.online },
+                monthStart.timeInMillis, monthStart.getActualMaximum(Calendar.DAY_OF_MONTH)
+            )
+            if (dailyPop.size >= 2) {
+                val monthLabel = "${monthStart.get(Calendar.MONTH) + 1}月"
+                view.findViewById<com.bilibili.livemonitor.views.PopularityChartView>(R.id.dailyPopularityChart)
+                    .setData(
+                        dailyPop.map { (dom, peak) -> dom.toLong() to peak },
+                        startLabel = "$monthLabel${dailyPop.first().first}日",
+                        endLabel = "$monthLabel${dailyPop.last().first}日"
+                    )
+            } else {
+                view.findViewById<View>(R.id.tvDailyPopularityTitle).visibility = View.GONE
+                view.findViewById<View>(R.id.dailyPopularityChart).visibility = View.GONE
+            }
             // 标题高频词云（场次标题 + 主题变化新标题；为空隐藏该区域）
             val titles = AppDatabase.get(this@StatsActivity).streamSessionDao().allSessionTitles() +
                 AppDatabase.get(this@StatsActivity).streamSessionDao().allChangeTitles()
@@ -856,26 +881,23 @@ class StatsActivity : AppCompatActivity() {
         }
     }
 
-    // 备份导出：场次 + 心情混合 CSV（格式见 domain/SessionBackup），走 FileProvider 分享
-    // internal：instrumented 测试直接调，绕开分享面板验证文件内容
+    // 备份导出：全量 ZIP（场次+心情+主题变化+人气点+粉丝快照+魔法期/设置+封面原图），
+    // 走 FileProvider 分享；internal：instrumented 测试直接调
     internal fun exportSessions() {
         lifecycleScope.launch {
-            val moods = AppDatabase.get(this@StatsActivity).moodEventDao().all()
-            if (loadedSessions.isEmpty() && moods.isEmpty()) {
-                Toast.makeText(this@StatsActivity, "暂无数据可导出", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
             try {
+                val zipBytes = com.bilibili.livemonitor.util.FullBackupBuilder
+                    .build(this@StatsActivity)
                 val dir = java.io.File(cacheDir, "shared").apply { mkdirs() }
-                val file = java.io.File(dir, "vivhite_backup.csv")
-                file.writeText(SessionBackup.toCsv(loadedSessions, moods), Charsets.UTF_8)
+                val file = java.io.File(dir, "vivhite_backup.zip")
+                file.writeBytes(zipBytes)
                 val uri = androidx.core.content.FileProvider.getUriForFile(
                     this@StatsActivity, "$packageName.fileprovider", file
                 )
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/csv"
+                    type = "application/zip"
                     putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, "牢白播了吗 场次+心情备份")
+                    putExtra(Intent.EXTRA_SUBJECT, "牢白播了吗 全量备份")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 startActivity(Intent.createChooser(shareIntent, "导出备份"))
@@ -894,28 +916,145 @@ class StatsActivity : AppCompatActivity() {
 
     private fun importFromUri(uri: android.net.Uri) {
         lifecycleScope.launch {
-            val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching {
-                    contentResolver.openInputStream(uri)
-                        ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                    contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 }.getOrNull()
             }
-            if (text == null) {
+            if (bytes == null) {
                 Toast.makeText(this@StatsActivity, "无法读取文件", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            val result = importCsvText(text)
-            AlertDialog.Builder(this@StatsActivity)
-                .setTitle("导入完成")
-                .setMessage(
-                    "场次：新增 ${result.sessionsAdded} · 跳过重复 ${result.sessionsSkipped}\n" +
-                        "心情：新增 ${result.moodsAdded} · 跳过重复 ${result.moodsSkipped}\n" +
-                        "无法解析/进行中被跳过：${result.badLines} 行"
-                )
-                .setPositiveButton("好", null)
-                .show()
-            refreshData()
+            // ZIP（PK 头）→ 全量恢复；否则按老混合 CSV 兼容导入
+            if (bytes.size >= 2 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) {
+                importZipBytes(bytes)
+            } else {
+                val result = importCsvText(String(bytes, Charsets.UTF_8))
+                AlertDialog.Builder(this@StatsActivity)
+                    .setTitle("导入完成")
+                    .setMessage(
+                        "场次：新增 ${result.sessionsAdded} · 跳过重复 ${result.sessionsSkipped}\n" +
+                            "心情：新增 ${result.moodsAdded} · 跳过重复 ${result.moodsSkipped}\n" +
+                            "无法解析/进行中被跳过：${result.badLines} 行"
+                    )
+                    .setPositiveButton("好", null)
+                    .show()
+                refreshData()
+            }
         }
+    }
+
+    /** ZIP 全量导入：先弹确认（设置将被覆盖），用户点头才动手 */
+    private fun importZipBytes(bytes: ByteArray) {
+        val data = com.bilibili.livemonitor.domain.FullBackup.unpack(bytes)
+        AlertDialog.Builder(this)
+            .setTitle("恢复全量备份")
+            .setMessage(
+                "包含：场次 ${data.sessions.size} · 心情 ${data.moods.size} · " +
+                    "主题变化 ${data.titleChanges.size} · 人气点 ${data.popularity.size} · " +
+                    "粉丝快照 ${data.followers.size} · 封面 ${data.covers.size} 张\n\n" +
+                    "设置项（含魔法期、勿扰、检测频率等）将被覆盖。继续？"
+            )
+            .setPositiveButton("恢复") { _, _ ->
+                lifecycleScope.launch { doImportZip(data) }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+    private fun coversDirOf(): java.io.File = java.io.File(filesDir, "covers").apply { mkdirs() }
+
+    internal suspend fun doImportZip(data: com.bilibili.livemonitor.domain.FullBackup.Data) {
+        val db = AppDatabase.get(this)
+        val sdao = db.streamSessionDao()
+        val mdao = db.moodEventDao()
+        var sAdded = 0
+        var mAdded = 0
+        // 1) 场次（合并去重，起止时间为键；coverPath 由 hash 名拼回 covers/）
+        data.sessions.forEach { r ->
+            if (sdao.countByStartEnd(r.startTs, r.endTs) == 0) {
+                val restoredCover = r.coverPath?.takeIf { name ->
+                    name.isNotBlank() && data.covers.containsKey(name)
+                }?.let { name -> java.io.File(coversDirOf(), name).absolutePath }
+                sdao.insertSession(
+                    StreamSessionEntity(
+                        startTs = r.startTs, endTs = r.endTs,
+                        title = r.title, coverPath = restoredCover
+                    )
+                )
+                sAdded++
+            }
+        }
+        // 2) 心情（时间+心情+标题去重）
+        data.moods.forEach { r ->
+            if (mdao.countByKey(r.eventTs, r.mood, r.title) == 0) {
+                mdao.insert(
+                    MoodEventEntity(
+                        eventTs = r.eventTs, durationMin = r.durationMin, mood = r.mood,
+                        title = r.title, reason = r.reason, note = r.note,
+                        createdAt = r.createdAt
+                    )
+                )
+                mAdded++
+            }
+        }
+        // 3) 主题变化 + 人气点：先按 (start,end) 把旧 id 映射到新 id
+        var tcAdded = 0
+        var popAdded = 0
+        data.titleChanges.forEach { r ->
+            val session = sdao.findByStartEnd(r.sessionStart, r.sessionEnd) ?: return@forEach
+            if (sdao.countTitleChange(session.id, r.changedAt) == 0) {
+                sdao.insertTitleChange(
+                    com.bilibili.livemonitor.db.StreamTitleChangeEntity(
+                        sessionId = session.id, changedAt = r.changedAt,
+                        oldTitle = r.oldTitle, newTitle = r.newTitle
+                    )
+                )
+                tcAdded++
+            }
+        }
+        data.popularity.forEach { r ->
+            val session = sdao.findByStartEnd(r.sessionStart, r.sessionEnd) ?: return@forEach
+            if (sdao.countPopularity(session.id, r.ts) == 0) {
+                sdao.insertPopularityPoint(
+                    com.bilibili.livemonitor.db.PopularityPointEntity(
+                        sessionId = session.id, ts = r.ts, online = r.online
+                    )
+                )
+                popAdded++
+            }
+        }
+        // 4) 粉丝快照（ts 去重）
+        var fAdded = 0
+        data.followers.forEach { r ->
+            if (sdao.countFollowerSnapshot(r.ts) == 0) {
+                sdao.insertFollowerSnapshot(r)
+                fAdded++
+            }
+        }
+        // 5) 封面原图（hash 文件名天然幂等，存在即跳过）
+        var coverAdded = 0
+        val coversDir = coversDirOf()
+        data.covers.forEach { (name, bytes) ->
+            val f = java.io.File(coversDir, name)
+            if (!f.exists()) {
+                f.writeBytes(bytes)
+                coverAdded++
+            }
+        }
+        // 6) prefs 快照（魔法期合并 + 设置覆盖）
+        data.prefsJson?.let { json ->
+            com.bilibili.livemonitor.util.PreferenceManager(this).importSnapshot(json)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("恢复完成")
+            .setMessage(
+                "场次 +$sAdded · 心情 +$mAdded · 主题变化 +$tcAdded · " +
+                    "人气点 +$popAdded · 粉丝快照 +$fAdded · 封面 +$coverAdded"
+            )
+            .setPositiveButton("好", null)
+            .show()
+        refreshData()
     }
 
     data class ImportResult(

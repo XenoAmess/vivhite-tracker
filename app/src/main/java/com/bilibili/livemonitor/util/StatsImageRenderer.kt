@@ -8,6 +8,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.view.View
 import com.bilibili.livemonitor.views.WeekStreamBarsView
+import com.bilibili.livemonitor.views.WeekdayHourHeatmapView
 
 /**
  * 绮迹手账导出海报渲染（宽 1080，高度按内容计算，白底紫主题）。
@@ -49,6 +50,11 @@ object StatsImageRenderer {
         val todayDom: Int,                         // 今天的日；不在本月传 0
         val moodStats: List<Pair<String, Int>>,    // display to count，倒序
         val magicSummary: String?,                 // "本月魔法期：2 段 · 共 9 天"；无则 null
+        // ---- 单月统计扩展区（为空则跳过不画） ----
+        val weekdayHeat: Array<IntArray>? = null,   // 本月时段热力（7×4）
+        val followerPoints: List<Pair<Long, Int>> = emptyList(),  // 本月粉丝曲线（ts→num）
+        val dailyPopularity: List<Pair<Int, Int>> = emptyList(),  // 本月逐日人气峰值（日→峰值）
+        val wordCloudWords: List<Pair<String, Int>> = emptyList(),  // 本月标题高频词
         val records: List<RecordLine>,
         val exportDate: String                     // "2026-08-10"
     )
@@ -64,6 +70,9 @@ object StatsImageRenderer {
     private const val MOOD_LINE_H = 48
     private const val RECORD_ROW_H = 64
     private const val FOOTER_H = 120
+    // 扩展统计区（离屏 View 绘制）：热力图/曲线/词云统一高度
+    private const val EXTRA_SECTION_H = 300
+    private const val GAP_AFTER_EXTRA = 12
 
     // 海报最下方的不显眼小字（落款之下）
     private const val WHISPER_TEXT = "你会一直好好的，因为，我一直看着你呢。"
@@ -83,6 +92,10 @@ object StatsImageRenderer {
         h += SECTION_LABEL_H + CAL_HEADER_H + calRows * CAL_CELL_H + GAP_AFTER_CALENDAR
         if (data.moodStats.isNotEmpty()) h += SECTION_LABEL_H + MOOD_LINE_H + GAP_AFTER_STATS
         if (data.magicSummary != null) h += MOOD_LINE_H + GAP_AFTER_STATS
+        if (data.weekdayHeat != null) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
+        if (data.followerPoints.size >= 2) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
+        if (data.dailyPopularity.size >= 2) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
+        if (data.wordCloudWords.isNotEmpty()) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
         h += SECTION_LABEL_H
         h += if (data.records.isEmpty()) RECORD_ROW_H else data.records.size * RECORD_ROW_H
         h += FOOTER_H
@@ -244,6 +257,63 @@ object StatsImageRenderer {
                 magic, WIDTH / 2f, y + 26f
             )
             y += MOOD_LINE_H + GAP_AFTER_STATS
+        }
+
+        // ============ 扩展统计区（离屏 View 绘制，统一 clip 防越界） ============
+        fun drawOffscreen(view: View) {
+            val wSpec = View.MeasureSpec.makeMeasureSpec(CONTENT_W.toInt(), View.MeasureSpec.EXACTLY)
+            val hSpec = View.MeasureSpec.makeMeasureSpec(EXTRA_SECTION_H, View.MeasureSpec.EXACTLY)
+            view.measure(wSpec, hSpec)
+            view.layout(0, 0, CONTENT_W.toInt(), EXTRA_SECTION_H)
+            c.save()
+            c.translate(PAD, y)
+            c.clipRect(0f, 0f, CONTENT_W, EXTRA_SECTION_H.toFloat())
+            view.draw(c)
+            c.restore()
+            y += EXTRA_SECTION_H + GAP_AFTER_EXTRA
+        }
+
+        data.weekdayHeat?.let { heat ->
+            c.drawText("本月开播时段分布", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
+            y += SECTION_LABEL_H
+            drawOffscreen(WeekdayHourHeatmapView(context).apply { setData(heat) })
+        }
+        if (data.followerPoints.size >= 2) {
+            c.drawText("本月粉丝变化", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
+            y += SECTION_LABEL_H
+            val dayFmt = java.text.SimpleDateFormat("M月d日", java.util.Locale.getDefault())
+            drawOffscreen(
+                com.bilibili.livemonitor.views.PopularityChartView(context).apply {
+                    setData(
+                        data.followerPoints,
+                        startLabel = dayFmt.format(java.util.Date(data.followerPoints.first().first)),
+                        endLabel = dayFmt.format(java.util.Date(data.followerPoints.last().first))
+                    )
+                }
+            )
+        }
+        if (data.dailyPopularity.size >= 2) {
+            c.drawText("本月人气峰值", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
+            y += SECTION_LABEL_H
+            val monthPrefix = data.monthTitle.replace("年", "-").replace("月", "")
+            drawOffscreen(
+                com.bilibili.livemonitor.views.PopularityChartView(context).apply {
+                    setData(
+                        data.dailyPopularity.map { (dom, peak) -> dom.toLong() to peak },
+                        startLabel = "$monthPrefix-${data.dailyPopularity.first().first}日",
+                        endLabel = "$monthPrefix-${data.dailyPopularity.last().first}日"
+                    )
+                }
+            )
+        }
+        if (data.wordCloudWords.isNotEmpty()) {
+            c.drawText("本月标题高频词", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
+            y += SECTION_LABEL_H
+            drawOffscreen(
+                com.bilibili.livemonitor.views.WordCloudView(context).apply {
+                    setData(data.wordCloudWords)
+                }
+            )
         }
 
         // ============ 本月完整记录（场次/心情/魔法期混排） ============

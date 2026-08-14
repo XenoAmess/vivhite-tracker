@@ -41,6 +41,10 @@ class StatsImageGoldenTest {
         todayDom = 10,
         moodStats = listOf("😄开心" to 6, "😢难过" to 2),
         magicSummary = "本月魔法期：1 段 · 共 3 天",
+        weekdayHeat = Array(7) { r -> IntArray(4) { c -> if (r == 4 && c == 3) 3 else 0 } },
+        followerPoints = listOf(1_700_000_000_000L to 22420, 1_700_086_400_000L to 22435),
+        dailyPopularity = listOf(5 to 300, 6 to 420, 7 to 280),
+        wordCloudWords = listOf("失眠" to 5, "杂谈" to 3, "肉鸽" to 2),
         records = listOf(
             StatsImageRenderer.RecordLine(
                 StatsImageRenderer.RecordKind.SESSION, "08-09 20:27~23:01 · 2小时33分 · sad"

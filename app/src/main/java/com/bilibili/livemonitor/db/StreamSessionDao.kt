@@ -99,4 +99,36 @@ interface StreamSessionDao {
     /** 某时间区间的场次（日历按月加载用），按开始时间升序 */
     @Query("SELECT * FROM stream_sessions WHERE start_ts >= :from AND start_ts < :to ORDER BY start_ts ASC")
     suspend fun sessionsBetween(from: Long, to: Long): List<StreamSessionEntity>
+
+    // ---------- 全量备份（FullBackup） ----------
+
+    @Query("SELECT * FROM stream_title_changes ORDER BY changed_at ASC")
+    suspend fun allTitleChanges(): List<StreamTitleChangeEntity>
+
+    @Query("SELECT * FROM popularity_points ORDER BY ts ASC")
+    suspend fun allPopularityPoints(): List<PopularityPointEntity>
+
+    /** 按起止时间找场次（导入侧 id 映射用；end_ts IS 同时覆盖 NULL 与等值） */
+    @Query("SELECT * FROM stream_sessions WHERE start_ts = :startTs AND end_ts IS :endTs LIMIT 1")
+    suspend fun findByStartEnd(startTs: Long, endTs: Long?): StreamSessionEntity?
+
+    /** 某时间区间的人气采样点（月度曲线用），按时间升序 */
+    @Query("SELECT * FROM popularity_points WHERE ts >= :from AND ts < :to ORDER BY ts ASC")
+    suspend fun popularityBetween(from: Long, to: Long): List<PopularityPointEntity>
+
+    /** 某时间区间的主题变化新标题（月度词云用） */
+    @Query("SELECT new_title FROM stream_title_changes WHERE changed_at >= :from AND changed_at < :to AND new_title IS NOT NULL AND new_title != ''")
+    suspend fun changeTitlesBetween(from: Long, to: Long): List<String>
+
+    /** 导入去重：同 场次+变更时间 视为重复 */
+    @Query("SELECT COUNT(*) FROM stream_title_changes WHERE session_id = :sessionId AND changed_at = :changedAt")
+    suspend fun countTitleChange(sessionId: Long, changedAt: Long): Int
+
+    /** 导入去重：同 场次+采样时间 视为重复 */
+    @Query("SELECT COUNT(*) FROM popularity_points WHERE session_id = :sessionId AND ts = :ts")
+    suspend fun countPopularity(sessionId: Long, ts: Long): Int
+
+    /** 导入去重：同时间粉丝快照视为重复 */
+    @Query("SELECT COUNT(*) FROM follower_snapshots WHERE ts = :ts")
+    suspend fun countFollowerSnapshot(ts: Long): Int
 }

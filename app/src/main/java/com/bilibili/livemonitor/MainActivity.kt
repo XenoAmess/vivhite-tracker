@@ -659,7 +659,7 @@ class MainActivity : AppCompatActivity() {
     private var backupStatusView: android.widget.TextView? = null
 
     private fun computeBackupSubtitle(): String =
-        if (preferenceManager.isAutoBackupEnabled()) "每周自动备份：开" else "每周自动备份：关"
+        if (preferenceManager.isAutoBackupEnabled()) "每天自动备份：开" else "每天自动备份：关"
 
     private fun refreshBackupStatusText() {
         val dir = preferenceManager.getBackupTreeUri()

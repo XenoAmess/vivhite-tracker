@@ -17,6 +17,8 @@ class PopularityChartView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private var points = listOf<Pair<Long, Int>>()
+    private var startLabel: String? = null
+    private var endLabel: String? = null
 
     private val accent = 0xFF6750A4.toInt()
     private val muted = 0xFF999999.toInt()
@@ -42,9 +44,12 @@ class PopularityChartView @JvmOverloads constructor(
     }
     private val linePath = Path()
 
-    /** points: (ts ms, online) 升序；少于 2 个点不画线（由调用方提示无数据） */
-    fun setData(data: List<Pair<Long, Int>>) {
+    /** points: (ts ms, online) 升序；少于 2 个点不画线（由调用方提示无数据）。
+     * startLabel/endLabel：覆盖横轴起止文字（月度曲线传日期，默认 HH:mm） */
+    fun setData(data: List<Pair<Long, Int>>, startLabel: String? = null, endLabel: String? = null) {
         points = data
+        this.startLabel = startLabel
+        this.endLabel = endLabel
         invalidate()
     }
 
@@ -89,12 +94,13 @@ class PopularityChartView @JvmOverloads constructor(
         canvas.drawPath(fillPath, fillPaint)
         canvas.drawPath(linePath, linePaint)
 
-        // 文字：左上峰值/均值，底部起止时间
+        // 文字：左上峰值/均值，底部起止标签（可被调用方覆盖为日期等）
         canvas.drawText("峰值 $maxOnline · 均值 $avg", padL, padT - dp(4).toFloat() + dp(10).toFloat(), textPaint)
         val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-        canvas.drawText(fmt.format(java.util.Date(minTs)), padL, height - dp(6).toFloat(), textPaint)
-        val endText = fmt.format(java.util.Date(maxTs))
-        canvas.drawText(endText, width - padR - textPaint.measureText(endText), height - dp(6).toFloat(), textPaint)
+        val leftText = startLabel ?: fmt.format(java.util.Date(minTs))
+        val rightText = endLabel ?: fmt.format(java.util.Date(maxTs))
+        canvas.drawText(leftText, padL, height - dp(6).toFloat(), textPaint)
+        canvas.drawText(rightText, width - padR - textPaint.measureText(rightText), height - dp(6).toFloat(), textPaint)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

@@ -136,6 +136,22 @@ object StatsImageDataFactory {
             todayDom = todayDom,
             moodStats = moodStats,
             magicSummary = magicSummary,
+            weekdayHeat = StreamStats.weekdayHourHeatmap(monthSessions, localOffset),
+            followerPoints = db.streamSessionDao().followerSnapshots()
+                .filter { it.ts >= monthStart.timeInMillis && it.ts < monthEnd.timeInMillis }
+                .map { it.ts to it.followerNum.toInt() },
+            dailyPopularity = StreamStats.dailyPeakOnline(
+                db.streamSessionDao().popularityBetween(
+                    monthStart.timeInMillis, monthEnd.timeInMillis
+                ).map { it.ts to it.online },
+                monthStart.timeInMillis, daysInMonth
+            ),
+            wordCloudWords = com.bilibili.livemonitor.domain.TitleWordCloud.topWords(
+                monthSessions.mapNotNull { it.title } +
+                    db.streamSessionDao().changeTitlesBetween(
+                        monthStart.timeInMillis, monthEnd.timeInMillis
+                    )
+            ),
             records = records.sortedBy { it.first }.map { it.second },
             exportDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(now))
         )

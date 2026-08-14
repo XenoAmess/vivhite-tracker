@@ -196,4 +196,18 @@ class StreamStatsTest {
             StreamStats.favoriteWeekday(listOf(StreamSessionEntity(startTs = 0, endTs = null)))
         )
     }
+
+    @Test
+    fun `dailyPeakOnline 按日取峰 越界忽略`() {
+        val monthStart = 1_000_000L * day // epoch day 作为月初基准
+        val points = listOf(
+            (monthStart + 3 * 3_600_000) to 100,   // 1 日 03:00
+            (monthStart + 5 * 3_600_000) to 250,   // 1 日 05:00（峰值）
+            (monthStart + day + 3_600_000) to 180, // 2 日
+            (monthStart - 3_600_000) to 999,       // 上月末 → 忽略
+            (monthStart + 31 * day) to 999         // 次月 → 忽略（按 31 天月）
+        )
+        val peaks = StreamStats.dailyPeakOnline(points, monthStart, 31)
+        assertEquals(listOf(1 to 250, 2 to 180), peaks)
+    }
 }

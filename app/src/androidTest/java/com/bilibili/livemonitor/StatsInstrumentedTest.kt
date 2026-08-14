@@ -50,7 +50,7 @@ class StatsInstrumentedTest {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
         }
-        File(context.cacheDir, "shared/vivhite_backup.csv").delete()
+        File(context.cacheDir, "shared/vivhite_backup.zip").delete()
     }
 
     private fun waitFor(what: String, timeoutMs: Long = 10_000, cond: () -> Boolean) {
@@ -199,7 +199,7 @@ class StatsInstrumentedTest {
     }
 
     @Test
-    fun exportWritesCsvWithMoods() = runBlocking {
+    fun exportWritesZipWithAllData() = runBlocking {
         val sdao = AppDatabase.get(context).streamSessionDao()
         val mdao = AppDatabase.get(context).moodEventDao()
         sdao.insertSession(
@@ -210,16 +210,18 @@ class StatsInstrumentedTest {
         )
         ActivityScenario.launch(StatsActivity::class.java).use { scenario ->
             scenario.onActivity { it.exportSessions() }
-            val file = File(context.cacheDir, "shared/vivhite_backup.csv")
+            val file = File(context.cacheDir, "shared/vivhite_backup.zip")
             val deadline = System.currentTimeMillis() + 10_000
             while ((!file.exists() || file.length() == 0L) && System.currentTimeMillis() < deadline) {
                 Thread.sleep(100)
             }
-            val text = file.readText(Charsets.UTF_8)
-            assertTrue(text.startsWith(com.bilibili.livemonitor.domain.SessionBackup.HEADER))
-            assertTrue("场次行: $text", text.contains("导出验证场"))
-            assertTrue("心情行含 display: $text", text.contains("😄开心"))
-            assertTrue(text.contains("导出验证心情"))
+            val bytes = file.readBytes()
+            // PK 头 + 全量解包校验（场次/心情/prefs 快照都在）
+            assertTrue(bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte())
+            val data = com.bilibili.livemonitor.domain.FullBackup.unpack(bytes)
+            assertTrue(data.sessions.any { it.title == "导出验证场" })
+            assertTrue(data.moods.any { it.title == "导出验证心情" })
+            assertTrue("prefs 快照应在", data.prefsJson != null)
         }
         Unit
     }
