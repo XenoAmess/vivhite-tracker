@@ -976,14 +976,14 @@ class StatsActivity : AppCompatActivity() {
                 this@StatsActivity, data, avatar
             )
             val loader = com.bilibili.livemonitor.util.ShareImageLoader()
-            val file = loader.save(this@StatsActivity, bmp, "stats_share.png")
+            val file = loader.save(this@StatsActivity, bmp, "绮迹手账.png")
             if (file == null) {
                 Toast.makeText(this@StatsActivity, "图片生成失败", Toast.LENGTH_SHORT).show()
                 return@launch
             }
             val uri = loader.shareableUri(this@StatsActivity, file)
             val intent = com.bilibili.livemonitor.util.ShareImageFactory.buildImageShareIntent(
-                uri, contentResolver, "stats_share", "image/png",
+                uri, contentResolver, "绮迹手账", "image/png",
                 extraText = "白绮 ${data.monthTitle} 绮迹手账",
                 extraSubject = "牢白播了吗 绮迹手账海报"
             )
