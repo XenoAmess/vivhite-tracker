@@ -52,7 +52,7 @@ class StatsInstrumentedTest {
     @Test
     fun moodAddEditDelete() = runBlocking {
         val dao = AppDatabase.get(context).moodEventDao()
-        ActivityScenario.launch(StatsActivity::class.java).use {
+        ActivityScenario.launch(StatsActivity::class.java).use { scenario ->
             // 添加：弹窗 → 选「😄开心」→ 填标题 → 保存
             onView(withId(R.id.btnAddMoodEvent)).perform(click())
             onView(withText("😄开心")).inRoot(isDialog()).perform(click())
@@ -64,7 +64,8 @@ class StatsInstrumentedTest {
             assertEquals("instrumented 添加", added.title)
             assertEquals("happy", added.mood)
 
-            // 编辑：点条目 → 改标题 → 保存
+            // 编辑：等列表渲染出条目再点（CI 模拟器慢，点早会找不着）
+            waitForMoodList("add visible", scenario, 1)
             onView(withText(containsString("instrumented 添加"))).perform(click())
             onView(withId(R.id.etMoodEventTitle)).inRoot(isDialog())
                 .perform(replaceText("instrumented 编辑后"))
@@ -116,6 +117,21 @@ class StatsInstrumentedTest {
         }
     }
 
+    /** 等手账页心情列表渲染出条目（DAO 写完后 RecyclerView 刷新有异步延迟） */
+    private fun waitForMoodList(what: String, scenario: ActivityScenario<StatsActivity>, count: Int) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            var current = -1
+            scenario.onActivity {
+                current = it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
+                    .adapter?.itemCount ?: -1
+            }
+            if (current == count) return
+            Thread.sleep(100)
+        }
+        throw AssertionError("timeout: $what (mood list count != $count)")
+    }
+
     @Test
     fun moodEditChangeDate() = runBlocking {
         val dao = AppDatabase.get(context).moodEventDao()
@@ -129,7 +145,9 @@ class StatsInstrumentedTest {
                 mood = "happy", title = "挪日期", createdAt = 0
             )
         )
-        ActivityScenario.launch(StatsActivity::class.java).use {
+        ActivityScenario.launch(StatsActivity::class.java).use { scenario ->
+            // 等列表渲染出条目再点（CI 模拟器慢，点早会找不着）
+            waitForMoodList("mood visible", scenario, 1)
             // 点条目 → 编辑弹窗 → 日期按钮
             onView(withText(containsString("挪日期"))).perform(click())
             onView(withId(R.id.btnMoodEventDate)).inRoot(isDialog()).perform(click())
