@@ -4,6 +4,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.replaceText
+import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withClassName
@@ -66,7 +67,7 @@ class StatsInstrumentedTest {
 
             // 编辑：等列表渲染出条目再点（CI 模拟器慢，点早会找不着）
             waitForMoodList("add visible", scenario, 1)
-            onView(withText(containsString("instrumented 添加"))).perform(click())
+            onView(withText(containsString("instrumented 添加"))).perform(scrollTo(), click())
             onView(withId(R.id.etMoodEventTitle)).inRoot(isDialog())
                 .perform(replaceText("instrumented 编辑后"))
             onView(withText("保存")).inRoot(isDialog()).perform(click())
@@ -149,7 +150,7 @@ class StatsInstrumentedTest {
             // 等列表渲染出条目再点（CI 模拟器慢，点早会找不着）
             waitForMoodList("mood visible", scenario, 1)
             // 点条目 → 编辑弹窗 → 日期按钮
-            onView(withText(containsString("挪日期"))).perform(click())
+            onView(withText(containsString("挪日期"))).perform(scrollTo(), click())
             onView(withId(R.id.btnMoodEventDate)).inRoot(isDialog()).perform(click())
             // DatePicker 改为昨天（PickerActions month 是 1 基）
             val yesterday = java.util.Calendar.getInstance().apply {
