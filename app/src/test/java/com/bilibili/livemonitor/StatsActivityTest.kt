@@ -67,8 +67,11 @@ class StatsActivityTest {
             activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid).childCount > 7
         }
         val grid = activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid)
+        // 避开今天（选中/高亮态文字色不同）：取一个非今天的普通日子格
+        val todayDom = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH)
+        val targetDom = if (todayDom == 15) 20 else 15
         val dayCell = (0 until grid.childCount).map { grid.getChildAt(it) as TextView }
-            .first { it.text.toString() == "15" }
+            .first { it.text.toString() == targetDom.toString() }
         val tv = android.util.TypedValue()
         activity.theme.resolveAttribute(android.R.attr.textColorPrimary, tv, true)
         val expect = androidx.core.content.ContextCompat.getColor(activity, tv.resourceId)

@@ -94,8 +94,8 @@ class PopularityChartView @JvmOverloads constructor(
         canvas.drawPath(fillPath, fillPaint)
         canvas.drawPath(linePath, linePaint)
 
-        // 文字：左上峰值/均值，底部起止标签（可被调用方覆盖为日期等）
-        canvas.drawText("峰值 $maxOnline · 均值 $avg", padL, padT - dp(4).toFloat() + dp(10).toFloat(), textPaint)
+        // 文字：左上峰值/均值（完整落在图表内，防顶边裁切），底部起止标签（可被调用方覆盖为日期等）
+        canvas.drawText("峰值 $maxOnline · 均值 $avg", padL, padT + textPaint.textSize + dp(2).toFloat(), textPaint)
         val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
         val leftText = startLabel ?: fmt.format(java.util.Date(minTs))
         val rightText = endLabel ?: fmt.format(java.util.Date(maxTs))

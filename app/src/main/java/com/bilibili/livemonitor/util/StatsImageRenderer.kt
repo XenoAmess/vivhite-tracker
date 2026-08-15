@@ -83,8 +83,8 @@ object StatsImageRenderer {
     private const val GAP_AFTER_CALENDAR = 16
     private const val GAP_AFTER_STATS = 8
 
-    /** 海报总高度（纯计算，可单测）：各分区高度累加 */
-    internal fun computeHeight(data: StatsImageData): Int {
+    /** 海报总高度（各分区高度累加；词云按内容换行实测，需 context 建 View 量字） */
+    internal fun computeHeight(context: Context, data: StatsImageData): Int {
         var h = HEADER_H
         h += SUMMARY_PAD_V * 2 + SUMMARY_LINE_H * data.summaryLines.size + GAP_AFTER_SUMMARY
         h += SECTION_LABEL_H + BARS_H + GAP_AFTER_BARS
@@ -92,18 +92,25 @@ object StatsImageRenderer {
         h += SECTION_LABEL_H + CAL_HEADER_H + calRows * CAL_CELL_H + GAP_AFTER_CALENDAR
         if (data.moodStats.isNotEmpty()) h += SECTION_LABEL_H + MOOD_LINE_H + GAP_AFTER_STATS
         if (data.magicSummary != null) h += MOOD_LINE_H + GAP_AFTER_STATS
+        // 记录区（挪到扩展统计区之前）
+        h += SECTION_LABEL_H
+        h += if (data.records.isEmpty()) RECORD_ROW_H else data.records.size * RECORD_ROW_H
+        // 扩展统计区（记录之后、落款之前）
         if (data.weekdayHeat != null) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
         if (data.followerPoints.size >= 2) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
         if (data.dailyPopularity.size >= 2) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
-        if (data.wordCloudWords.isNotEmpty()) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
-        h += SECTION_LABEL_H
-        h += if (data.records.isEmpty()) RECORD_ROW_H else data.records.size * RECORD_ROW_H
+        if (data.wordCloudWords.isNotEmpty()) {
+            val cloudView = com.bilibili.livemonitor.views.WordCloudView(context).apply {
+                setData(data.wordCloudWords)
+            }
+            h += SECTION_LABEL_H + cloudView.computeContentHeight(CONTENT_W.toInt()) + GAP_AFTER_EXTRA
+        }
         h += FOOTER_H
         return h
     }
 
     fun render(context: Context, data: StatsImageData, avatar: Bitmap? = null): Bitmap {
-        val bmp = Bitmap.createBitmap(WIDTH, computeHeight(data), Bitmap.Config.ARGB_8888)
+        val bmp = Bitmap.createBitmap(WIDTH, computeHeight(context, data), Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val helper = PromoImageRenderer
         c.drawRect(0f, 0f, WIDTH.toFloat(), bmp.height.toFloat(), Paint().apply { color = 0xFFFFFFFF.toInt() })
@@ -259,63 +266,6 @@ object StatsImageRenderer {
             y += MOOD_LINE_H + GAP_AFTER_STATS
         }
 
-        // ============ 扩展统计区（离屏 View 绘制，统一 clip 防越界） ============
-        fun drawOffscreen(view: View) {
-            val wSpec = View.MeasureSpec.makeMeasureSpec(CONTENT_W.toInt(), View.MeasureSpec.EXACTLY)
-            val hSpec = View.MeasureSpec.makeMeasureSpec(EXTRA_SECTION_H, View.MeasureSpec.EXACTLY)
-            view.measure(wSpec, hSpec)
-            view.layout(0, 0, CONTENT_W.toInt(), EXTRA_SECTION_H)
-            c.save()
-            c.translate(PAD, y)
-            c.clipRect(0f, 0f, CONTENT_W, EXTRA_SECTION_H.toFloat())
-            view.draw(c)
-            c.restore()
-            y += EXTRA_SECTION_H + GAP_AFTER_EXTRA
-        }
-
-        data.weekdayHeat?.let { heat ->
-            c.drawText("本月开播时段分布", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
-            y += SECTION_LABEL_H
-            drawOffscreen(WeekdayHourHeatmapView(context).apply { setData(heat) })
-        }
-        if (data.followerPoints.size >= 2) {
-            c.drawText("本月粉丝变化", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
-            y += SECTION_LABEL_H
-            val dayFmt = java.text.SimpleDateFormat("M月d日", java.util.Locale.getDefault())
-            drawOffscreen(
-                com.bilibili.livemonitor.views.PopularityChartView(context).apply {
-                    setData(
-                        data.followerPoints,
-                        startLabel = dayFmt.format(java.util.Date(data.followerPoints.first().first)),
-                        endLabel = dayFmt.format(java.util.Date(data.followerPoints.last().first))
-                    )
-                }
-            )
-        }
-        if (data.dailyPopularity.size >= 2) {
-            c.drawText("本月人气峰值", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
-            y += SECTION_LABEL_H
-            val monthPrefix = data.monthTitle.replace("年", "-").replace("月", "")
-            drawOffscreen(
-                com.bilibili.livemonitor.views.PopularityChartView(context).apply {
-                    setData(
-                        data.dailyPopularity.map { (dom, peak) -> dom.toLong() to peak },
-                        startLabel = "$monthPrefix-${data.dailyPopularity.first().first}日",
-                        endLabel = "$monthPrefix-${data.dailyPopularity.last().first}日"
-                    )
-                }
-            )
-        }
-        if (data.wordCloudWords.isNotEmpty()) {
-            c.drawText("本月标题高频词", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
-            y += SECTION_LABEL_H
-            drawOffscreen(
-                com.bilibili.livemonitor.views.WordCloudView(context).apply {
-                    setData(data.wordCloudWords)
-                }
-            )
-        }
-
         // ============ 本月完整记录（场次/心情/魔法期混排） ============
         c.drawText(
             "本月记录 · ${data.records.size} 条", PAD, y + 40f,
@@ -343,6 +293,64 @@ object StatsImageRenderer {
                 c.drawText(text, PAD + 24f, y + RECORD_ROW_H / 2 + 9f, recordPaint)
                 y += RECORD_ROW_H
             }
+        }
+
+        // ============ 扩展统计区（挪到记录之后、落款之前；词云高度自适应） ============
+        fun drawOffscreen(view: View, height: Int = EXTRA_SECTION_H) {
+            val wSpec = View.MeasureSpec.makeMeasureSpec(CONTENT_W.toInt(), View.MeasureSpec.EXACTLY)
+            val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+            view.measure(wSpec, hSpec)
+            view.layout(0, 0, CONTENT_W.toInt(), height)
+            c.save()
+            c.translate(PAD, y)
+            c.clipRect(0f, 0f, CONTENT_W, height.toFloat())
+            view.draw(c)
+            c.restore()
+            y += height + GAP_AFTER_EXTRA
+        }
+
+        data.weekdayHeat?.let { heat ->
+            c.drawText("本月开播时段分布", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
+            y += SECTION_LABEL_H
+            drawOffscreen(WeekdayHourHeatmapView(context).apply { setData(heat) })
+        }
+        if (data.followerPoints.size >= 2) {
+            c.drawText("本月粉丝变化", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
+            y += SECTION_LABEL_H
+            val dayFmt = java.text.SimpleDateFormat("M月d日", java.util.Locale.getDefault())
+            drawOffscreen(
+                com.bilibili.livemonitor.views.PopularityChartView(context).apply {
+                    setData(
+                        data.followerPoints,
+                        startLabel = dayFmt.format(java.util.Date(data.followerPoints.first().first)),
+                        endLabel = dayFmt.format(java.util.Date(data.followerPoints.last().first))
+                    )
+                }
+            )
+        }
+        if (data.dailyPopularity.size >= 2) {
+            c.drawText("本月人气峰值", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
+            y += SECTION_LABEL_H
+            // monthTitle 形如 "2026年8月" → 取 "8月"
+            val monthLabel = data.monthTitle.substringAfter("年")
+            drawOffscreen(
+                com.bilibili.livemonitor.views.PopularityChartView(context).apply {
+                    setData(
+                        data.dailyPopularity.map { (dom, peak) -> dom.toLong() to peak },
+                        startLabel = "$monthLabel${data.dailyPopularity.first().first}日",
+                        endLabel = "$monthLabel${data.dailyPopularity.last().first}日"
+                    )
+                }
+            )
+        }
+        if (data.wordCloudWords.isNotEmpty()) {
+            c.drawText("本月标题高频词", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
+            y += SECTION_LABEL_H
+            val cloudView = com.bilibili.livemonitor.views.WordCloudView(context).apply {
+                setData(data.wordCloudWords)
+            }
+            // 按内容换行后的真实高度绘制，不再裁断
+            drawOffscreen(cloudView, cloudView.computeContentHeight(CONTENT_W.toInt()))
         }
 
         // ============ 落款 ============

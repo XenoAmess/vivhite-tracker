@@ -83,7 +83,7 @@ class StatsImageGoldenTest {
         val data = sampleData()
         val bmp = StatsImageRenderer.render(context, data, avatar = null)
         assertEquals(StatsImageRenderer.WIDTH, bmp.width)
-        assertEquals(StatsImageRenderer.computeHeight(data), bmp.height)
+        assertEquals(StatsImageRenderer.computeHeight(context, data), bmp.height)
 
         // 锚点：左上角背景纯白；头像占位圆（圆心被「白」字笔画占据，环形多点采样浅紫）
         assertEquals(Color.WHITE, bmp.getPixel(10, 10))
@@ -115,8 +115,8 @@ class StatsImageGoldenTest {
                 StatsImageRenderer.RecordLine(StatsImageRenderer.RecordKind.SESSION, "附加场次 $it")
             }
         )
-        val hBase = StatsImageRenderer.computeHeight(base)
-        val hMore = StatsImageRenderer.computeHeight(more)
+        val hBase = StatsImageRenderer.computeHeight(context, base)
+        val hMore = StatsImageRenderer.computeHeight(context, more)
         assertTrue(hMore > hBase)
         assertEquals(hMore, StatsImageRenderer.render(context, more).height)
     }

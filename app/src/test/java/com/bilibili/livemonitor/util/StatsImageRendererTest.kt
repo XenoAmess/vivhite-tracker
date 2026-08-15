@@ -52,7 +52,7 @@ class StatsImageRendererTest {
         )
         val bmp = StatsImageRenderer.render(context, data)
         assertEquals(StatsImageRenderer.WIDTH, bmp.width)
-        assertEquals(StatsImageRenderer.computeHeight(data), bmp.height)
+        assertEquals(StatsImageRenderer.computeHeight(context, data), bmp.height)
         assertTrue("含记录时高度应超过固定段", bmp.height > 1350)
     }
 
@@ -72,10 +72,10 @@ class StatsImageRendererTest {
         val many = sampleData(List(20) {
             StatsImageRenderer.RecordLine(StatsImageRenderer.RecordKind.SESSION, "行 $it")
         })
-        assertTrue(StatsImageRenderer.computeHeight(many) > StatsImageRenderer.computeHeight(few))
+        assertTrue(StatsImageRenderer.computeHeight(context, many) > StatsImageRenderer.computeHeight(context, few))
         // 渲染大列表不炸
         val bmp = StatsImageRenderer.render(context, many)
-        assertEquals(StatsImageRenderer.computeHeight(many), bmp.height)
+        assertEquals(StatsImageRenderer.computeHeight(context, many), bmp.height)
     }
 
     @Test
@@ -85,7 +85,7 @@ class StatsImageRendererTest {
         )
         val bmp = StatsImageRenderer.render(context, data)
         assertEquals(StatsImageRenderer.WIDTH, bmp.width)
-        assertEquals(StatsImageRenderer.computeHeight(data), bmp.height)
+        assertEquals(StatsImageRenderer.computeHeight(context, data), bmp.height)
     }
 
     @Test
@@ -93,8 +93,8 @@ class StatsImageRendererTest {
         val withMagic = sampleData(emptyList())
         val withoutMagic = sampleData(emptyList()).copy(magicSummary = null, magicDays = emptySet())
         assertTrue(
-            StatsImageRenderer.computeHeight(withMagic) >
-                StatsImageRenderer.computeHeight(withoutMagic)
+            StatsImageRenderer.computeHeight(context, withMagic) >
+                StatsImageRenderer.computeHeight(context, withoutMagic)
         )
     }
 }

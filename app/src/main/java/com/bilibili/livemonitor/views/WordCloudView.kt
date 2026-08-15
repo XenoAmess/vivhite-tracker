@@ -26,32 +26,60 @@ class WordCloudView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** 按内容换行后的真实高度（px）：供海报渲染器动态预留空间，不再裁断 */
+    fun computeContentHeight(widthPx: Int): Int {
+        if (words.isEmpty()) return 0
+        val rows = layoutRows(widthPx.toFloat())
+        var h = dp(24)
+        rows.forEach { row -> h += (row.maxOf { it.second }.toInt()) + dp(10) }
+        return h + dp(8)
+    }
+
+    // 行布局：(词, 字号px) 逐行；onDraw 与 computeContentHeight 共用同一套
+    private fun layoutRows(maxWidth: Float): List<List<Pair<String, Float>>> {
+        val maxCount = words.first().second.coerceAtLeast(1)
+        val padX = dp(12).toFloat()
+        val wordGap = dp(16).toFloat()
+        val rows = mutableListOf<MutableList<Pair<String, Float>>>()
+        var current = mutableListOf<Pair<String, Float>>()
+        var x = padX
+        words.forEach { (word, count) ->
+            val size = (16 + 18f * count / maxCount) * resources.displayMetrics.scaledDensity
+            paint.textSize = size
+            val w = paint.measureText(word)
+            if (x + w > maxWidth - padX && current.isNotEmpty()) {
+                rows += current
+                current = mutableListOf()
+                x = padX
+            }
+            current += word to size
+            x += w + wordGap
+        }
+        if (current.isNotEmpty()) rows += current
+        return rows
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (words.isEmpty()) return
-        val maxCount = words.first().second.coerceAtLeast(1)
+        val rows = layoutRows(width.toFloat())
         val padX = dp(12).toFloat()
         val lineGap = dp(10).toFloat()
         val wordGap = dp(16).toFloat()
-
-        var x = padX
         var y = dp(24).toFloat()
-        var lineHeight = 0f
-        words.forEachIndexed { i, (word, count) ->
-            // 字号阶梯：最大词 34sp，最小 16sp
-            val size = (16 + 18f * count / maxCount) * resources.displayMetrics.scaledDensity
-            paint.textSize = size
-            paint.color = colors[i % colors.size]
-            val w = paint.measureText(word)
-            if (x + w > width - padX && x > padX) {
-                // 换行
-                x = padX
-                y += lineHeight + lineGap
-                lineHeight = 0f
+        var index = 0
+        rows.forEach { row ->
+            val lineHeight = row.maxOf { it.second }
+            var x = padX
+            row.forEach { (word, size) ->
+                paint.textSize = size
+                paint.color = colors[index % colors.size]
+                val w = paint.measureText(word)
+                canvas.drawText(word, x + w / 2, y + size * 0.8f, paint)
+                x += w + wordGap
+                index++
             }
-            canvas.drawText(word, x + w / 2, y + size * 0.8f, paint)
-            x += w + wordGap
-            lineHeight = maxOf(lineHeight, size)
+            y += lineHeight + lineGap
         }
     }
 
