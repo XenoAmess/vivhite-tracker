@@ -44,7 +44,8 @@ class WordCloudView @JvmOverloads constructor(
         var current = mutableListOf<Pair<String, Float>>()
         var x = padX
         words.forEach { (word, count) ->
-            val size = (16 + 18f * count / maxCount) * resources.displayMetrics.scaledDensity
+            // 字号阶梯（压缩版）：最大 24sp，最小 12sp（海报空间有限）
+            val size = (12 + 12f * count / maxCount) * resources.displayMetrics.scaledDensity
             paint.textSize = size
             val w = paint.measureText(word)
             if (x + w > maxWidth - padX && current.isNotEmpty()) {

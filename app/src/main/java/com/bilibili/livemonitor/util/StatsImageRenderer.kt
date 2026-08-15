@@ -174,28 +174,6 @@ object StatsImageRenderer {
         }
         y += cardH + GAP_AFTER_SUMMARY
 
-        // ============ 柱状图（离屏复用 View 绘制，柱数随数据） ============
-        c.drawText(
-            data.barsTitle, PAD, y + 40f,
-            helper.paintText(26f, TEXT_MAIN, bold = true)
-        )
-        y += SECTION_LABEL_H
-        if (data.barCounts.isNotEmpty() && data.barCounts.size == data.barLabels.size) {
-            val barsView = WeekStreamBarsView(context)
-            barsView.setData(data.barCounts, data.barLabels)
-            val wSpec = View.MeasureSpec.makeMeasureSpec(CONTENT_W.toInt(), View.MeasureSpec.EXACTLY)
-            val hSpec = View.MeasureSpec.makeMeasureSpec(BARS_H, View.MeasureSpec.EXACTLY)
-            barsView.measure(wSpec, hSpec)
-            barsView.layout(0, 0, CONTENT_W.toInt(), BARS_H)
-            c.save()
-            c.translate(PAD, y)
-            // 离屏无父布局裁剪：显式 clip，防止 view 内部绘制越界污染其他分区
-            c.clipRect(0f, 0f, CONTENT_W, BARS_H.toFloat())
-            barsView.draw(c)
-            c.restore()
-        }
-        y += BARS_H + GAP_AFTER_BARS
-
         // ============ 当月日历热力（场次紫底 / 魔法期粉底 / 重叠紫底粉描边） ============
         c.drawText(
             data.monthTitle, PAD, y + 40f,
@@ -308,6 +286,28 @@ object StatsImageRenderer {
             c.restore()
             y += height + GAP_AFTER_EXTRA
         }
+
+        // ============ 柱状图（挪到记录之后、时段分布之前） ============
+        c.drawText(
+            data.barsTitle, PAD, y + 40f,
+            helper.paintText(26f, TEXT_MAIN, bold = true)
+        )
+        y += SECTION_LABEL_H
+        if (data.barCounts.isNotEmpty() && data.barCounts.size == data.barLabels.size) {
+            val barsView = WeekStreamBarsView(context)
+            barsView.setData(data.barCounts, data.barLabels)
+            val wSpec = View.MeasureSpec.makeMeasureSpec(CONTENT_W.toInt(), View.MeasureSpec.EXACTLY)
+            val hSpec = View.MeasureSpec.makeMeasureSpec(BARS_H, View.MeasureSpec.EXACTLY)
+            barsView.measure(wSpec, hSpec)
+            barsView.layout(0, 0, CONTENT_W.toInt(), BARS_H)
+            c.save()
+            c.translate(PAD, y)
+            // 离屏无父布局裁剪：显式 clip，防止 view 内部绘制越界污染其他分区
+            c.clipRect(0f, 0f, CONTENT_W, BARS_H.toFloat())
+            barsView.draw(c)
+            c.restore()
+        }
+        y += BARS_H + GAP_AFTER_BARS
 
         data.weekdayHeat?.let { heat ->
             c.drawText("本月开播时段分布", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
