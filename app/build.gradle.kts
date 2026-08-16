@@ -149,7 +149,7 @@ dependencies {
     // jbsdiff（io.sigpipe）已随稳定版/beta 双通道切 ApkDiffPatch 后移除
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     // 媒体播放器（ExoPlayer/Media3 - 用于 alarm 铃声 gapless 循环，解决 MediaPlayer 循环间隔）
-    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
     // 场次/统计存储（Room + KSP，实体不用 @Parcelize——AGP9 内置 Kotlin 下 KSP 已知 bug）
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
