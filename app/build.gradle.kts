@@ -167,7 +167,7 @@ dependencies {
     // 手账 UI 自动化（对话框交互 + DatePicker 操作）
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.0")
 }
 
 tasks.withType<Test>().configureEach {
