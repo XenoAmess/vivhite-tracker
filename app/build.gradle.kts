@@ -138,7 +138,7 @@ android {
 dependencies {
     implementation(files("libs/open_sdk_3.5.19_r9483ffc7_lite.jar"))
     implementation("androidx.core:core-ktx:1.18.0")
-    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
