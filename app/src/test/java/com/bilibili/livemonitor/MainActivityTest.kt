@@ -256,6 +256,8 @@ class MainActivityTest {
         assertNotNull(sheet.findViewById<android.widget.TextView>(R.id.tvExactAlarmReadiness))
         assertNotNull(sheet.findViewById<android.widget.TextView>(R.id.tvBackgroundReadiness))
         assertNotNull(sheet.findViewById<android.widget.TextView>(R.id.tvFullScreenReadiness))
+        assertTrue(sheet.findViewById<android.widget.TextView>(R.id.tvReadinessOverall)!!
+            .text.toString().contains("/4 已就绪"))
         assertTrue(sheet.findViewById<android.widget.TextView>(R.id.tvExactAlarmReadiness)!!
             .text.toString().contains("可能被延迟"))
     }
@@ -1653,7 +1655,7 @@ class MainActivityTest {
         makeBatteryIntentResolvable()
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
-        // 抽屉里展开「后台保活设置」section 后点「去电池优化设置」按钮
+        // 抽屉里展开「后台保活设置」section 后点统一的设置入口
         activity.showSettingsDrawer()
         expandSectionAt(activity, 0)
         shadowOf(android.os.Looper.getMainLooper()).idle()
@@ -1661,7 +1663,7 @@ class MainActivityTest {
             as com.google.android.material.bottomsheet.BottomSheetDialog)
             .findViewById<android.view.View>(R.id.itemsContainer)!!
         sheetView.findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.btnOpenBatterySettings
+            R.id.btnOpenBackgroundSettings
         )?.performClick()
 
         val started = shadowOf(context).nextStartedActivity

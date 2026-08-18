@@ -565,13 +565,12 @@ class MainActivity : AppCompatActivity() {
             else -> "电池优化未放行，后台检测可能中断"
         }
         setStatus(R.id.tvBackgroundReadiness, backgroundReady, backgroundText)
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBackgroundSettings)
-            .setOnClickListener { openBackgroundSettings() }
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBatterySettings)
-            .setOnClickListener { openBatterySettings() }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBackgroundSettings).apply {
+            text = if (backgroundReady) "查看" else "设置"
+            setOnClickListener { openBackgroundSettings() }
+        }
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnConfirmOemSettings).apply {
-            visibility = if (oemInfo == null) View.GONE else View.VISIBLE
-            text = if (oemConfirmed) "已确认厂商自启动设置" else "我已确认厂商自启动设置"
+            visibility = if (oemInfo != null && !oemConfirmed) View.VISIBLE else View.GONE
             setOnClickListener {
                 preferenceManager.setOemBackgroundConfirmed(true)
                 bindReadinessSection(view)
@@ -607,6 +606,9 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+        val states = listOf(notificationReady, exactReady, backgroundReady, fullScreenReady)
+        view.findViewById<TextView>(R.id.tvReadinessOverall).text =
+            if (states.all { it }) "全部就绪" else "${states.count { it }}/${states.size} 已就绪"
     }
 
     // ==================== 魔法期记录 ====================
