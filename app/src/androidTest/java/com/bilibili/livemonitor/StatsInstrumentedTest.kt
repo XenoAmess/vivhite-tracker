@@ -74,9 +74,33 @@ class StatsInstrumentedTest {
     }
 
     private fun clickMoodItem(scenario: ActivityScenario<StatsActivity>) {
-        scenario.onActivity {
-            it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
-                .findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+        waitFor("mood item holder") {
+            var clicked = false
+            scenario.onActivity {
+                val holder = it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
+                    .findViewHolderForAdapterPosition(0)
+                if (holder != null) {
+                    holder.itemView.performClick()
+                    clicked = true
+                }
+            }
+            clicked
+        }
+    }
+
+    private fun clickMoodDelete(scenario: ActivityScenario<StatsActivity>) {
+        waitFor("mood delete holder") {
+            var clicked = false
+            scenario.onActivity {
+                val holder = it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
+                    .findViewHolderForAdapterPosition(0)
+                if (holder != null) {
+                    holder.itemView.findViewById<android.view.View>(R.id.btnMoodEventDelete)
+                        .performClick()
+                    clicked = true
+                }
+            }
+            clicked
         }
     }
 
@@ -118,11 +142,7 @@ class StatsInstrumentedTest {
             }
 
             // 删除：点删除图标 → 确认
-            scenario.onActivity {
-                it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
-                    .findViewHolderForAdapterPosition(0)!!.itemView
-                    .findViewById<android.view.View>(R.id.btnMoodEventDelete).performClick()
-            }
+            clickMoodDelete(scenario)
             scenario.onActivity { activity ->
                 activity.moodDeleteDialog!!
                     .getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
