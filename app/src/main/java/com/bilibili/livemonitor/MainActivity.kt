@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            if (startMonitoringAfterNotificationGrant) startMonitoring()
+            if (startMonitoringAfterNotificationGrant) startMonitoring(showReadinessHint = true)
             updateUI()
             refreshSettingsSubtitles()
         } else {
@@ -231,7 +231,7 @@ class MainActivity : AppCompatActivity() {
                     if (checkNotificationPermission()) {
                         isServiceStarting = true
                         updateUI() // 立即更新UI
-                        startMonitoring()
+                        startMonitoring(showReadinessHint = true)
                     }
                 }
             }
@@ -239,8 +239,6 @@ class MainActivity : AppCompatActivity() {
             btnSettings.setOnClickListener {
                 showSettingsDrawer()
             }
-
-            btnReadiness.setOnClickListener { showReadinessDialog() }
 
             btnMagicRecord.setOnClickListener {
                 showMagicPeriodDialog()
@@ -500,19 +498,6 @@ class MainActivity : AppCompatActivity() {
         val states = readinessStates()
         val ready = states.count { it }
         return if (ready == states.size) "全部就绪" else "$ready/${states.size} 项已确认"
-    }
-
-    internal fun showReadinessDialog() {
-        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
-        val view = layoutInflater.inflate(
-            R.layout.expand_section_readiness,
-            findViewById<android.view.ViewGroup>(android.R.id.content),
-            false
-        )
-        bindReadinessSection(view)
-        sheet.setContentView(view)
-        sheet.setOnDismissListener { if (readinessView === view) readinessView = null }
-        sheet.show()
     }
 
     private fun bindReadinessSection(view: android.view.View) {
@@ -1428,7 +1413,10 @@ class MainActivity : AppCompatActivity() {
                     else -> tvDescription.currentTextColor
                 }
             )
-            tvReadinessSummary.text = "监控准备：${computeReadinessSubtitle()}"
+            val readinessComplete = readinessStates().all { it }
+            readinessIndicator.visibility = if (readinessComplete) View.GONE else View.VISIBLE
+            btnSettings.contentDescription =
+                if (readinessComplete) "设置" else "设置，监控准备未完成"
             tvDescription.text =
                 "• ${configuredIntervalText()}检查直播状态 • 开播响铃+震动+屏幕提醒\n" +
                 "• 电池优化/OEM 等后台准备需确认 • 通知栏显示直播状态"
@@ -1472,7 +1460,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startMonitoring() {
+    private fun startMonitoring(showReadinessHint: Boolean = false) {
         preferenceManager.saveRoomId(ROOM_ID)
         val generation = preferenceManager.beginMonitoringSession()
 
@@ -1482,7 +1470,16 @@ class MainActivity : AppCompatActivity() {
         }
         ContextCompat.startForegroundService(this, serviceIntent)
 
-        Toast.makeText(this, "已开始监控直播间 $ROOM_ID", Toast.LENGTH_SHORT).show()
+        val states = if (showReadinessHint) readinessStates() else emptyList()
+        if (states.isNotEmpty() && !states.all { it }) {
+            Snackbar.make(
+                binding.root,
+                "已开始监控；后台准备 ${states.count { it }}/${states.size}",
+                Snackbar.LENGTH_LONG
+            ).setAction("去设置") { showSettingsDrawer() }.show()
+        } else {
+            Toast.makeText(this, "已开始监控直播间 $ROOM_ID", Toast.LENGTH_SHORT).show()
+        }
 
         // 使用延迟来确保Service有足够时间启动，然后清除过渡状态
         binding.root.postDelayed({

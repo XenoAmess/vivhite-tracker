@@ -114,51 +114,6 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/cvStatus" />
 
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardReadiness"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/purple_500"
-            app:strokeWidth="1dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvLastCheck">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="14dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="8dp"
-                android:paddingBottom="8dp">
-
-                <TextView
-                    android:id="@+id/tvReadinessSummary"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="监控准备：正在检查"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:textSize="14sp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnReadiness"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:minWidth="0dp"
-                    android:text="查看"
-                    android:textColor="@color/purple_500" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
         <!-- 打开直播间 | 打开空间：同一行各占 1/2 宽度 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenLive"
@@ -174,7 +129,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toStartOf="@id/btnOpenSpace"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cardReadiness" />
+            app:layout_constraintTop_toBottomOf="@id/tvLastCheck" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenSpace"
@@ -190,7 +145,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/btnOpenLive"
-            app:layout_constraintTop_toBottomOf="@id/cardReadiness" />
+            app:layout_constraintTop_toBottomOf="@id/tvLastCheck" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnToggle"
@@ -291,6 +246,19 @@
             app:layout_constraintEnd_toStartOf="@id/btnOpenGithub"
             app:layout_constraintStart_toEndOf="@id/btnViewLog"
             app:layout_constraintTop_toBottomOf="@id/btnStats" />
+
+        <View
+            android:id="@+id/readinessIndicator"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginTop="7dp"
+            android:layout_marginEnd="9dp"
+            android:background="@drawable/dot_readiness_warning"
+            android:importantForAccessibility="no"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="@id/btnSettings"
+            app:layout_constraintTop_toTopOf="@id/btnSettings"
+            tools:visibility="visible" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenGithub"

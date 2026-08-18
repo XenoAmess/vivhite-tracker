@@ -97,6 +97,51 @@ class MainActivityTest {
     }
 
     @Test
+    fun `主页移除准备卡片且未就绪时设置按钮显示状态点`() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+        activity.exactAlarmGranted = { false }
+
+        controller.pause().resume()
+
+        val params = activity.findViewById<android.view.View>(R.id.btnOpenLive).layoutParams
+            as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+        assertEquals(R.id.tvLastCheck, params.topToBottom)
+        assertEquals(
+            android.view.View.VISIBLE,
+            activity.findViewById<android.view.View>(R.id.readinessIndicator).visibility
+        )
+        assertEquals(
+            "设置，监控准备未完成",
+            activity.findViewById<android.view.View>(R.id.btnSettings).contentDescription
+        )
+    }
+
+    @Test
+    fun `主动开始监控且准备不足时提示进入设置`() {
+        prefs.setServiceRunning(false)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.exactAlarmGranted = { false }
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnToggle)
+            .performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val message = activity.findViewById<android.widget.TextView>(
+            com.google.android.material.R.id.snackbar_text
+        )
+        assertTrue(message.text.toString().contains("后台准备"))
+        assertNull(org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
+        activity.findViewById<android.widget.TextView>(
+            com.google.android.material.R.id.snackbar_action
+        ).performClick()
+        assertTrue(
+            org.robolectric.shadows.ShadowDialog.getLatestDialog() is
+                com.google.android.material.bottomsheet.BottomSheetDialog
+        )
+    }
+
+    @Test
     fun `点停止监控 发送停止命令`() {
         prefs.setServiceRunning(true)
         LiveCheckService.isRunning = true
@@ -247,9 +292,8 @@ class MainActivityTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.exactAlarmGranted = { false }
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnReadiness)
-            .performClick()
-
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 0)
         val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
             as com.google.android.material.bottomsheet.BottomSheetDialog
         assertNotNull(sheet.findViewById<android.widget.TextView>(R.id.tvNotificationReadiness))
@@ -267,7 +311,8 @@ class MainActivityTest {
         shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         activity.notificationRationaleChecker = { true }
-        activity.showReadinessDialog()
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 0)
         val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
             as com.google.android.material.bottomsheet.BottomSheetDialog
 
@@ -571,8 +616,8 @@ class MainActivityTest {
             }
         )
 
-        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnReadiness)
-            .performClick()
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 0)
         val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
         assertTrue(collectDialogTexts(sheet).any { it.contains("小米") && it.contains("自启动") })
     }
