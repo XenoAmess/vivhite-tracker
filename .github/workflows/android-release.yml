@@ -28,6 +28,15 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    - name: Run lint
+      run: ./gradlew lintDebug
+
+    - name: Run unit tests
+      run: ./gradlew testDebugUnitTest
+
+    - name: Test update-chain scripts
+      run: python3 -m unittest discover -s .github/workflows/tests -v
+
     - name: Decode signing key
       env:
         SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
@@ -119,7 +128,8 @@ jobs:
 
     # 增量更新（ApkDiffPatch）：对最近 N 个 release 生成直达补丁并回打自验；
     # 旧客户端（无 libapkpatch.so）自动全量，保证「检查更新」按钮始终可用。
-    # 任一环节失败只丢该条目（客户端自然回退全量），绝不阻塞发布。
+    # 单个历史底包的补丁失败只丢该条目，客户端自然回退全量；
+    # 发布物准备或 Release 上传失败仍应让发布 job 失败。
     - name: Generate delta patches and build upgrade chains
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

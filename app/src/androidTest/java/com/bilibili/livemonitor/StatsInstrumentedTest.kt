@@ -4,7 +4,6 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiSelector
 import com.bilibili.livemonitor.db.AppDatabase
 import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
@@ -38,6 +37,8 @@ class StatsInstrumentedTest {
 
     @Before
     fun setUp() {
+        device.wakeUp()
+        device.executeShellCommand("wm dismiss-keyguard")
         runBlocking {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
@@ -79,14 +80,6 @@ class StatsInstrumentedTest {
         }
     }
 
-    private fun uiClickText(text: String, timeoutMs: Long = 8_000) {
-        val obj = device.wait(
-            androidx.test.uiautomator.Until.findObject(androidx.test.uiautomator.By.text(text)),
-            timeoutMs
-        ) ?: throw AssertionError("UI 元素未出现: $text")
-        obj.click()
-    }
-
     @Test
     fun moodAddEditDelete() = runBlocking {
         val dao = AppDatabase.get(context).moodEventDao()
@@ -95,11 +88,17 @@ class StatsInstrumentedTest {
             scenario.onActivity {
                 it.findViewById<android.view.View>(R.id.btnAddMoodEvent).performClick()
             }
-            uiClickText("😄开心")
-            device.findObject(
-                UiSelector().resourceId("com.bilibili.livemonitor:id/etMoodEventTitle")
-            ).setText("instrumented 添加")
-            uiClickText("保存")
+            scenario.onActivity { activity ->
+                val dialog = activity.moodEditDialog!!
+                val chips = dialog.findViewById<com.google.android.material.chip.ChipGroup>(R.id.chipGroupMood)!!
+                (0 until chips.childCount)
+                    .map { chips.getChildAt(it) as com.google.android.material.chip.Chip }
+                    .first { it.text.contains("开心") }
+                    .performClick()
+                dialog.findViewById<android.widget.EditText>(R.id.etMoodEventTitle)!!
+                    .setText("instrumented 添加")
+                dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+            }
             waitFor("add") { runBlocking { dao.all().isNotEmpty() } }
             val added = dao.all().first()
             assertEquals("instrumented 添加", added.title)
@@ -108,10 +107,12 @@ class StatsInstrumentedTest {
             // 编辑：点条目 → 改标题 → 保存
             waitForMoodList(scenario, 1)
             clickMoodItem(scenario)
-            device.findObject(
-                UiSelector().resourceId("com.bilibili.livemonitor:id/etMoodEventTitle")
-            ).setText("instrumented 编辑后")
-            uiClickText("保存")
+            scenario.onActivity { activity ->
+                val dialog = activity.moodEditDialog!!
+                dialog.findViewById<android.widget.EditText>(R.id.etMoodEventTitle)!!
+                    .setText("instrumented 编辑后")
+                dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+            }
             waitFor("edit") {
                 runBlocking { dao.all().firstOrNull()?.title == "instrumented 编辑后" }
             }
@@ -122,7 +123,10 @@ class StatsInstrumentedTest {
                     .findViewHolderForAdapterPosition(0)!!.itemView
                     .findViewById<android.view.View>(R.id.btnMoodEventDelete).performClick()
             }
-            uiClickText("删除")
+            scenario.onActivity { activity ->
+                activity.moodDeleteDialog!!
+                    .getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+            }
             waitFor("delete") { runBlocking { dao.all().isEmpty() } }
             assertEquals(0, dao.all().size)
         }
@@ -146,29 +150,25 @@ class StatsInstrumentedTest {
             waitForMoodList(scenario, 1)
             clickMoodItem(scenario)
             // 日期按钮 → DatePicker 改昨天 → 确定
-            uiClickTextStartsWith("日期：")
+            scenario.onActivity { activity ->
+                activity.moodEditDialog!!.findViewById<android.view.View>(R.id.btnMoodEventDate)!!
+                    .performClick()
+            }
             val yesterday = java.util.Calendar.getInstance().apply {
                 add(java.util.Calendar.DAY_OF_MONTH, -1)
             }
-            device.wait(
-                androidx.test.uiautomator.Until.hasObject(
-                    androidx.test.uiautomator.By.clazz(android.widget.DatePicker::class.java.name)
-                ), 8_000
-            )
-            androidx.test.espresso.Espresso.onView(
-                org.hamcrest.Matchers.instanceOf(android.widget.DatePicker::class.java)
-            ).inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
-                .perform(
-                    androidx.test.espresso.contrib.PickerActions.setDate(
-                        yesterday.get(java.util.Calendar.YEAR),
-                        yesterday.get(java.util.Calendar.MONTH) + 1,
-                        yesterday.get(java.util.Calendar.DAY_OF_MONTH)
-                    )
+            scenario.onActivity { activity ->
+                val picker = activity.moodDatePickerDialog!!
+                picker.datePicker.updateDate(
+                    yesterday.get(java.util.Calendar.YEAR),
+                    yesterday.get(java.util.Calendar.MONTH),
+                    yesterday.get(java.util.Calendar.DAY_OF_MONTH)
                 )
-            device.findObject(
-                UiSelector().resourceId("android:id/button1")
-            ).click()
-            uiClickText("保存")
+                picker.onClick(picker, android.app.AlertDialog.BUTTON_POSITIVE)
+                picker.dismiss()
+                activity.moodEditDialog!!
+                    .getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+            }
             waitFor("date moved") {
                 runBlocking { dao.eventsBetween(todayStart, todayStart + 86_400_000L).isEmpty() }
             }
@@ -185,17 +185,6 @@ class StatsInstrumentedTest {
             )
         }
         Unit
-    }
-
-    // UiSelector 没有 startsWith，用正则匹配
-    private fun uiClickTextStartsWith(prefix: String) {
-        val obj = device.wait(
-            androidx.test.uiautomator.Until.findObject(
-                androidx.test.uiautomator.By.textStartsWith(prefix)
-            ),
-            8_000
-        ) ?: throw AssertionError("UI 元素未出现: $prefix*")
-        obj.click()
     }
 
     @Test

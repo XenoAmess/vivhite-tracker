@@ -10,7 +10,8 @@ ApkDiffPatch（sisong/ApkDiffPatch，MIT）服务端生成：
   打不了 ZiPat1 补丁，跳过 → 自动全量下载，保证「检查更新」按钮始终可用）
 - 补丁不小于发布包一半 → 丢弃（省流量无意义）
 - 单跳直达，不构建多跳链（ApkDiffPatch 补丁足够小）
-- 任何失败只丢对应条目，绝不阻断发布（客户端对缺失条目回退全量）
+- 单个底包的补丁生成/验证失败只丢对应条目，客户端对缺失条目回退全量
+- 发布物准备、元数据写入或 Release 上传失败仍会让发布 job 失败
 
 依赖（环境变量）：
   APKDIFF_BIN  含 ZipDiff/ZipPatch/ApkNormalized 的目录（默认 "."）
@@ -74,6 +75,51 @@ def apk_has_native_lib(apk_path):
         return False
 
 
+def select_beta_sources(raw, new_vc, limit):
+    """从 beta history 解析并筛选最近的可用底包，保持 versionCode 升序。"""
+    if not isinstance(raw, dict):
+        return []
+    out = []
+    for key, value in raw.items():
+        try:
+            vc = int(key)
+        except (TypeError, ValueError):
+            continue
+        if not (0 < vc < new_vc) or not isinstance(value, dict):
+            continue
+        apk = value.get("apk")
+        digest = value.get("sha256")
+        if isinstance(apk, str) and apk and isinstance(digest, str) and digest:
+            out.append((vc, apk, digest))
+    out.sort()
+    return out[-limit:]
+
+
+def build_direct_chains(patches, base_sha, new_vc, new_sha, cur_tag):
+    """把已验证的单跳补丁转换为客户端 chains 元数据。"""
+    chains = {}
+    for from_vc, patch in patches.items():
+        if from_vc not in base_sha:
+            continue
+        chains[str(from_vc)] = {
+            "fromApkSha256": base_sha[from_vc],
+            "totalSize": patch["size"],
+            "hops": [
+                {
+                    "toVersionCode": new_vc,
+                    "url": (
+                        f"https://github.com/{REPO}/releases/download/"
+                        f"{cur_tag}/{patch['file']}"
+                    ),
+                    "size": patch["size"],
+                    "patchSha256": patch["patchSha256"],
+                    "resultSha256": new_sha,
+                }
+            ],
+        }
+    return chains
+
+
 def beta_cross_sources(new_vc):
     """beta-archive 中最近 BETA_CROSS_BASES 个可用 beta 底包：[(vc, apk资产名, sha256)]。
 
@@ -88,20 +134,7 @@ def beta_cross_sources(new_vc):
     except Exception as e:
         print(f"skip beta cross bases: history broken ({e})")
         return []
-    out = []
-    for k, v in raw.items():
-        try:
-            vc = int(k)
-        except (TypeError, ValueError):
-            continue
-        if not (0 < vc < new_vc) or not isinstance(v, dict):
-            continue
-        apk = v.get("apk")
-        sha = v.get("sha256")
-        if isinstance(apk, str) and isinstance(sha, str):
-            out.append((vc, apk, sha))
-    out.sort()
-    return out[-BETA_CROSS_BASES:]
+    return select_beta_sources(raw, new_vc, BETA_CROSS_BASES)
 
 
 def try_patch(old_apk, new_apk, pf, new_size, label):
@@ -208,21 +241,10 @@ def main():
         print(f"beta cross bases aborted: {e}")
 
     # 单跳直达链：from 版本 → 当前版本
-    chains = {}
+    chains = build_direct_chains(patches, base_sha, new_vc, new_sha, cur_tag)
     for vc, p in patches.items():
-        chains[str(vc)] = {
-            "fromApkSha256": base_sha[vc],
-            "totalSize": p["size"],
-            "hops": [
-                {
-                    "toVersionCode": new_vc,
-                    "url": f"https://github.com/{REPO}/releases/download/{cur_tag}/{p['file']}",
-                    "size": p["size"],
-                    "patchSha256": p["patchSha256"],
-                    "resultSha256": new_sha,
-                }
-            ],
-        }
+        if str(vc) not in chains:
+            continue
         print(f"chain {vc} -> {new_vc}: 1 hop, {p['size']} bytes")
 
     # 合并写回 version.json（apkSha256/apkSize 必须指向前述发布包；vj 已在 main 顶部加载）

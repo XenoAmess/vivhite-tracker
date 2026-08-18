@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PopularityPointEntity::class,
         FollowerSnapshotEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -95,6 +95,70 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v6→v7：查询索引 + 场次子表外键级联；历史孤儿行先清理。 */
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 历史版本没有约束开放行数量；保留最新一行，其余闭合到最新场开始。
+                db.execSQL(
+                    "UPDATE `stream_sessions` SET `end_ts` = MAX(`start_ts`, " +
+                        "(SELECT MAX(`start_ts`) FROM `stream_sessions` WHERE `end_ts` IS NULL)) " +
+                        "WHERE `end_ts` IS NULL AND `id` != (SELECT `id` FROM `stream_sessions` " +
+                        "WHERE `end_ts` IS NULL ORDER BY `start_ts` DESC, `id` DESC LIMIT 1)"
+                )
+                db.execSQL(
+                    "DELETE FROM `stream_title_changes` WHERE `session_id` NOT IN " +
+                        "(SELECT `id` FROM `stream_sessions`)"
+                )
+                db.execSQL(
+                    "DELETE FROM `popularity_points` WHERE `session_id` NOT IN " +
+                        "(SELECT `id` FROM `stream_sessions`)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `stream_title_changes_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `session_id` INTEGER NOT NULL,
+                        `changed_at` INTEGER NOT NULL,
+                        `old_title` TEXT,
+                        `new_title` TEXT,
+                        FOREIGN KEY(`session_id`) REFERENCES `stream_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "INSERT INTO `stream_title_changes_new` (`id`, `session_id`, `changed_at`, `old_title`, `new_title`) " +
+                        "SELECT `id`, `session_id`, `changed_at`, `old_title`, `new_title` FROM `stream_title_changes`"
+                )
+                db.execSQL("DROP TABLE `stream_title_changes`")
+                db.execSQL("ALTER TABLE `stream_title_changes_new` RENAME TO `stream_title_changes`")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `popularity_points_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `session_id` INTEGER NOT NULL,
+                        `ts` INTEGER NOT NULL,
+                        `online` INTEGER NOT NULL,
+                        FOREIGN KEY(`session_id`) REFERENCES `stream_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "INSERT INTO `popularity_points_new` (`id`, `session_id`, `ts`, `online`) " +
+                        "SELECT `id`, `session_id`, `ts`, `online` FROM `popularity_points`"
+                )
+                db.execSQL("DROP TABLE `popularity_points`")
+                db.execSQL("ALTER TABLE `popularity_points_new` RENAME TO `popularity_points`")
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_stream_sessions_start_ts` ON `stream_sessions` (`start_ts`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_mood_events_event_ts` ON `mood_events` (`event_ts`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_follower_snapshots_ts` ON `follower_snapshots` (`ts`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_stream_title_changes_session_id_changed_at` ON `stream_title_changes` (`session_id`, `changed_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_popularity_points_session_id_ts` ON `popularity_points` (`session_id`, `ts`)")
+            }
+        }
+
         fun get(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -102,7 +166,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "vivhite.db"
                 ).addMigrations(
-                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                    MIGRATION_5_6, MIGRATION_6_7
                 ).build().also { INSTANCE = it }
             }
         }

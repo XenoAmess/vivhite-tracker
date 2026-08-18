@@ -68,7 +68,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginEnd="4dp"
-                        android:text="搜索"
+                        android:text="搜索记录"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
@@ -79,34 +79,7 @@
                         android:layout_weight="1"
                         android:layout_marginStart="4dp"
                         android:layout_marginEnd="4dp"
-                        android:text="统计"
-                        android:textSize="13sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnExportStats"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="4dp"
-                        android:text="导出"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="6dp">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnImportStats"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="4dp"
-                        android:text="导入"
+                        android:text="观播统计"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
@@ -117,18 +90,29 @@
                         android:layout_weight="1"
                         android:layout_marginStart="4dp"
                         android:layout_marginEnd="4dp"
-                        android:text="图片"
+                        android:text="生成月报"
                         android:textSize="13sp" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnManageRecords"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="管理"
-                        android:textSize="13sp" />
                 </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStatsMore"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="6dp"
+                    android:text="更多：备份、导入与管理"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRecentPoster"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="6dp"
+                    android:contentDescription="预览或分享最近生成的月报海报"
+                    android:text="最近月报"
+                    android:visibility="gone" />
             </LinearLayout>
         </LinearLayout>
 
@@ -136,6 +120,32 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="?android:attr/listDivider" />
+
+        <LinearLayout
+            android:id="@+id/statsLoadState"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:padding="12dp">
+
+            <TextView
+                android:id="@+id/tvStatsLoadState"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="正在加载手账…"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnStatsRetry"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:text="重试"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tvWeekBarsTitle"
@@ -167,8 +177,8 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPrevMonth"
                 style="?attr/materialIconButtonOutlinedStyle"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:text="◀"
                 android:contentDescription="上个月" />
 
@@ -185,8 +195,8 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnNextMonth"
                 style="?attr/materialIconButtonOutlinedStyle"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:text="▶"
                 android:contentDescription="下个月" />
         </LinearLayout>

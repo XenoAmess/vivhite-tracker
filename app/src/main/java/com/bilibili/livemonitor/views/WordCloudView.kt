@@ -23,6 +23,11 @@ class WordCloudView @JvmOverloads constructor(
 
     fun setData(data: List<Pair<String, Int>>) {
         words = data
+        contentDescription = if (data.isEmpty()) {
+            "标题高频词：暂无数据"
+        } else {
+            "标题高频词：" + data.joinToString("，") { (word, count) -> "$word $count 次" }
+        }
         invalidate()
     }
 

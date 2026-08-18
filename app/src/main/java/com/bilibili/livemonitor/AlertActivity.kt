@@ -60,10 +60,10 @@ class AlertActivity : AppCompatActivity() {
             insets
         }
 
-        // 拦截返回手势/返回键，强制用户点击按钮（targetSdk 36+ 需用 OnBackPressedDispatcher）
+        // 返回键与页面按钮语义一致：立即停铃并关闭，不把用户困在全屏提醒中。
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // 不处理返回，强制用户点击按钮
+                dismissAlert()
             }
         })
 
@@ -73,7 +73,7 @@ class AlertActivity : AppCompatActivity() {
         // 30秒后自动关闭
         scope.launch {
             delay(30000)
-            finish()
+            dismissAlert()
         }
 
         // 释放唤醒锁
@@ -98,10 +98,14 @@ class AlertActivity : AppCompatActivity() {
             }
 
             btnDismiss.setOnClickListener {
-                notifyLiveService(LiveCheckService.ACTION_STOP_ALERT)
-                finish()
+                dismissAlert()
             }
         }
+    }
+
+    private fun dismissAlert() {
+        notifyLiveService(LiveCheckService.ACTION_STOP_ALERT)
+        finish()
     }
 
     private fun notifyLiveService(action: String) {

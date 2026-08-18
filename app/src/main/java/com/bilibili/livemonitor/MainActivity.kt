@@ -3,6 +3,7 @@ package com.bilibili.livemonitor
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AlarmManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -13,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
 import androidx.media3.common.AudioAttributes as Media3AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -55,25 +57,33 @@ class MainActivity : AppCompatActivity() {
     // 本地状态标志，用于立即更新UI
     private var isServiceStarting = false
     private var isServiceStopping = false
+    private var startMonitoringAfterNotificationGrant = false
 
-    // 标记本次会话是否已弹过权限引导，避免重复打扰
-    private var hasPromptedExactAlarm = false
     // 魔法期警示条的刷新 lambda（dialog 打开时赋值，dismiss 置 null；onResume 调用）
     private var magicAlarmBannerRefresh: (() -> Unit)? = null
-    private var hasPromptedOem = false
+    private var readinessView: View? = null
+    private val foregroundRefresh = object : Runnable {
+        override fun run() {
+            updateUI()
+            binding.root.postDelayed(this, FOREGROUND_REFRESH_MS)
+        }
+    }
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            startMonitoring()
+            if (startMonitoringAfterNotificationGrant) startMonitoring()
+            updateUI()
+            refreshSettingsSubtitles()
         } else {
             Snackbar.make(
                 binding.root,
-                "需要通知权限才能正常运行",
+                "通知权限未开启，无法可靠显示开播提醒",
                 Snackbar.LENGTH_LONG
-            ).show()
+            ).setAction("去设置") { openNotificationSettings() }.show()
         }
+        startMonitoringAfterNotificationGrant = false
     }
 
     // 系统铃声库 picker：ACTION_RINGTONE_PICKER 返回的 uri 在 onActivityResult 里拿
@@ -92,6 +102,7 @@ class MainActivity : AppCompatActivity() {
         val encoded = AlertSoundDecider.encodeSystem(uri.toString())
         preferenceManager.setAlertSoundUri(encoded)
         preferenceManager.setAlertSoundTitle(title)
+        refreshSettingsSubtitles()
         AppLogger.d("MainActivity", "system ringtone picked: $uri ($title)")
         Toast.makeText(this, "已设置铃声：$title", Toast.LENGTH_SHORT).show()
     }
@@ -114,6 +125,7 @@ class MainActivity : AppCompatActivity() {
             val encoded = AlertSoundDecider.encodeFile(uri.toString())
             preferenceManager.setAlertSoundUri(encoded)
             preferenceManager.setAlertSoundTitle(title)
+            refreshSettingsSubtitles()
             AppLogger.d("MainActivity", "audio file picked: $uri ($title)")
             Toast.makeText(this, "已设置铃声：$title", Toast.LENGTH_SHORT).show()
         } catch (e: SecurityException) {
@@ -152,10 +164,21 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupUI()
-        checkBatteryOptimization()
-        checkExactAlarmPermission()
-        checkOemRestrictions()
+        handleLaunchAction(intent)
         autoCheckUpdateIfDue()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchAction(intent)
+    }
+
+    private fun handleLaunchAction(intent: Intent) {
+        if (intent.action == ACTION_OPEN_WATCH_LIVE) {
+            intent.action = null
+            binding.root.post { openLiveRoom() }
+        }
     }
 
     override fun onResume() {
@@ -164,25 +187,29 @@ class MainActivity : AppCompatActivity() {
         isServiceStarting = false
         isServiceStopping = false
         updateUI()
+        refreshSettingsSubtitles()
+        readinessView?.let { view ->
+            if (view.isAttachedToWindow) bindReadinessSection(view) else readinessView = null
+        }
         // B站 App 安装状态可能变化，刷新打开直播间按钮着色
         updateOpenLiveButton()
         // 每次回到主页换一条名言
         refreshQuote()
-        // 从设置页返回时复查精确闹钟权限（用户可能刚授权或被系统收回）
-        if (!hasPromptedExactAlarm) {
-            checkExactAlarmPermission()
-        }
         // 魔法期警示条：从闹钟设置页返回后自动刷新可见性
         magicAlarmBannerRefresh?.invoke()
+        binding.root.removeCallbacks(foregroundRefresh)
+        binding.root.postDelayed(foregroundRefresh, FOREGROUND_REFRESH_MS)
     }
 
     override fun onPause() {
         super.onPause()
+        binding.root.removeCallbacks(foregroundRefresh)
         stopPreview()
     }
 
     override fun onDestroy() {
         magicAlarmBannerRefresh = null
+        readinessView = null
         updateController.cancel()
         shareController.cancel()
         super.onDestroy()
@@ -212,6 +239,8 @@ class MainActivity : AppCompatActivity() {
             btnSettings.setOnClickListener {
                 showSettingsDrawer()
             }
+
+            btnReadiness.setOnClickListener { showReadinessDialog() }
 
             btnMagicRecord.setOnClickListener {
                 showMagicPeriodDialog()
@@ -296,71 +325,71 @@ class MainActivity : AppCompatActivity() {
 
         val entries = listOf(
             SettingsEntry(
-                title = "后台保活设置",
-                subtitle = "电池优化 / OEM 自启动引导",
+                title = "监控准备",
+                subtitle = { computeReadinessSubtitle() },
                 iconRes = android.R.drawable.ic_menu_manage,
-                expandLayoutRes = R.layout.expand_section_maintenance,
-                onExpand = { view -> bindMaintenanceSection(view) }
+                expandLayoutRes = R.layout.expand_section_readiness,
+                onExpand = { view -> bindReadinessSection(view) }
             ),
             SettingsEntry(
                 title = "提醒铃声",
-                subtitle = computeRingtoneSubtitle(),
+                subtitle = { computeRingtoneSubtitle() },
                 iconRes = android.R.drawable.ic_media_play,
                 expandLayoutRes = R.layout.expand_section_ringtone,
                 onExpand = { view -> bindRingtoneSection(view) }
             ),
             SettingsEntry(
                 title = "活动监控",
-                subtitle = computeActivitySubtitle(),
+                subtitle = { computeActivitySubtitle() },
                 iconRes = android.R.drawable.ic_menu_my_calendar,
                 expandLayoutRes = R.layout.expand_section_activity,
                 onExpand = { view -> bindActivitySection(view) }
             ),
             SettingsEntry(
                 title = "勿扰时段",
-                subtitle = computeQuietSubtitle(),
+                subtitle = { computeQuietSubtitle() },
                 iconRes = android.R.drawable.ic_lock_idle_alarm,
                 expandLayoutRes = R.layout.expand_section_quiet,
                 onExpand = { view -> bindQuietSection(view) }
             ),
             SettingsEntry(
                 title = "检测频率",
-                subtitle = computeCheckIntervalSubtitle(),
+                subtitle = { computeCheckIntervalSubtitle() },
                 iconRes = android.R.drawable.ic_menu_recent_history,
                 expandLayoutRes = R.layout.expand_section_check_interval,
                 onExpand = { view -> bindCheckIntervalSection(view) }
             ),
             SettingsEntry(
                 title = "自动备份",
-                subtitle = computeBackupSubtitle(),
+                subtitle = { computeBackupSubtitle() },
                 iconRes = android.R.drawable.ic_menu_save,
                 expandLayoutRes = R.layout.expand_section_backup,
                 onExpand = { view -> bindBackupSection(view) }
             ),
             SettingsEntry(
                 title = "监控健康度",
-                subtitle = "近 24h 检测成功率 / 实际间隔",
+                subtitle = { "近 24h 检测成功率 / 实际间隔" },
                 iconRes = android.R.drawable.ic_menu_info_details,
                 expandLayoutRes = R.layout.expand_section_health,
                 onExpand = { view -> bindHealthSection(view) }
             ),
             SettingsEntry(
                 title = "直播提醒",
-                subtitle = "下播 / 标题变化",
+                subtitle = { "下播 / 标题变化" },
                 iconRes = android.R.drawable.ic_lock_idle_lock,
                 expandLayoutRes = R.layout.expand_section_live_alerts,
                 onExpand = { view -> bindLiveAlertsSection(view) }
             ),
             SettingsEntry(
                 title = "外观",
-                subtitle = "深色模式",
+                subtitle = { "深色模式" },
                 iconRes = android.R.drawable.ic_menu_gallery,
                 expandLayoutRes = R.layout.expand_section_appearance,
                 onExpand = { view -> bindAppearanceSection(view) }
             ),
             SettingsEntry(
                 title = "更新设置",
-                subtitle = computeUpdateSubtitle(),
+                subtitle = { computeUpdateSubtitle() },
                 iconRes = android.R.drawable.ic_menu_manage,
                 expandLayoutRes = R.layout.expand_section_update,
                 onExpand = { view -> bindUpdateSection(view) }
@@ -374,13 +403,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         sheet.setContentView(root)
-        sheet.setOnDismissListener { stopPreview() }
+        sheet.setOnDismissListener {
+            stopPreview()
+            settingsSubtitleRefreshers.clear()
+            currentExpanded = null
+            backupStatusView = null
+            backupSwitchView = null
+        }
         sheet.show()
     }
 
     private data class SettingsEntry(
         val title: String,
-        val subtitle: String,
+        val subtitle: () -> String,
         val iconRes: Int,
         val expandLayoutRes: Int,
         val onExpand: (android.view.View) -> Unit
@@ -388,10 +423,14 @@ class MainActivity : AppCompatActivity() {
 
     // 互斥展开：同一时刻只有一个 Section 展开
     private var currentExpanded: android.view.ViewGroup? = null
+    private val settingsSubtitleRefreshers = mutableListOf<() -> Unit>()
 
     private fun bindSettingsItem(itemView: android.view.View, entry: SettingsEntry) {
         itemView.findViewById<android.widget.TextView>(R.id.tvTitle).text = entry.title
-        itemView.findViewById<android.widget.TextView>(R.id.tvSubtitle).text = entry.subtitle
+        val subtitleView = itemView.findViewById<android.widget.TextView>(R.id.tvSubtitle)
+        val refreshSubtitle = { subtitleView.text = entry.subtitle() }
+        refreshSubtitle()
+        settingsSubtitleRefreshers += refreshSubtitle
         itemView.findViewById<android.widget.ImageView>(R.id.ivIcon).setImageResource(entry.iconRes)
         val container = itemView.findViewById<android.widget.FrameLayout>(R.id.expandContainer)
 
@@ -424,6 +463,150 @@ class MainActivity : AppCompatActivity() {
     private fun computeRingtoneSubtitle(): String {
         val title = preferenceManager.getAlertSoundTitle()
         return if (title.isNotBlank()) "当前: $title" else "当前: 应用默认"
+    }
+
+    private fun refreshSettingsSubtitles() {
+        settingsSubtitleRefreshers.forEach { it() }
+    }
+
+    private fun configuredIntervalText(): String =
+        when (preferenceManager.getCheckIntervalSeconds()) {
+            PreferenceManager.CHECK_INTERVAL_ECO_SECONDS -> "每 5 分钟"
+            PreferenceManager.CHECK_INTERVAL_REALTIME_SECONDS -> "每 15 秒"
+            else -> "每分钟"
+        }
+
+    private fun isNotificationReady(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun isBatteryReady(): Boolean =
+        (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+
+    private fun isFullScreenReady(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).canUseFullScreenIntent()
+
+    private fun readinessStates(): List<Boolean> = listOf(
+        isNotificationReady(),
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || exactAlarmGranted(),
+        isBatteryReady() &&
+            (OemHelper.getOemInfo() == null || preferenceManager.isOemBackgroundConfirmed()),
+        isFullScreenReady()
+    )
+
+    private fun computeReadinessSubtitle(): String {
+        val states = readinessStates()
+        val ready = states.count { it }
+        return if (ready == states.size) "全部就绪" else "$ready/${states.size} 项已确认"
+    }
+
+    internal fun showReadinessDialog() {
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val view = layoutInflater.inflate(
+            R.layout.expand_section_readiness,
+            findViewById<android.view.ViewGroup>(android.R.id.content),
+            false
+        )
+        bindReadinessSection(view)
+        sheet.setContentView(view)
+        sheet.setOnDismissListener { if (readinessView === view) readinessView = null }
+        sheet.show()
+    }
+
+    private fun bindReadinessSection(view: android.view.View) {
+        readinessView = view
+        fun setStatus(id: Int, ready: Boolean, text: String) {
+            view.findViewById<TextView>(id).apply {
+                this.text = text
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        if (ready) android.R.color.holo_green_dark else R.color.orange_500
+                    )
+                )
+            }
+        }
+
+        val notificationReady = isNotificationReady()
+        setStatus(
+            R.id.tvNotificationReadiness,
+            notificationReady,
+            if (notificationReady) "已允许显示监控与开播通知" else "未允许，开播提醒可能无法显示"
+        )
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnNotificationSettings).apply {
+            text = if (notificationReady) "通知设置" else "开启通知"
+            setOnClickListener {
+                if (notificationReady) openNotificationSettings() else checkNotificationPermission(startAfterGrant = false)
+            }
+        }
+
+        val exactReady = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || exactAlarmGranted()
+        setStatus(
+            R.id.tvExactAlarmReadiness,
+            exactReady,
+            if (exactReady) "精确调度已允许" else "未允许，${configuredIntervalText()}检测可能被延迟"
+        )
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnExactAlarmSettings).apply {
+            visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) android.view.View.VISIBLE else android.view.View.GONE
+            setOnClickListener { openExactAlarmSettings() }
+        }
+
+        val oemInfo = OemHelper.getOemInfo()
+        val batteryReady = isBatteryReady()
+        val oemConfirmed = preferenceManager.isOemBackgroundConfirmed()
+        val backgroundReady = batteryReady && (oemInfo == null || oemConfirmed)
+        val backgroundText = when {
+            oemInfo != null && oemConfirmed && batteryReady -> "电池优化与 ${oemInfo.displayName} 自启动已确认"
+            oemInfo != null && batteryReady -> "电池优化已放行；请在 ${oemInfo.displayName} 设置中确认自启动"
+            oemInfo != null -> "电池优化未放行；还需确认 ${oemInfo.displayName} 自启动"
+            batteryReady -> "电池优化已放行，无额外厂商步骤"
+            else -> "电池优化未放行，后台检测可能中断"
+        }
+        setStatus(R.id.tvBackgroundReadiness, backgroundReady, backgroundText)
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBackgroundSettings)
+            .setOnClickListener { openBackgroundSettings() }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBatterySettings)
+            .setOnClickListener { openBatterySettings() }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnConfirmOemSettings).apply {
+            visibility = if (oemInfo == null) View.GONE else View.VISIBLE
+            text = if (oemConfirmed) "已确认厂商自启动设置" else "我已确认厂商自启动设置"
+            setOnClickListener {
+                preferenceManager.setOemBackgroundConfirmed(true)
+                bindReadinessSection(view)
+                refreshSettingsSubtitles()
+            }
+        }
+
+        val fullScreenReady = isFullScreenReady()
+        setStatus(
+            R.id.tvFullScreenReadiness,
+            fullScreenReady,
+            when {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> "当前系统无需单独授权"
+                fullScreenReady -> "锁屏全屏提醒已允许"
+                else -> "未允许，锁屏时可能只显示普通通知"
+            }
+        )
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnFullScreenSettings).apply {
+            visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                android.view.View.VISIBLE
+            } else {
+                android.view.View.GONE
+            }
+            setOnClickListener { openFullScreenSettings() }
+        }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnTestAlert).apply {
+            isEnabled = preferenceManager.isServiceRunning()
+            text = if (isEnabled) "发送测试提醒" else "开始监控后可测试提醒"
+            setOnClickListener {
+                startService(
+                    Intent(this@MainActivity, LiveCheckService::class.java)
+                        .setAction(LiveCheckService.ACTION_TEST_ALERT)
+                )
+            }
+        }
     }
 
     // ==================== 魔法期记录 ====================
@@ -544,12 +727,14 @@ class MainActivity : AppCompatActivity() {
         switch.setOnCheckedChangeListener { _, isChecked ->
             preferenceManager.setQuietHoursEnabled(isChecked)
             setEnabled(isChecked)
+            refreshSettingsSubtitles()
             updateUI()
         }
         btnStart.setOnClickListener {
             pickQuietTime(preferenceManager.getQuietStartMinutes()) { minutes ->
                 preferenceManager.setQuietStartMinutes(minutes)
                 refreshTimes()
+                refreshSettingsSubtitles()
                 updateUI()
             }
         }
@@ -557,6 +742,7 @@ class MainActivity : AppCompatActivity() {
             pickQuietTime(preferenceManager.getQuietEndMinutes()) { minutes ->
                 preferenceManager.setQuietEndMinutes(minutes)
                 refreshTimes()
+                refreshSettingsSubtitles()
                 updateUI()
             }
         }
@@ -573,11 +759,17 @@ class MainActivity : AppCompatActivity() {
     private fun bindLiveAlertsSection(view: android.view.View) {
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNotifyStreamEnd).apply {
             isChecked = preferenceManager.isNotifyStreamEnd()
-            setOnCheckedChangeListener { _, c -> preferenceManager.setNotifyStreamEnd(c) }
+            setOnCheckedChangeListener { _, c ->
+                preferenceManager.setNotifyStreamEnd(c)
+                refreshSettingsSubtitles()
+            }
         }
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNotifyTitleChange).apply {
             isChecked = preferenceManager.isNotifyTitleChange()
-            setOnCheckedChangeListener { _, c -> preferenceManager.setNotifyTitleChange(c) }
+            setOnCheckedChangeListener { _, c ->
+                preferenceManager.setNotifyTitleChange(c)
+                refreshSettingsSubtitles()
+            }
         }
     }
 
@@ -603,6 +795,8 @@ class MainActivity : AppCompatActivity() {
                 else -> PreferenceManager.CHECK_INTERVAL_STANDARD_SECONDS
             }
             preferenceManager.setCheckIntervalSeconds(seconds)
+            refreshSettingsSubtitles()
+            updateUI()
             // 立即生效：下一次 Alarm 排程（服务与 Receiver 都实时读 prefs）
             if (preferenceManager.isServiceRunning()) {
                 startService(Intent(this, com.bilibili.livemonitor.service.LiveCheckService::class.java))
@@ -648,15 +842,40 @@ class MainActivity : AppCompatActivity() {
     private val backupDirLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        uri ?: return@registerForActivityResult
-        contentResolver.takePersistableUriPermission(
-            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        )
-        preferenceManager.setBackupTreeUri(uri.toString())
+        if (uri == null) {
+            if (pendingAutoBackupEnable) {
+                pendingAutoBackupEnable = false
+                preferenceManager.setAutoBackupEnabled(false)
+                backupSwitchView?.isChecked = false
+            }
+            refreshBackupStatusText()
+            refreshSettingsSubtitles()
+            return@registerForActivityResult
+        }
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            preferenceManager.setBackupTreeUri(uri.toString())
+            if (pendingAutoBackupEnable) {
+                pendingAutoBackupEnable = false
+                preferenceManager.setAutoBackupEnabled(true)
+                backupSwitchView?.isChecked = true
+                com.bilibili.livemonitor.worker.BackupWorker.schedule(this)
+            }
+        } catch (e: SecurityException) {
+            pendingAutoBackupEnable = false
+            preferenceManager.setAutoBackupEnabled(false)
+            backupSwitchView?.isChecked = false
+            Toast.makeText(this, "无法长期访问该目录，请重新选择", Toast.LENGTH_LONG).show()
+        }
         refreshBackupStatusText()
+        refreshSettingsSubtitles()
     }
 
     private var backupStatusView: android.widget.TextView? = null
+    private var backupSwitchView: com.google.android.material.switchmaterial.SwitchMaterial? = null
+    private var pendingAutoBackupEnable = false
 
     private fun computeBackupSubtitle(): String =
         if (preferenceManager.isAutoBackupEnabled()) "每天自动备份：开" else "每天自动备份：关"
@@ -684,17 +903,24 @@ class MainActivity : AppCompatActivity() {
         val switch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
             R.id.switchAutoBackup
         )
+        backupSwitchView = switch
         switch.isChecked = preferenceManager.isAutoBackupEnabled()
         switch.setOnCheckedChangeListener { _, isChecked ->
-            preferenceManager.setAutoBackupEnabled(isChecked)
-            if (isChecked) {
-                if (preferenceManager.getBackupTreeUri().isBlank()) {
-                    Toast.makeText(this, "请先选择备份目录", Toast.LENGTH_SHORT).show()
-                }
+            if (isChecked && preferenceManager.getBackupTreeUri().isBlank()) {
+                preferenceManager.setAutoBackupEnabled(false)
+                pendingAutoBackupEnable = true
+                switch.isChecked = false
+                Toast.makeText(this, "请选择自动备份目录", Toast.LENGTH_SHORT).show()
+                backupDirLauncher.launch(null)
+            } else if (isChecked) {
+                preferenceManager.setAutoBackupEnabled(true)
                 com.bilibili.livemonitor.worker.BackupWorker.schedule(this)
             } else {
+                preferenceManager.setAutoBackupEnabled(false)
                 com.bilibili.livemonitor.worker.BackupWorker.cancel(this)
             }
+            refreshBackupStatusText()
+            refreshSettingsSubtitles()
         }
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickBackupDir)
             .setOnClickListener { backupDirLauncher.launch(null) }
@@ -734,13 +960,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun bindMaintenanceSection(view: android.view.View) {
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBackgroundSettings)
-            .setOnClickListener { openBackgroundSettings() }
-        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnOpenBatterySettings)
-            .setOnClickListener { openBatterySettings() }
-    }
-
     private fun bindRingtoneSection(view: android.view.View) {
         val container = view.findViewById<android.widget.LinearLayout>(R.id.builtinSoundsContainer)
         val currentUri = preferenceManager.getAlertSoundUri()
@@ -765,6 +984,7 @@ class MainActivity : AppCompatActivity() {
                 rb.isChecked = true
                 preferenceManager.setAlertSoundUri(AlertSoundDecider.encodeBuiltIn(sound.key))
                 preferenceManager.setAlertSoundTitle(sound.title)
+                refreshSettingsSubtitles()
                 AppLogger.d("MainActivity", "builtin sound selected: ${sound.key}")
                 Toast.makeText(this, "已设置铃声：${sound.title}", Toast.LENGTH_SHORT).show()
             }
@@ -796,6 +1016,7 @@ class MainActivity : AppCompatActivity() {
             .setOnClickListener {
                 preferenceManager.setAlertSoundUri("")
                 preferenceManager.setAlertSoundTitle("")
+                refreshSettingsSubtitles()
                 AppLogger.d("MainActivity", "alert sound restored to default")
                 Toast.makeText(this, "已恢复默认铃声", Toast.LENGTH_SHORT).show()
             }
@@ -804,19 +1025,31 @@ class MainActivity : AppCompatActivity() {
     private fun bindActivitySection(view: android.view.View) {
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorVideos).apply {
             isChecked = preferenceManager.isMonitorVideos()
-            setOnCheckedChangeListener { _, c -> preferenceManager.setMonitorVideos(c) }
+            setOnCheckedChangeListener { _, c ->
+                preferenceManager.setMonitorVideos(c)
+                refreshSettingsSubtitles()
+            }
         }
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorPinned).apply {
             isChecked = preferenceManager.isMonitorPinned()
-            setOnCheckedChangeListener { _, c -> preferenceManager.setMonitorPinned(c) }
+            setOnCheckedChangeListener { _, c ->
+                preferenceManager.setMonitorPinned(c)
+                refreshSettingsSubtitles()
+            }
         }
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchMonitorDynamics).apply {
             isChecked = preferenceManager.isMonitorDynamics()
-            setOnCheckedChangeListener { _, c -> preferenceManager.setMonitorDynamics(c) }
+            setOnCheckedChangeListener { _, c ->
+                preferenceManager.setMonitorDynamics(c)
+                refreshSettingsSubtitles()
+            }
         }
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAlertRingOnActivity).apply {
             isChecked = preferenceManager.isAlertRingOnActivity()
-            setOnCheckedChangeListener { _, c -> preferenceManager.setAlertRingOnActivity(c) }
+            setOnCheckedChangeListener { _, c ->
+                preferenceManager.setAlertRingOnActivity(c)
+                refreshSettingsSubtitles()
+            }
         }
         bindDynamicTypeCheckbox(view, R.id.cbDynDraw, "DYNAMIC_TYPE_DRAW")
         bindDynamicTypeCheckbox(view, R.id.cbDynForward, "DYNAMIC_TYPE_FORWARD")
@@ -830,6 +1063,7 @@ class MainActivity : AppCompatActivity() {
                 val types = preferenceManager.getMonitorDynamicTypes().toMutableSet()
                 if (checked) types.add(type) else types.remove(type)
                 preferenceManager.setMonitorDynamicTypes(types)
+                refreshSettingsSubtitles()
             }
         }
     }
@@ -837,11 +1071,17 @@ class MainActivity : AppCompatActivity() {
     private fun bindUpdateSection(view: android.view.View) {
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoCheck).apply {
             isChecked = preferenceManager.isAutoCheckUpdate()
-            setOnCheckedChangeListener { _, c -> preferenceManager.setAutoCheckUpdate(c) }
+            setOnCheckedChangeListener { _, c ->
+                preferenceManager.setAutoCheckUpdate(c)
+                refreshSettingsSubtitles()
+            }
         }
         view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoDownload).apply {
             isChecked = preferenceManager.isAutoDownloadUpdate()
-            setOnCheckedChangeListener { _, c -> preferenceManager.setAutoDownloadUpdate(c) }
+            setOnCheckedChangeListener { _, c ->
+                preferenceManager.setAutoDownloadUpdate(c)
+                refreshSettingsSubtitles()
+            }
         }
     }
 
@@ -988,7 +1228,11 @@ class MainActivity : AppCompatActivity() {
         if (shareOptionsSheetShowing) return
         shareOptionsSheetShowing = true
         val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
-        val view = layoutInflater.inflate(R.layout.dialog_share_options, null)
+        val view = layoutInflater.inflate(
+            R.layout.dialog_share_options,
+            findViewById<android.view.ViewGroup>(android.R.id.content),
+            false
+        )
         view.findViewById<android.view.View>(R.id.rowShareQq).setOnClickListener {
             sheet.dismiss()
             shareLiveRoom()
@@ -1110,7 +1354,7 @@ class MainActivity : AppCompatActivity() {
         updateUI()
     }
 
-    private fun updateUI() {
+    internal fun updateUI(now: Long = System.currentTimeMillis()) {
         // 结合Service状态和本地过渡状态来确定UI显示
         val isRunning = when {
             isServiceStarting -> true  // 正在启动，显示为运行中
@@ -1120,7 +1364,13 @@ class MainActivity : AppCompatActivity() {
 
         binding.apply {
             val muted = isRunning && preferenceManager.isAlertSuppressed()
+            val lastTime = preferenceManager.getLastCheckTime()
+            val lastFailed = lastTime > 0 && !preferenceManager.isLastCheckSuccess()
+            val staleAfterMs = preferenceManager.getCheckIntervalSeconds() * 2_000L + 30_000L
+            val stale = isRunning && (lastTime <= 0 || now - lastTime > staleAfterMs)
             tvStatus.text = when {
+                lastFailed && isRunning -> "监控状态: 运行中 · 最近检测失败" + if (muted) "（本场静音）" else ""
+                stale -> "监控状态: 运行中 · 检测已过期" + if (muted) "（本场静音）" else ""
                 muted -> "监控状态: 运行中（本场静音）"
                 isRunning -> "监控状态: 运行中"
                 else -> "监控状态: 已停止"
@@ -1128,7 +1378,12 @@ class MainActivity : AppCompatActivity() {
             tvStatus.setTextColor(
                 ContextCompat.getColor(
                     this@MainActivity,
-                    if (isRunning) android.R.color.holo_green_dark else android.R.color.holo_red_dark
+                    when {
+                        !isRunning -> android.R.color.holo_red_dark
+                        lastFailed -> android.R.color.holo_red_dark
+                        stale -> R.color.orange_500
+                        else -> android.R.color.holo_green_dark
+                    }
                 )
             )
 
@@ -1152,7 +1407,6 @@ class MainActivity : AppCompatActivity() {
             ivStatus.setImageResource(iconRes)
 
             // 显示上次检测信息
-            val lastTime = preferenceManager.getLastCheckTime()
             if (lastTime > 0) {
                 val timeStr = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()).format(Date(lastTime))
                 val resultStr = when {
@@ -1160,10 +1414,22 @@ class MainActivity : AppCompatActivity() {
                     preferenceManager.isLastCheckLive() -> "🔴 直播中"
                     else -> "⚫ 未开播"
                 }
-                tvLastCheck.text = "上次检测: $timeStr ($resultStr)"
+                val staleText = if (stale && !lastFailed) " · 已过期" else ""
+                tvLastCheck.text = "上次检测: $timeStr ($resultStr$staleText)"
             } else {
-                tvLastCheck.text = "上次检测: 暂无记录"
+                tvLastCheck.text = if (isRunning) "上次检测: 等待首次结果" else "上次检测: 暂无记录"
             }
+            tvLastCheck.setTextColor(
+                when {
+                    lastFailed -> ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
+                    stale -> ContextCompat.getColor(this@MainActivity, R.color.orange_500)
+                    else -> tvDescription.currentTextColor
+                }
+            )
+            tvReadinessSummary.text = "监控准备：${computeReadinessSubtitle()}"
+            tvDescription.text =
+                "• ${configuredIntervalText()}检查直播状态 • 开播响铃+震动+屏幕提醒\n" +
+                "• 电池优化/OEM 等后台准备需确认 • 通知栏显示直播状态"
         }
     }
 
@@ -1173,7 +1439,7 @@ class MainActivity : AppCompatActivity() {
         shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    private fun checkNotificationPermission(): Boolean {
+    private fun checkNotificationPermission(startAfterGrant: Boolean = true): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             when {
                 ContextCompat.checkSelfPermission(
@@ -1181,17 +1447,20 @@ class MainActivity : AppCompatActivity() {
                     Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED -> true
                 notificationRationaleChecker() -> {
+                    startMonitoringAfterNotificationGrant = startAfterGrant
                     AlertDialog.Builder(this)
                         .setTitle("需要通知权限")
                         .setMessage("应用需要在通知栏显示以保持后台运行，请授予通知权限")
                         .setPositiveButton("确定") { _, _ ->
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
+                        .setNeutralButton("应用设置") { _, _ -> openNotificationSettings() }
                         .setNegativeButton("取消", null)
                         .show()
                     false
                 }
                 else -> {
+                    startMonitoringAfterNotificationGrant = startAfterGrant
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     false
                 }
@@ -1248,19 +1517,6 @@ class MainActivity : AppCompatActivity() {
         }, 500)
     }
 
-    private fun checkBatteryOptimization() {
-        // 国产 ROM 的首启引导由 checkOemRestrictions 的厂商弹窗统一负责，
-        // 避免连弹三个对话框；且华为/荣耀上标准电池优化 intent 无效，
-        // 弹了也是把用户带到死路（荣耀真机实测点了毫无反应）
-        if (OemHelper.isProblematicOem()) return
-        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
-                showBatteryOptimizationDialog()
-            }
-        }
-    }
-
     // internal 注入位：单测控制精确闹钟授权态（生产为真实检查）
     internal var exactAlarmGranted: () -> Boolean = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -1282,57 +1538,6 @@ class MainActivity : AppCompatActivity() {
             AppLogger.e("MainActivity", "open exact alarm settings failed", e)
             openAppDetails()
         }
-    }
-
-    private fun checkExactAlarmPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!exactAlarmGranted()) {
-                hasPromptedExactAlarm = true
-                AppLogger.w("MainActivity", "exact alarm permission not granted")
-                AlertDialog.Builder(this)
-                    .setTitle("需要精确闹钟权限")
-                    .setMessage("没有精确闹钟权限时，黑屏待机状态下检测会被系统延迟到 15 分钟一次，容易漏掉开播提醒。请授予该权限以保证每分钟检测。")
-                    .setPositiveButton("去开启") { _, _ -> openExactAlarmSettings() }
-                    .setNegativeButton("稍后") { dialog, _ ->
-                        dialog.dismiss()
-                    }
-                    .show()
-            }
-        }
-    }
-
-    private fun checkOemRestrictions() {
-        val oemInfo = OemHelper.getOemInfo() ?: return
-        // 厂商自启动设置状态无 API 可读，弹过一次就持久化跳过，
-        // 否则每次冷启动都会重复弹（用户反馈：明明设置过了还弹）
-        if (hasPromptedOem || preferenceManager.isOemGuidePrompted()) return
-        hasPromptedOem = true
-        preferenceManager.setOemGuidePrompted(true)
-        AppLogger.d("MainActivity", "detected OEM: ${oemInfo.displayName}")
-        AlertDialog.Builder(this)
-            .setTitle("${oemInfo.displayName} 后台保活设置")
-            .setMessage(oemInfo.guideText)
-            .setPositiveButton("去设置") { _, _ ->
-                OemHelper.openOemSettings(this)
-            }
-            .setNegativeButton("稍后") { dialog, _ ->
-                dialog.dismiss()
-            }
-            .show()
-    }
-
-    private fun showBatteryOptimizationDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("电池优化提醒")
-            .setMessage("为了保证应用能在后台正常运行，请将本应用添加到电池优化白名单中。")
-            .setPositiveButton("去设置") { _, _ ->
-                openBatterySettings()
-            }
-            .setNegativeButton("稍后") { dialog, _ ->
-                dialog.dismiss()
-            }
-            .setCancelable(false)
-            .show()
     }
 
     // 「后台运行设置」统一入口：按厂商路由。
@@ -1398,6 +1603,24 @@ class MainActivity : AppCompatActivity() {
         startActivity(appSettings)
     }
 
+    private fun openNotificationSettings() {
+        startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        })
+    }
+
+    private fun openFullScreenSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        try {
+            startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                data = Uri.parse("package:$packageName")
+            })
+        } catch (e: Exception) {
+            AppLogger.w("MainActivity", "full screen intent settings unavailable", e)
+            openAppDetails()
+        }
+    }
+
     // 每次回到主页随机展示一条名言（首启必出邓煜，1/10 概率白绮，其余常规池防重复）
     internal fun refreshQuote() {
         val quote = com.bilibili.livemonitor.domain.QuotePicker.pick(
@@ -1412,8 +1635,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        internal const val ACTION_OPEN_WATCH_LIVE =
+            "com.bilibili.livemonitor.OPEN_WATCH_LIVE"
         private const val ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
         private const val GITHUB_URL = "https://github.com/XenoAmess/vivhite-tracker"
+        private const val FOREGROUND_REFRESH_MS = 15_000L
 
         // 上次展示的常规池下标，防连续重复（静态保存，跨 Activity 实例有效）
         private var lastQuoteIndex: Int? = null

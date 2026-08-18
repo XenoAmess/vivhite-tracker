@@ -34,9 +34,8 @@ object StatsImageDataFactory {
         val leading = (monthStart.get(Calendar.DAY_OF_WEEK) - 1)
         val daysInMonth = monthStart.getActualMaximum(Calendar.DAY_OF_MONTH)
 
-        val monthSessions = db.streamSessionDao().recentSessions(500).filter {
-            it.startTs >= monthStart.timeInMillis && it.startTs < monthEnd.timeInMillis
-        }.sortedBy { it.startTs }
+        val monthSessions = db.streamSessionDao()
+            .sessionsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
         val monthMoods = db.moodEventDao().eventsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
 
         val (monthCount, monthAvg, monthMax) = StreamStats.monthSummary(monthSessions)

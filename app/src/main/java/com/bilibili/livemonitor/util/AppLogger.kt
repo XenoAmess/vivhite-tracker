@@ -95,8 +95,22 @@ object AppLogger {
     // 供导出功能使用（FileProvider 分享完整日志文件）
     fun getLogFile(): File? = logFile
 
+    /** Wait until all writes submitted before this call have reached disk. */
+    fun flush() {
+        runCatching { executor.submit {}.get() }
+            .onFailure { Log.e(TAG, "flush log failed", it) }
+    }
+
     fun clear() {
-        executor.execute {
+        runCatching {
+            executor.submit {
+                try {
+                    logFile?.writeText("")
+                } catch (e: Exception) {
+                    Log.e(TAG, "clear log failed", e)
+                }
+            }.get()
+        }.onFailure {
             try {
                 logFile?.writeText("")
             } catch (e: Exception) {

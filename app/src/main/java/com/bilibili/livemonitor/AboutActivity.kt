@@ -6,12 +6,18 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.bilibili.livemonitor.util.ChangelogParser
+import com.google.android.material.appbar.MaterialToolbar
 
 class AboutActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_about)
+
+        val toolbar: MaterialToolbar = findViewById(R.id.aboutToolbar)
+        setSupportActionBar(toolbar)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         // 同 LogActivity：edge-to-edge 下把状态栏高度补进顶部 padding
         val root = findViewById<LinearLayout>(R.id.aboutRoot)

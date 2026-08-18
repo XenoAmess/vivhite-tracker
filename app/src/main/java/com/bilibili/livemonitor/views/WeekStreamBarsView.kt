@@ -40,6 +40,8 @@ class WeekStreamBarsView @JvmOverloads constructor(
         require(counts.isNotEmpty() && counts.size == labels.size)
         this.counts = counts.toIntArray()
         this.labels = labels.toTypedArray()
+        contentDescription = "开播场次柱状图：" + labels.zip(counts)
+            .joinToString("，") { (label, count) -> "$label $count 场" }
         invalidate()
     }
 

@@ -26,9 +26,28 @@ interface MoodEventDao {
     @Query("SELECT * FROM mood_events ORDER BY event_ts ASC")
     suspend fun all(): List<MoodEventEntity>
 
+    /** 全历史搜索事件、原因、备注和 mood key；结果按发生时间倒序。 */
+    @Query(
+        """
+        SELECT * FROM mood_events
+        WHERE instr(lower(title), lower(:query)) > 0
+           OR instr(lower(COALESCE(reason, '')), lower(:query)) > 0
+           OR instr(lower(COALESCE(note, '')), lower(:query)) > 0
+           OR instr(lower(mood), lower(:query)) > 0
+        ORDER BY event_ts DESC
+        """
+    )
+    suspend fun search(query: String): List<MoodEventEntity>
+
+    @Query("SELECT * FROM mood_events WHERE mood IN (:moods) ORDER BY event_ts DESC")
+    suspend fun eventsWithMoods(moods: List<String>): List<MoodEventEntity>
+
     /** 导入去重：同 时间+心情+标题 视为重复 */
     @Query("SELECT COUNT(*) FROM mood_events WHERE event_ts = :eventTs AND mood = :mood AND title = :title")
     suspend fun countByKey(eventTs: Long, mood: String, title: String): Int
+
+    @Query("SELECT * FROM mood_events WHERE event_ts = :eventTs AND mood = :mood AND title = :title LIMIT 1")
+    suspend fun findByKey(eventTs: Long, mood: String, title: String): MoodEventEntity?
 
     /** 清空（测试用） */
     @Query("DELETE FROM mood_events")

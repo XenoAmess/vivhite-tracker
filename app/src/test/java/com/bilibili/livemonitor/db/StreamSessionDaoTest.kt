@@ -90,6 +90,19 @@ class StreamSessionDaoTest {
     }
 
     @Test
+    fun `beginSession 原子闭合旧场且同场幂等`() = runBlocking {
+        val old = dao.insertSession(StreamSessionEntity(startTs = 1000, title = "旧场"))
+
+        val current = dao.beginSession(2000, "新场")
+        val reused = dao.beginSession(2000, "新场")
+
+        assertEquals(current, reused)
+        assertEquals(2, dao.allSessions().size)
+        assertEquals(2000L, dao.findById(old)!!.endTs)
+        assertEquals(current, dao.findOpenSession()!!.id)
+    }
+
+    @Test
     fun `标题变化按 session 隔离且时间升序`() = runBlocking {
         val a = dao.insertSession(StreamSessionEntity(startTs = 1000))
         val b = dao.insertSession(StreamSessionEntity(startTs = 2000))
@@ -141,5 +154,45 @@ class StreamSessionDaoTest {
         assertEquals(0, dao.titleChanges(old).size)
         assertEquals(0, dao.popularityPoints(old).size)
         assertEquals(1, dao.popularityPoints(new).size) // 新场次的人气点保留
+    }
+
+    @Test
+    fun `批量删除始终保留开放场次`() = runBlocking {
+        dao.insertSession(StreamSessionEntity(startTs = 1000, endTs = 2000))
+        val open = dao.insertSession(StreamSessionEntity(startTs = 1500))
+
+        assertEquals(1, dao.sessionsBeforeCount(5000))
+        dao.deleteSessionsBefore(5000)
+
+        assertEquals(listOf(open), dao.allSessions().map { it.id })
+    }
+
+    @Test
+    fun `标题搜索覆盖完整历史且按时间倒序`() = runBlocking {
+        repeat(550) { index ->
+            dao.insertSession(
+                StreamSessionEntity(
+                    startTs = index.toLong(), endTs = index + 1L,
+                    title = if (index == 0) "最老的目标场次" else "普通场次 $index"
+                )
+            )
+        }
+
+        val result = dao.searchSessions("目标")
+
+        assertEquals(1, result.size)
+        assertEquals(0L, result.single().startTs)
+    }
+
+    @Test
+    fun `删除单场由外键级联标题变化与人气点`() = runBlocking {
+        val id = dao.insertSession(StreamSessionEntity(startTs = 1000, endTs = 2000))
+        dao.insertTitleChange(StreamTitleChangeEntity(sessionId = id, changedAt = 1500, newTitle = "新标题"))
+        dao.insertPopularityPoint(PopularityPointEntity(sessionId = id, ts = 1500, online = 42))
+
+        dao.deleteSession(dao.findByStartEnd(1000, 2000)!!)
+
+        assertTrue(dao.titleChanges(id).isEmpty())
+        assertTrue(dao.popularityPoints(id).isEmpty())
     }
 }

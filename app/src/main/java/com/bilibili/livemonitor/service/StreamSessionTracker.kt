@@ -8,6 +8,7 @@ import com.bilibili.livemonitor.db.StreamTitleChangeEntity
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.PreferenceManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
 /**
@@ -24,32 +25,50 @@ class StreamSessionTracker(
 ) {
 
     private val tag = "StreamSessionTracker"
+    private val sessionTasks = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
-    // 直播中主题变化提醒（默认关）：标题变化且开播超 5 分钟才提醒；记录基线到 prefs 与 DB
+    init {
+        scope.launch {
+            for (task in sessionTasks) task()
+        }
+    }
+
+    private fun enqueueSessionTask(name: String, task: suspend () -> Unit) {
+        if (sessionTasks.trySend {
+                try {
+                    task()
+                } catch (e: Exception) {
+                    AppLogger.w(tag, "$name failed", e)
+                }
+            }.isFailure
+        ) {
+            AppLogger.w(tag, "$name skipped: tracker scope is closed")
+        }
+    }
+
+    // 标题变化始终落库；通知开关与开播 5 分钟门槛只控制是否提醒。
     fun trackTitleChange(liveTitle: String?) {
         if (liveTitle.isNullOrBlank()) return
         val lastTitle = prefs.getLastLiveTitle()
         if (liveTitle == lastTitle) return
         prefs.setLastLiveTitle(liveTitle)
-        if (!prefs.isNotifyTitleChange()) return
-        val startTs = parseLiveStartTime(prefs.getLastLiveStartTime()) ?: return
-        if (System.currentTimeMillis() - startTs < TITLE_CHANGE_MIN_LIVE_MS) return
-        onTitleChange(liveTitle)
+        if (lastTitle.isBlank()) return
+        val now = System.currentTimeMillis()
+        val startTs = parseLiveStartTime(prefs.getLastLiveStartTime())
+        if (prefs.isNotifyTitleChange() && startTs != null && now - startTs >= TITLE_CHANGE_MIN_LIVE_MS) {
+            onTitleChange(liveTitle)
+        }
         val dao = AppDatabase.get(context).streamSessionDao()
-        scope.launch {
-            try {
-                dao.findOpenSession()?.let { open ->
-                    dao.insertTitleChange(
-                        StreamTitleChangeEntity(
-                            sessionId = open.id,
-                            changedAt = System.currentTimeMillis(),
-                            oldTitle = lastTitle.ifBlank { null },
-                            newTitle = liveTitle
-                        )
+        enqueueSessionTask("record title change") {
+            dao.findOpenSession()?.let { open ->
+                dao.insertTitleChange(
+                    StreamTitleChangeEntity(
+                        sessionId = open.id,
+                        changedAt = now,
+                        oldTitle = lastTitle,
+                        newTitle = liveTitle
                     )
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "record title change failed", e)
+                )
             }
         }
     }
@@ -76,18 +95,10 @@ class StreamSessionTracker(
         val dao = AppDatabase.get(context).streamSessionDao()
         val parsedStart = parseLiveStartTime(liveStartTime)
         val startTs = parsedStart ?: System.currentTimeMillis()
-        scope.launch {
-            try {
-                val open = dao.findOpenSession()
-                if (open != null && parsedStart != null && open.startTs == parsedStart) {
-                    AppLogger.d(tag, "record stream start: same session ${open.id}, reuse")
-                    return@launch
-                }
-                dao.closeOpenSessions(startTs)
-                dao.insertSession(StreamSessionEntity(startTs = startTs, title = liveTitle))
-            } catch (e: Exception) {
-                AppLogger.w(tag, "record stream start failed", e)
-            }
+        if (!liveTitle.isNullOrBlank()) prefs.setLastLiveTitle(liveTitle)
+        enqueueSessionTask("record stream start") {
+            val id = dao.beginSession(startTs, liveTitle)
+            AppLogger.d(tag, "record stream start: active session $id")
         }
     }
 
@@ -96,22 +107,16 @@ class StreamSessionTracker(
         val dao = AppDatabase.get(context).streamSessionDao()
         val endTs = System.currentTimeMillis()
         val title = prefs.getLastLiveTitle()
-        scope.launch {
-            try {
-                val open = dao.findOpenSession()
-                val startTs = open?.startTs ?: parseLiveStartTime(prefs.getLastLiveStartTime())
-                if (open != null) {
-                    dao.updateSession(open.copy(endTs = endTs, title = open.title ?: title))
-                } else if (startTs != null) {
-                    dao.insertSession(
-                        StreamSessionEntity(startTs = startTs, endTs = endTs, title = title)
-                    )
-                }
-                if (startTs != null && prefs.isNotifyStreamEnd()) {
-                    onStreamEnd(endTs - startTs)
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "record stream end failed", e)
+        enqueueSessionTask("record stream end") {
+            val openStart = dao.endOpenSessions(endTs, title)
+            val startTs = openStart ?: parseLiveStartTime(prefs.getLastLiveStartTime())
+            if (openStart == null && startTs != null) {
+                dao.insertSession(
+                    StreamSessionEntity(startTs = startTs, endTs = maxOf(startTs, endTs), title = title)
+                )
+            }
+            if (startTs != null && prefs.isNotifyStreamEnd()) {
+                onStreamEnd(maxOf(0L, endTs - startTs))
             }
         }
     }
@@ -126,16 +131,12 @@ class StreamSessionTracker(
      */
     fun reconcileOpenSessionIfNotLive() {
         val dao = AppDatabase.get(context).streamSessionDao()
-        scope.launch {
-            try {
-                val open = dao.findOpenSession() ?: return@launch
-                val observed = prefs.getLastLiveObservedTime()
-                val endTs = reconcileEndTs(open.startTs, observed)
-                dao.updateSession(open.copy(endTs = endTs, title = open.title ?: prefs.getLastLiveTitle()))
-                AppLogger.d(tag, "reconciled stale open session ${open.id}, endTs=$endTs")
-            } catch (e: Exception) {
-                AppLogger.w(tag, "reconcile open session failed", e)
-            }
+        enqueueSessionTask("reconcile open session") {
+            val open = dao.findOpenSession() ?: return@enqueueSessionTask
+            val observed = prefs.getLastLiveObservedTime()
+            val endTs = reconcileEndTs(open.startTs, observed)
+            dao.closeOpenSessions(endTs, prefs.getLastLiveTitle())
+            AppLogger.d(tag, "reconciled stale open session ${open.id}, endTs=$endTs")
         }
     }
 
@@ -149,19 +150,15 @@ class StreamSessionTracker(
     fun recordPopularity(online: Int?) {
         if (online == null) return
         val dao = AppDatabase.get(context).streamSessionDao()
-        scope.launch {
-            try {
-                dao.findOpenSession()?.let { open ->
-                    dao.insertPopularityPoint(
-                        PopularityPointEntity(
-                            sessionId = open.id,
-                            ts = System.currentTimeMillis(),
-                            online = online
-                        )
+        enqueueSessionTask("record popularity") {
+            dao.findOpenSession()?.let { open ->
+                dao.insertPopularityPoint(
+                    PopularityPointEntity(
+                        sessionId = open.id,
+                        ts = System.currentTimeMillis(),
+                        online = online
                     )
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "record popularity failed", e)
+                )
             }
         }
     }

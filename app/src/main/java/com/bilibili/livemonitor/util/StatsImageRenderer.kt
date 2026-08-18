@@ -20,6 +20,7 @@ import com.bilibili.livemonitor.views.WeekdayHourHeatmapView
 object StatsImageRenderer {
 
     const val WIDTH = 1080
+    internal const val MAX_HEIGHT = 8_000
     private const val PAD = 56f
     private const val CONTENT_W = WIDTH - PAD * 2
 
@@ -94,7 +95,8 @@ object StatsImageRenderer {
         if (data.magicSummary != null) h += MOOD_LINE_H + GAP_AFTER_STATS
         // 记录区（挪到扩展统计区之前）
         h += SECTION_LABEL_H
-        h += if (data.records.isEmpty()) RECORD_ROW_H else data.records.size * RECORD_ROW_H
+        val records = displayRecords(context, data)
+        h += if (records.isEmpty()) RECORD_ROW_H else records.size * RECORD_ROW_H
         // 扩展统计区（记录之后、落款之前）
         if (data.weekdayHeat != null) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
         if (data.followerPoints.size >= 2) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
@@ -106,7 +108,39 @@ object StatsImageRenderer {
             h += SECTION_LABEL_H + cloudView.computeContentHeight(CONTENT_W.toInt()) + GAP_AFTER_EXTRA
         }
         h += FOOTER_H
-        return h
+        return h.coerceAtMost(MAX_HEIGHT)
+    }
+
+    /** 保留完整数据输入，但限制单张 Bitmap；超出的记录以明确摘要行收尾。 */
+    private fun displayRecords(context: Context, data: StatsImageData): List<RecordLine> {
+        if (data.records.isEmpty()) return emptyList()
+        var fixed = HEADER_H
+        fixed += SUMMARY_PAD_V * 2 + SUMMARY_LINE_H * data.summaryLines.size + GAP_AFTER_SUMMARY
+        fixed += SECTION_LABEL_H + BARS_H + GAP_AFTER_BARS
+        val calRows = (data.leading + data.daysInMonth + 6) / 7
+        fixed += SECTION_LABEL_H + CAL_HEADER_H + calRows * CAL_CELL_H + GAP_AFTER_CALENDAR
+        if (data.moodStats.isNotEmpty()) fixed += SECTION_LABEL_H + MOOD_LINE_H + GAP_AFTER_STATS
+        if (data.magicSummary != null) fixed += MOOD_LINE_H + GAP_AFTER_STATS
+        fixed += SECTION_LABEL_H + FOOTER_H
+        if (data.weekdayHeat != null) fixed += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
+        if (data.followerPoints.size >= 2) fixed += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
+        if (data.dailyPopularity.size >= 2) fixed += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
+        if (data.wordCloudWords.isNotEmpty()) {
+            val cloud = com.bilibili.livemonitor.views.WordCloudView(context).apply {
+                setData(data.wordCloudWords)
+            }
+            fixed += SECTION_LABEL_H + cloud.computeContentHeight(CONTENT_W.toInt()) + GAP_AFTER_EXTRA
+        }
+        val maxRows = ((MAX_HEIGHT - fixed) / RECORD_ROW_H).coerceAtLeast(1)
+        if (data.records.size <= maxRows) return data.records
+        if (maxRows == 1) {
+            return listOf(RecordLine(RecordKind.MAGIC, "记录过多，${data.records.size} 条请在手账中查看"))
+        }
+        val shown = maxRows - 1
+        return data.records.take(shown) + RecordLine(
+            RecordKind.MAGIC,
+            "还有 ${data.records.size - shown} 条记录未展示，请在手账中查看"
+        )
     }
 
     fun render(context: Context, data: StatsImageData, avatar: Bitmap? = null): Bitmap {
@@ -245,18 +279,19 @@ object StatsImageRenderer {
         }
 
         // ============ 本月完整记录（场次/心情/魔法期混排） ============
+        val displayedRecords = displayRecords(context, data)
         c.drawText(
             "本月记录 · ${data.records.size} 条", PAD, y + 40f,
             helper.paintText(26f, TEXT_MAIN, bold = true)
         )
         y += SECTION_LABEL_H
-        if (data.records.isEmpty()) {
+        if (displayedRecords.isEmpty()) {
             c.drawText("（本月暂无记录）", PAD + 24f, y + 40f, helper.paintText(24f, TEXT_GRAY))
             y += RECORD_ROW_H
         } else {
             val barPaint = Paint(Paint.ANTI_ALIAS_FLAG)
             val recordPaint = helper.paintText(25f, TEXT_MAIN)
-            data.records.forEach { record ->
+            displayedRecords.forEach { record ->
                 barPaint.color = when (record.kind) {
                     RecordKind.SESSION -> ACCENT
                     RecordKind.MOOD -> MOOD_PINK

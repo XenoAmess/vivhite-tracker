@@ -13,9 +13,12 @@ import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.StatsActivity
 import com.bilibili.livemonitor.util.AnchorAvatarLoader
 import com.bilibili.livemonitor.util.AppLogger
+import com.bilibili.livemonitor.util.AppUpdater
 import com.bilibili.livemonitor.util.PreferenceManager
 import com.bilibili.livemonitor.util.StatsImageDataFactory
 import com.bilibili.livemonitor.util.StatsImageRenderer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Calendar
@@ -39,6 +42,7 @@ class MonthlyPosterWorker(
 
         return try {
             val lastMonth = (now.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
+            val generatedKey = monthKey(lastMonth)
             val data = StatsImageDataFactory.build(applicationContext, lastMonth)
             if (data.records.isEmpty()) {
                 // 空月跳过，但落键防每日重试
@@ -46,15 +50,29 @@ class MonthlyPosterWorker(
                 AppLogger.d(TAG, "empty month ${data.monthTitle}, skip poster")
                 return Result.success()
             }
-            val avatar = withTimeoutOrNull(4000) { AnchorAvatarLoader().load(applicationContext) }
-            val bmp = StatsImageRenderer.render(applicationContext, data, avatar)
-            val file = File(
-                File(applicationContext.filesDir, "posters").apply { mkdirs() },
-                "monthly_${currentKey}.png"
-            )
-            file.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            val avatar = withContext(Dispatchers.IO) {
+                withTimeoutOrNull(4000) { AnchorAvatarLoader().load(applicationContext) }
+            }
+            val bmp = withContext(Dispatchers.Main.immediate) {
+                StatsImageRenderer.render(applicationContext, data, avatar)
+            }
+            val file = withContext(Dispatchers.IO) {
+                val directory = File(applicationContext.filesDir, "posters").apply { mkdirs() }
+                val output = File(directory, "monthly_${generatedKey}.png")
+                val temp = File.createTempFile(".monthly_${generatedKey}.", ".part", directory)
+                try {
+                    temp.outputStream().use {
+                        check(bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+                    }
+                    check(AppUpdater.publishAtomically(temp, output))
+                    output
+                } finally {
+                    temp.delete()
+                    bmp.recycle()
+                }
+            }
 
-            notifyPoster(data.monthTitle)
+            notifyPoster(data.monthTitle, generatedKey, file)
             prefs.setLastPosterMonth(currentKey)
             AppLogger.d(TAG, "monthly poster generated: ${data.monthTitle}")
             Result.success()
@@ -64,10 +82,19 @@ class MonthlyPosterWorker(
         }
     }
 
-    private fun notifyPoster(monthTitle: String) {
+    private fun notifyPoster(monthTitle: String, monthKey: String, file: File) {
+        val target = Intent(applicationContext, StatsActivity::class.java).apply {
+            putExtra(StatsActivity.EXTRA_MONTH_KEY, monthKey)
+            putExtra(StatsActivity.EXTRA_POSTER_PATH, file.absolutePath)
+        }
         val openIntent = PendingIntent.getActivity(
-            applicationContext, 0,
-            Intent(applicationContext, StatsActivity::class.java),
+            applicationContext, 10,
+            target,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val previewIntent = PendingIntent.getActivity(
+            applicationContext, 11,
+            Intent(target).putExtra(StatsActivity.EXTRA_PREVIEW_POSTER, true),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(
@@ -77,6 +104,7 @@ class MonthlyPosterWorker(
             .setContentTitle("上月绮迹手账已生成")
             .setContentText("$monthTitle 的海报准备好啦，点我看看")
             .setContentIntent(openIntent)
+            .addAction(android.R.drawable.ic_menu_share, "预览/分享", previewIntent)
             .setAutoCancel(true)
             .build()
         // 与 NotificationBuilder 同款：framework notify（lint MissingPermission 不挑这个）

@@ -6,7 +6,8 @@ import com.bilibili.livemonitor.domain.LiveStateDecider
 
 class PreferenceManager(context: Context) {
 
-    private val prefs: SharedPreferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val prefs: SharedPreferences = appContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
     fun saveRoomId(roomId: Long) {
         prefs.edit().putLong(KEY_ROOM_ID, roomId).apply()
@@ -35,12 +36,26 @@ class PreferenceManager(context: Context) {
         )
         prefs.edit()
             .putLong(KEY_MONITORING_GENERATION, next)
+            .putLong(KEY_MONITORING_HEARTBEAT_TIME, 0L)
+            .putLong(KEY_MONITORING_HEARTBEAT_GENERATION, next)
             .putBoolean(KEY_SERVICE_RUNNING, true)
             .apply()
         return next
     }
 
     fun getMonitoringGeneration(): Long = prefs.getLong(KEY_MONITORING_GENERATION, 0L)
+
+    fun setMonitoringHeartbeat(timeMillis: Long, generation: Long) {
+        prefs.edit()
+            .putLong(KEY_MONITORING_HEARTBEAT_TIME, timeMillis)
+            .putLong(KEY_MONITORING_HEARTBEAT_GENERATION, generation)
+            .apply()
+    }
+
+    fun getMonitoringHeartbeatTime(): Long = prefs.getLong(KEY_MONITORING_HEARTBEAT_TIME, 0L)
+
+    fun getMonitoringHeartbeatGeneration(): Long =
+        prefs.getLong(KEY_MONITORING_HEARTBEAT_GENERATION, 0L)
 
     fun setLastCheck(timeMillis: Long, isLive: Boolean, success: Boolean) {
         prefs.edit()
@@ -129,6 +144,13 @@ class PreferenceManager(context: Context) {
 
     fun getLastBackupTime(): Long = prefs.getLong(KEY_LAST_BACKUP_TIME, 0L)
 
+    fun setOemBackgroundConfirmed(confirmed: Boolean) {
+        prefs.edit().putBoolean(KEY_OEM_BACKGROUND_CONFIRMED, confirmed).apply()
+    }
+
+    fun isOemBackgroundConfirmed(): Boolean =
+        prefs.getBoolean(KEY_OEM_BACKGROUND_CONFIRMED, false)
+
     // 月初海报去重：上次生成的月份（"yyyy-MM"，空 = 从未生成）
     fun setLastPosterMonth(monthKey: String) {
         prefs.edit().putString(KEY_LAST_POSTER_MONTH, monthKey).apply()
@@ -163,35 +185,95 @@ class PreferenceManager(context: Context) {
         return o.toString()
     }
 
-    /** 从快照 JSON 恢复设置（导入用；缺失键保持现状不动） */
-    fun importSnapshot(json: String) {
-        try {
+    data class SnapshotImportResult(
+        val imported: Boolean,
+        val magicPeriodsImported: Boolean
+    )
+
+    /** 从快照 JSON 恢复设置（导入用；缺失键保持现状不动）。 */
+    fun importSnapshot(json: String): SnapshotImportResult {
+        return try {
             val o = org.json.JSONObject(json)
-            if (o.has("quiet_enabled")) setQuietHoursEnabled(o.getBoolean("quiet_enabled"))
-            if (o.has("quiet_start")) setQuietStartMinutes(o.getInt("quiet_start"))
-            if (o.has("quiet_end")) setQuietEndMinutes(o.getInt("quiet_end"))
-            if (o.has("check_interval_seconds")) setCheckIntervalSeconds(o.getInt("check_interval_seconds"))
-            if (o.has("dark_mode")) setDarkMode(o.getInt("dark_mode"))
-            if (o.has("monitor_videos")) setMonitorVideos(o.getBoolean("monitor_videos"))
-            if (o.has("monitor_dynamics")) setMonitorDynamics(o.getBoolean("monitor_dynamics"))
-            if (o.has("monitor_pinned")) setMonitorPinned(o.getBoolean("monitor_pinned"))
-            if (o.has("dynamic_types")) {
-                val arr = o.getJSONArray("dynamic_types")
-                setMonitorDynamicTypes((0 until arr.length()).map { arr.getString(it) }.toSet())
+            val magicPeriods = if (o.has("magic_periods")) {
+                val value = o.get("magic_periods")
+                when (value) {
+                    is org.json.JSONArray -> value
+                    is String -> org.json.JSONArray(value)
+                    else -> throw org.json.JSONException("magic_periods must be an array")
+                }.toString()
+            } else null
+            val quietStart = o.optIntOrNull("quiet_start")?.also { require(it in 0..1439) }
+            val quietEnd = o.optIntOrNull("quiet_end")?.also { require(it in 0..1439) }
+            val interval = o.optIntOrNull("check_interval_seconds")?.also {
+                require(it in setOf(CHECK_INTERVAL_REALTIME_SECONDS, CHECK_INTERVAL_STANDARD_SECONDS, CHECK_INTERVAL_ECO_SECONDS))
             }
-            if (o.has("alert_ring_on_activity")) setAlertRingOnActivity(o.getBoolean("alert_ring_on_activity"))
-            if (o.has("notify_stream_end")) setNotifyStreamEnd(o.getBoolean("notify_stream_end"))
-            if (o.has("notify_title_change")) setNotifyTitleChange(o.getBoolean("notify_title_change"))
-            if (o.has("auto_check_update")) setAutoCheckUpdate(o.getBoolean("auto_check_update"))
-            if (o.has("auto_download_update")) setAutoDownloadUpdate(o.getBoolean("auto_download_update"))
-            if (o.has("alert_sound_uri")) setAlertSoundUri(o.getString("alert_sound_uri"))
-            if (o.has("alert_sound_title")) setAlertSoundTitle(o.getString("alert_sound_title"))
-            if (o.has("auto_backup_enabled")) setAutoBackupEnabled(o.getBoolean("auto_backup_enabled"))
-            if (o.has("backup_tree_uri")) setBackupTreeUri(o.getString("backup_tree_uri"))
+            val darkMode = o.optIntOrNull("dark_mode")?.also {
+                require(it in setOf(DARK_MODE_SYSTEM, DARK_MODE_LIGHT, DARK_MODE_DARK))
+            }
+            val dynamicTypes = if (o.has("dynamic_types")) {
+                val arr = o.getJSONArray("dynamic_types")
+                (0 until arr.length()).map { arr.getString(it) }.toSet()
+            } else null
+            val hasBackupUri = o.has("backup_tree_uri")
+            val hasAutoBackup = o.has("auto_backup_enabled")
+            val backupUri = o.optStringOrNull("backup_tree_uri")
+            val backupUriUsable = !backupUri.isNullOrBlank() &&
+                appContext.contentResolver.persistedUriPermissions.any {
+                    it.uri.toString() == backupUri && it.isWritePermission
+                }
+
+            val editor = prefs.edit()
+            magicPeriods?.let { editor.putString(KEY_MAGIC_PERIODS, it) }
+            o.optBooleanOrNull("quiet_enabled")?.let { editor.putBoolean(KEY_QUIET_HOURS_ENABLED, it) }
+            quietStart?.let { editor.putInt(KEY_QUIET_START_MINUTES, it) }
+            quietEnd?.let { editor.putInt(KEY_QUIET_END_MINUTES, it) }
+            interval?.let { editor.putInt(KEY_CHECK_INTERVAL_SECONDS, it) }
+            darkMode?.let { editor.putInt(KEY_DARK_MODE, it) }
+            o.optBooleanOrNull("monitor_videos")?.let { editor.putBoolean(KEY_MONITOR_VIDEOS, it) }
+            o.optBooleanOrNull("monitor_dynamics")?.let { editor.putBoolean(KEY_MONITOR_DYNAMICS, it) }
+            o.optBooleanOrNull("monitor_pinned")?.let { editor.putBoolean(KEY_MONITOR_PINNED, it) }
+            dynamicTypes?.let { editor.putStringSet(KEY_MONITOR_DYNAMIC_TYPES, it) }
+            o.optBooleanOrNull("alert_ring_on_activity")?.let { editor.putBoolean(KEY_ALERT_RING_ON_ACTIVITY, it) }
+            o.optBooleanOrNull("notify_stream_end")?.let { editor.putBoolean(KEY_NOTIFY_STREAM_END, it) }
+            o.optBooleanOrNull("notify_title_change")?.let { editor.putBoolean(KEY_NOTIFY_TITLE_CHANGE, it) }
+            o.optBooleanOrNull("auto_check_update")?.let { editor.putBoolean(KEY_AUTO_CHECK_UPDATE, it) }
+            o.optBooleanOrNull("auto_download_update")?.let { editor.putBoolean(KEY_AUTO_DOWNLOAD_UPDATE, it) }
+            o.optStringOrNull("alert_sound_uri")?.let { editor.putString(KEY_ALERT_SOUND_URI, it) }
+            o.optStringOrNull("alert_sound_title")?.let { editor.putString(KEY_ALERT_SOUND_TITLE, it) }
+            if (hasBackupUri) {
+                editor.putString(KEY_BACKUP_TREE_URI, backupUri.takeIf { backupUriUsable }.orEmpty())
+                if (hasAutoBackup) {
+                    editor.putBoolean(KEY_AUTO_BACKUP_ENABLED, backupUriUsable && o.getBoolean("auto_backup_enabled"))
+                } else if (!backupUriUsable) {
+                    editor.putBoolean(KEY_AUTO_BACKUP_ENABLED, false)
+                }
+            } else if (hasAutoBackup) {
+                val currentUri = getBackupTreeUri()
+                val currentUriUsable = currentUri.isNotBlank() &&
+                    appContext.contentResolver.persistedUriPermissions.any {
+                        it.uri.toString() == currentUri && it.isWritePermission
+                    }
+                editor.putBoolean(
+                    KEY_AUTO_BACKUP_ENABLED,
+                    currentUriUsable && o.getBoolean("auto_backup_enabled")
+                )
+            }
+            val imported = editor.commit()
+            SnapshotImportResult(imported = imported, magicPeriodsImported = imported && magicPeriods != null)
         } catch (e: Exception) {
             AppLogger.w("PreferenceManager", "importSnapshot failed", e)
+            SnapshotImportResult(imported = false, magicPeriodsImported = false)
         }
     }
+
+    private fun org.json.JSONObject.optIntOrNull(key: String): Int? =
+        if (has(key)) getInt(key) else null
+
+    private fun org.json.JSONObject.optBooleanOrNull(key: String): Boolean? =
+        if (has(key)) getBoolean(key) else null
+
+    private fun org.json.JSONObject.optStringOrNull(key: String): String? =
+        if (has(key)) getString(key) else null
 
     // 监控健康度：检测记录环形缓冲（JSON，最近 500 条）
     @Synchronized
@@ -274,6 +356,13 @@ class PreferenceManager(context: Context) {
     fun getLastUpdateCheckTime(): Long {
         return prefs.getLong(KEY_LAST_UPDATE_CHECK_TIME, 0L)
     }
+
+    fun setLastUpdateAttemptTime(timeMillis: Long) {
+        prefs.edit().putLong(KEY_LAST_UPDATE_ATTEMPT_TIME, timeMillis).apply()
+    }
+
+    fun getLastUpdateAttemptTime(): Long =
+        prefs.getLong(KEY_LAST_UPDATE_ATTEMPT_TIME, 0L)
 
     // 用户点了「忽略此版本」的 versionCode，自动检测不再弹；-1 表示无
     fun setDismissedVersionCode(code: Int) {
@@ -513,6 +602,8 @@ class PreferenceManager(context: Context) {
         private const val KEY_ROOM_ID = "room_id"
         private const val KEY_SERVICE_RUNNING = "service_running"
         private const val KEY_MONITORING_GENERATION = "monitoring_generation"
+        private const val KEY_MONITORING_HEARTBEAT_TIME = "monitoring_heartbeat_time"
+        private const val KEY_MONITORING_HEARTBEAT_GENERATION = "monitoring_heartbeat_generation"
         private const val KEY_OEM_GUIDE_PROMPTED = "oem_guide_prompted"
         private const val KEY_FIRST_LAUNCH_DONE = "first_launch_done"
         private const val DEFAULT_ROOM_ID = com.bilibili.livemonitor.util.BiliTargets.ROOM_ID
@@ -529,8 +620,10 @@ class PreferenceManager(context: Context) {
         private const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
         private const val KEY_LAST_BACKUP_TIME = "last_backup_time"
         private const val KEY_LAST_POSTER_MONTH = "last_poster_month"
+        private const val KEY_OEM_BACKGROUND_CONFIRMED = "oem_background_confirmed"
         private const val KEY_CHECK_RECORDS = "check_records"
-        private const val CHECK_RECORDS_CAP = 500
+        // 15 秒档一天最多 5760 个周期，留出手动检查与时间漂移余量。
+        private const val CHECK_RECORDS_CAP = 6_000
 
         // 检测频率档位（秒）
         const val CHECK_INTERVAL_ECO_SECONDS = 300
@@ -542,6 +635,7 @@ class PreferenceManager(context: Context) {
         private const val KEY_AUTO_CHECK_UPDATE = "auto_check_update"
         private const val KEY_AUTO_DOWNLOAD_UPDATE = "auto_download_update"
         private const val KEY_LAST_UPDATE_CHECK_TIME = "last_update_check_time"
+        private const val KEY_LAST_UPDATE_ATTEMPT_TIME = "last_update_attempt_time"
         private const val KEY_DISMISSED_VERSION_CODE = "dismissed_version_code"
 
         // ===== 提醒铃声 =====

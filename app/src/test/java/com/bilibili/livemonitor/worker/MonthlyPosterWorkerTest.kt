@@ -32,6 +32,7 @@ class MonthlyPosterWorkerTest {
         )
         prefs = PreferenceManager(context)
         prefs.setLastPosterMonth("")
+        java.io.File(context.filesDir, "posters").deleteRecursively()
         runBlocking {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
@@ -60,6 +61,18 @@ class MonthlyPosterWorkerTest {
         assertEquals(androidx.work.ListenableWorker.Result.Success::class.java, result.javaClass)
         assertTrue("应有通知", notificationCount() > 0)
         assertTrue("月份键已落", prefs.getLastPosterMonth().isNotBlank())
+        val expectedMonth = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }
+        val expectedFile = java.io.File(
+            context.filesDir,
+            "posters/monthly_${worker().monthKey(expectedMonth)}.png"
+        )
+        assertTrue("文件名应使用实际生成月份", expectedFile.isFile)
+
+        val notification = shadowOf(context.getSystemService(NotificationManager::class.java))
+            .allNotifications.single()
+        val openIntent = shadowOf(notification.contentIntent).savedIntent
+        assertEquals(worker().monthKey(expectedMonth), openIntent.getStringExtra(com.bilibili.livemonitor.StatsActivity.EXTRA_MONTH_KEY))
+        assertTrue(notification.actions.any { it.title.toString() == "预览/分享" })
 
         // 同月重跑：跳过，不再发通知
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancelAll()

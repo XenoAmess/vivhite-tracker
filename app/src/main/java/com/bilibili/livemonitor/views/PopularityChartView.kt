@@ -50,6 +50,13 @@ class PopularityChartView @JvmOverloads constructor(
         points = data
         this.startLabel = startLabel
         this.endLabel = endLabel
+        contentDescription = if (data.size < 2) {
+            "趋势图：数据不足"
+        } else {
+            val peak = data.maxOf { it.second }
+            val average = data.sumOf { it.second } / data.size
+            "趋势图，共${data.size}个数据点，峰值$peak，均值$average"
+        }
         invalidate()
     }
 

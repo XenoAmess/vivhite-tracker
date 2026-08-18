@@ -21,6 +21,9 @@ class AboutActivityTest {
             "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
             tv.text.toString()
         )
+        val toolbar = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.aboutToolbar)
+        assertEquals("关于", toolbar.title.toString())
+        assertTrue(toolbar.navigationIcon != null)
     }
 
     @Test

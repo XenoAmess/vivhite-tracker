@@ -50,8 +50,8 @@
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnMoodEventDelete"
         style="@style/Widget.Material3.Button.IconButton"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:contentDescription="删除心情事件"
         app:icon="@android:drawable/ic_menu_delete"
         app:iconSize="18dp"

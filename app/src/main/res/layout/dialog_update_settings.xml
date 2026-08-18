@@ -10,6 +10,7 @@
         android:id="@+id/switchAutoCheck"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="48dp"
         android:paddingTop="10dp"
         android:paddingBottom="10dp"
         android:text="自动检查更新（每日一次）" />
@@ -18,6 +19,7 @@
         android:id="@+id/switchAutoDownload"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="48dp"
         android:paddingTop="10dp"
         android:paddingBottom="10dp"
         android:text="Wi-Fi 下自动下载更新包" />

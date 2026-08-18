@@ -37,8 +37,23 @@ open class AnchorAvatarLoader {
         // 过期/缺失 → 网络刷新
         val fresh = faceUrlFetcher()?.let { url -> bitmapDownloader(url) }
         if (fresh != null) {
-            runCatching {
-                cache.outputStream().use { fresh.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            cache.parentFile?.mkdirs()
+            val temp = File.createTempFile(".${cache.name}.", ".part", cache.parentFile)
+            try {
+                val encoded = runCatching {
+                    temp.outputStream().use { output ->
+                        val compressed = fresh.compress(Bitmap.CompressFormat.JPEG, 92, output)
+                        output.flush()
+                        (output as? java.io.FileOutputStream)?.fd?.sync()
+                        compressed
+                    }
+                }.getOrDefault(false)
+                val decoded = if (encoded) readCache(temp, deleteInvalid = false) else null
+                val valid = decoded != null
+                decoded?.recycle()
+                if (valid) AppUpdater.publishAtomically(temp, cache)
+            } finally {
+                temp.delete()
             }
             return@withContext fresh
         }
@@ -77,9 +92,11 @@ open class AnchorAvatarLoader {
 
     private fun cacheFile(context: Context): File = File(context.filesDir, "anchor_avatar.jpg")
 
-    private fun readCache(file: File): Bitmap? {
+    private fun readCache(file: File, deleteInvalid: Boolean = true): Bitmap? {
         if (!file.exists() || file.length() == 0L) return null
-        return runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
+        val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
+        if (bitmap == null && deleteInvalid) file.delete()
+        return bitmap
     }
 
     companion object {

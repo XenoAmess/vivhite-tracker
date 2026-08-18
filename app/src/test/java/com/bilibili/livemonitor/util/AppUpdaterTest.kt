@@ -43,6 +43,61 @@ class AppUpdaterTest {
     }
 
     @Test
+    fun `cleanupOldDownloads 仅清理更新产物并保留指定APK`() {
+        val updates = java.io.File(context.filesDir, "updates").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val keep = java.io.File(updates, "vivhite-tracker-current.apk").apply { writeText("keep") }
+        java.io.File(updates, "vivhite-tracker-old.apk").writeText("old")
+        java.io.File(updates, ".download.part").writeText("partial")
+        java.io.File(updates, "incremental").apply { mkdirs(); resolve("hop.apk").writeText("work") }
+        val unrelated = java.io.File(updates, "version.json").apply { writeText("metadata") }
+
+        AppUpdater.cleanupOldDownloads(context, keep, apkMaxAgeMs = 0L)
+
+        assertTrue(keep.exists())
+        assertTrue(unrelated.exists())
+        assertFalse(java.io.File(updates, "vivhite-tracker-old.apk").exists())
+        assertFalse(java.io.File(updates, ".download.part").exists())
+        assertFalse(java.io.File(updates, "incremental").exists())
+    }
+
+    @Test
+    fun `cleanupOldDownloads 默认只删除过期APK`() {
+        val updates = java.io.File(context.filesDir, "updates").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val now = 1_000_000_000L
+        val recent = java.io.File(updates, "recent.apk").apply {
+            writeText("recent")
+            setLastModified(now - AppUpdater.OLD_APK_MAX_AGE_MS + 1)
+        }
+        val old = java.io.File(updates, "old.apk").apply {
+            writeText("old")
+            setLastModified(now - AppUpdater.OLD_APK_MAX_AGE_MS)
+        }
+
+        AppUpdater.cleanupOldDownloads(context, now = now)
+
+        assertTrue(recent.exists())
+        assertFalse(old.exists())
+    }
+
+    @Test
+    fun `publishAtomically 替换目标且不残留临时文件`() {
+        val destination = AppUpdater.apkFile(context, "atomic-test")
+        destination.parentFile?.mkdirs()
+        destination.writeText("old")
+        val temp = AppUpdater.tempFileFor(destination).apply { writeText("new") }
+
+        assertTrue(AppUpdater.publishAtomically(temp, destination))
+        assertEquals("new", destination.readText())
+        assertFalse(temp.exists())
+    }
+
+    @Test
     fun `buildInstallIntent 携带安装器三要素`() {
         // 用户点"安装"后系统安装器必须能读到这个 APK：
         // content:// URI（FileProvider 授权）+ APK mime + 读权限 flag，缺一不可

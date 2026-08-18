@@ -9,8 +9,8 @@ import java.util.Locale
 /**
  * 场次 + 心情混合 CSV 备份编解码（纯函数，导入导出共用）。
  *
- * 新格式表头：类型,开始,结束,时长(分钟),标题,心情,原因,备注
- * - 场次行：类型=场次，心情/原因/备注留空；未闭合场次结束写「进行中」（导入时跳过）
+ * 新格式表头：类型,开始,结束,时长(分钟),标题,心情,原因,备注,封面文件,start_ms,end_ms,created_at
+ * - 场次行：类型=场次，心情/原因/备注留空；未闭合场次结束写「进行中」并保留 endTs=null
  * - 心情行：类型=心情，时长 0 时结束/时长留空；心情存「😄开心」display，
  *   导入按 MoodCatalog 反查回 key（裸 key 也认，都不认识保留原文）
  *
@@ -22,7 +22,7 @@ object SessionBackup {
     const val TYPE_SESSION = "场次"
     const val TYPE_MOOD = "心情"
     const val IN_PROGRESS = "进行中"
-    const val HEADER = "类型,开始,结束,时长(分钟),标题,心情,原因,备注"
+    const val HEADER = "类型,开始,结束,时长(分钟),标题,心情,原因,备注,封面文件,start_ms,end_ms,created_at"
 
     private const val DATE_PATTERN = "yyyy-MM-dd HH:mm"
 
@@ -34,7 +34,8 @@ object SessionBackup {
         val mood: String,
         val title: String,
         val reason: String?,
-        val note: String?
+        val note: String?,
+        val createdAt: Long
     )
 
     data class Parsed(
@@ -52,12 +53,10 @@ object SessionBackup {
             val start = fmt.format(Date(s.startTs))
             val end = s.endTs?.let { fmt.format(Date(it)) } ?: IN_PROGRESS
             val minutes = s.endTs?.let { ((it - s.startTs) / 60_000L).toString() } ?: ""
-            // 第 9-11 列（可选，全量备份用）：封面 hash 名、start_ms、end_ms 原值
-            // （人读日期列只到分钟，raw 列保证 ZIP 恢复精确到毫秒；老解析器按列号取，多出的列忽略）
             val coverName = s.coverPath?.substringAfterLast('/')?.ifBlank { null } ?: ""
             rows += s.startTs to listOf(
                 TYPE_SESSION, start, end, minutes, s.title ?: "", "", "", "", coverName,
-                s.startTs.toString(), s.endTs?.toString() ?: ""
+                s.startTs.toString(), s.endTs?.toString() ?: "", ""
             ).joinToString(",") { field(it) }
         }
         moods.forEach { m ->
@@ -68,11 +67,10 @@ object SessionBackup {
                 ""
             }
             val duration = if (m.durationMin > 0) m.durationMin.toString() else ""
-            // 心情行第 9 列（可选）：event_ts 原值（毫秒精度恢复）
             rows += m.eventTs to listOf(
                 TYPE_MOOD, start, end, duration, m.title,
                 MoodCatalog.display(m.mood), m.reason ?: "", m.note ?: "",
-                m.eventTs.toString()
+                "", m.eventTs.toString(), "", m.createdAt.toString()
             ).joinToString(",") { field(it) }
         }
         return buildString {
@@ -96,6 +94,7 @@ object SessionBackup {
         if (records.isEmpty()) return Parsed(emptyList(), emptyList(), 0)
         val header = records.first()
         val isNewFormat = header[0].trim() == "类型"
+        val headerIndexes = header.mapIndexed { index, value -> value.trim() to index }.toMap()
         val body = records.drop(1)
         val fmt = SimpleDateFormat(DATE_PATTERN, Locale.getDefault()).apply { isLenient = false }
         val sessions = mutableListOf<SessionRow>()
@@ -110,29 +109,37 @@ object SessionBackup {
             if (isNewFormat) {
                 when (record[0].trim()) {
                     TYPE_SESSION -> {
-                        // 优先用第 9/10 列的 raw 毫秒（全量备份精确恢复），否则按日期列解析
-                        val start = record.getOrNull(9)?.toLongOrNull()
+                        // 2026-08 旧版表头只有 8 列，但在正文尾部追加了隐藏 raw 列。
+                        val rawStartIndex = headerIndexes["start_ms"] ?: 9
+                        val rawEndIndex = headerIndexes["end_ms"] ?: 10
+                        val coverIndex = headerIndexes["封面文件"] ?: 8
+                        val start = record.getOrNull(rawStartIndex)?.toLongOrNull()
                             ?: record.getOrNull(1)?.let { parseTs(it) }
                         val endRaw = record.getOrNull(2)?.trim().orEmpty()
-                        if (start == null || endRaw == IN_PROGRESS) {
+                        if (start == null) {
                             skipped++
                             continue
                         }
-                        val end = record.getOrNull(10)?.toLongOrNull()
-                            ?: if (endRaw.isEmpty()) null else parseTs(endRaw)
-                        if (endRaw.isNotEmpty() && end == null) {
+                        val end = record.getOrNull(rawEndIndex)?.toLongOrNull()
+                            ?: if (endRaw.isEmpty() || endRaw == IN_PROGRESS) null else parseTs(endRaw)
+                        if (endRaw.isNotEmpty() && endRaw != IN_PROGRESS && end == null) {
+                            skipped++
+                            continue
+                        }
+                        if (end != null && end < start) {
                             skipped++
                             continue
                         }
                         sessions += SessionRow(
                             startTs = start, endTs = end,
                             title = record.getOrNull(4)?.ifBlank { null },
-                            coverName = record.getOrNull(8)?.ifBlank { null }
+                            coverName = record.getOrNull(coverIndex)?.ifBlank { null }
                         )
                     }
                     TYPE_MOOD -> {
-                        // 优先第 9 列 raw 毫秒
-                        val start = record.getOrNull(8)?.toLongOrNull()
+                        val rawStartIndex = headerIndexes["start_ms"] ?: 8
+                        val createdAtIndex = headerIndexes["created_at"]
+                        val start = record.getOrNull(rawStartIndex)?.toLongOrNull()
                             ?: record.getOrNull(1)?.let { parseTs(it) }
                         val title = record.getOrNull(4)?.trim().orEmpty()
                         if (start == null || title.isEmpty()) {
@@ -140,12 +147,18 @@ object SessionBackup {
                             continue
                         }
                         val duration = record.getOrNull(3)?.trim()?.toIntOrNull() ?: 0
+                        if (duration < 0) {
+                            skipped++
+                            continue
+                        }
                         val moodDisplay = record.getOrNull(5)?.trim().orEmpty()
                         moods += MoodRow(
                             eventTs = start, durationMin = duration,
                             mood = MoodCatalog.keyOf(moodDisplay), title = title,
                             reason = record.getOrNull(6)?.ifBlank { null },
-                            note = record.getOrNull(7)?.ifBlank { null }
+                            note = record.getOrNull(7)?.ifBlank { null },
+                            createdAt = createdAtIndex?.let { record.getOrNull(it)?.toLongOrNull() }
+                                ?: start
                         )
                     }
                     else -> skipped++
@@ -156,12 +169,16 @@ object SessionBackup {
                 val offset = if (record.size >= 5 && record[0].trim() == TYPE_SESSION) 1 else 0
                 val start = record.getOrNull(offset)?.let { parseTs(it) }
                 val endRaw = record.getOrNull(offset + 1)?.trim().orEmpty()
-                if (start == null || endRaw == IN_PROGRESS) {
+                if (start == null) {
                     skipped++
                     continue
                 }
-                val end = if (endRaw.isEmpty()) null else parseTs(endRaw)
-                if (endRaw.isNotEmpty() && end == null) {
+                val end = if (endRaw.isEmpty() || endRaw == IN_PROGRESS) null else parseTs(endRaw)
+                if (endRaw.isNotEmpty() && endRaw != IN_PROGRESS && end == null) {
+                    skipped++
+                    continue
+                }
+                if (end != null && end < start) {
                     skipped++
                     continue
                 }
@@ -212,8 +229,11 @@ object SessionBackup {
             i++
         }
         if (field.isNotEmpty() || current.isNotEmpty()) {
+            require(!inQuotes) { "CSV 引号未闭合" }
             current += field.toString()
             records += current.toList()
+        } else {
+            require(!inQuotes) { "CSV 引号未闭合" }
         }
         return records
     }

@@ -1,5 +1,7 @@
 # Coverage Report Notes — XenoAmess/vivhite-tracker
 
+> 历史实施记录：覆盖率数值和测试数量对应各节日期；当前构建约束以 `AGENTS.md`、workflow 与 Gradle 配置为准。
+
 **日期**: 2026-07-23
 
 ## 项目形态
@@ -20,7 +22,7 @@
     `intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes`（AGP 9 内置 Kotlin
     的输出路径；旧外部 KGP 的 `tmp/kotlin-classes/debug` 已不存在），排除 R/BuildConfig/databinding
 - CI（android-ci.yml）：`jacocoUnitTestReport` → 上传 `coverage-report-${{ github.sha }}` →
-  `coverage-pages` job（`if: master push`，`needs: [build]`）解析 jacoco.xml 的
+  `coverage-pages` job（`if: master push`，`needs: [build, publish-beta]`）解析 jacoco.xml 的
   INSTRUCTION counter 生成 `coverage.json`，HTML 报告部署到 `report/coverage.html`
 - README badge → `https://xenoamess.github.io/vivhite-tracker/coverage.json`
 
@@ -76,7 +78,7 @@ Android Gradle 变体对本 skill 是新材料，已回写到 SKILL.md（Pitfall
 ## 2026-08-04 追加（四）：AGP 9 迁移与当前状态
 
 - **工具链迁移**：AGP 9.3.1 + 内置 Kotlin（无外部 KGP 插件），compileSdk/targetSdk 36，
-  Gradle 9.6.1，JDK 17。JaCoCo `classDirectories` 必须指向内置 Kotlin 输出
+  Gradle Wrapper 9.7.0，JDK 17。JaCoCo `classDirectories` 必须指向内置 Kotlin 输出
   `intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes`（旧 `tmp/kotlin-classes/debug`
   已不存在），否则报告 0%。`includeNoLocationClasses` + `excludes=["jdk.internal.*"]` 的配置保留。
 - Robolectric 单测仍锁 sdk=35（`app/src/test/resources/robolectric.properties`）。

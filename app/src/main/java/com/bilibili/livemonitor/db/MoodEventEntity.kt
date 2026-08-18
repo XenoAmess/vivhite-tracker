@@ -2,6 +2,7 @@ package com.bilibili.livemonitor.db
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -10,7 +11,10 @@ import androidx.room.PrimaryKey
  * mood 存 MoodCatalog 的 key（不存 emoji，改文案不污染历史数据）。
  * durationMin=0 表示不记时长（界面只展示开始时间）。
  */
-@Entity(tableName = "mood_events")
+@Entity(
+    tableName = "mood_events",
+    indices = [Index(value = ["event_ts"])]
+)
 data class MoodEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "event_ts") val eventTs: Long,

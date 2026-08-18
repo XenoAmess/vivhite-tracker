@@ -1,8 +1,10 @@
 package com.bilibili.livemonitor.db
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 
 @Dao
@@ -14,13 +16,60 @@ interface StreamSessionDao {
     @Update
     suspend fun updateSession(session: StreamSessionEntity)
 
+    @Delete
+    suspend fun deleteSession(session: StreamSessionEntity)
+
     /** 最近的未闭合场次（进程死亡后重启仍保留在库里） */
     @Query("SELECT * FROM stream_sessions WHERE end_ts IS NULL ORDER BY start_ts DESC LIMIT 1")
     suspend fun findOpenSession(): StreamSessionEntity?
 
-    /** 新场次开始时，把任何残留未闭合场次按给定 endTs 闭合（防进程死亡留下的脏行） */
-    @Query("UPDATE stream_sessions SET end_ts = :endTs WHERE end_ts IS NULL")
+    @Query("SELECT * FROM stream_sessions WHERE id = :id LIMIT 1")
+    suspend fun findById(id: Long): StreamSessionEntity?
+
+    /** 新场次开始时闭合残留行；异常时钟不得制造 end_ts < start_ts。 */
+    @Query("UPDATE stream_sessions SET end_ts = MAX(start_ts, :endTs) WHERE end_ts IS NULL")
     suspend fun closeOpenSessions(endTs: Long)
+
+    @Query("UPDATE stream_sessions SET end_ts = MAX(start_ts, :endTs) WHERE end_ts IS NULL AND id != :keepId")
+    suspend fun closeOtherOpenSessions(keepId: Long, endTs: Long)
+
+    @Query(
+        "UPDATE stream_sessions SET end_ts = MAX(start_ts, :endTs), " +
+            "title = COALESCE(title, :title) WHERE end_ts IS NULL"
+    )
+    suspend fun closeOpenSessions(endTs: Long, title: String?)
+
+    /** 场次开始的查重、残留闭合和插入必须处于同一事务。 */
+    @Transaction
+    suspend fun beginSession(startTs: Long, title: String?): Long {
+        val open = findOpenSession()
+        if (open != null && open.startTs == startTs) {
+            closeOtherOpenSessions(open.id, startTs)
+            return open.id
+        }
+        closeOpenSessions(startTs)
+        return insertSession(StreamSessionEntity(startTs = startTs, title = title))
+    }
+
+    /** 闭合全部残留开放行，并返回用于提醒时长的最近一场开始时间。 */
+    @Transaction
+    suspend fun endOpenSessions(endTs: Long, title: String?): Long? {
+        val open = findOpenSession() ?: return null
+        closeOpenSessions(endTs, title)
+        return open.startTs
+    }
+
+    @Query(
+        "UPDATE stream_sessions SET start_ts = :startTs, end_ts = :endTs, title = :title " +
+            "WHERE id = :id AND end_ts IS :expectedEndTs"
+    )
+    suspend fun updateDetailsIfEndUnchanged(
+        id: Long,
+        expectedEndTs: Long?,
+        startTs: Long,
+        endTs: Long?,
+        title: String?
+    ): Int
 
     /** 清空（测试用） */
     @Query("DELETE FROM stream_sessions")
@@ -28,6 +77,14 @@ interface StreamSessionDao {
 
     @Query("SELECT * FROM stream_sessions ORDER BY start_ts DESC LIMIT :limit")
     suspend fun recentSessions(limit: Int): List<StreamSessionEntity>
+
+    /** 全量备份专用，不得加 LIMIT。 */
+    @Query("SELECT * FROM stream_sessions ORDER BY start_ts ASC")
+    suspend fun allSessions(): List<StreamSessionEntity>
+
+    /** 全历史标题搜索；instr 把用户输入按字面量处理，不把 %/_ 当通配符。 */
+    @Query("SELECT * FROM stream_sessions WHERE title IS NOT NULL AND instr(lower(title), lower(:query)) > 0 ORDER BY start_ts DESC")
+    suspend fun searchSessions(query: String): List<StreamSessionEntity>
 
     /** since 之后的已闭合场次（统计用） */
     @Query("SELECT * FROM stream_sessions WHERE end_ts IS NOT NULL AND start_ts >= :since ORDER BY start_ts DESC")
@@ -71,19 +128,22 @@ interface StreamSessionDao {
 
     // ---------- 批量管理（手账页） ----------
 
-    /** 指定时间之前的场次数（删除预览用） */
-    @Query("SELECT COUNT(*) FROM stream_sessions WHERE start_ts < :before")
+    /** 指定时间之前的已闭合场次数（开放场次始终保留）。 */
+    @Query("SELECT COUNT(*) FROM stream_sessions WHERE start_ts < :before AND end_ts IS NOT NULL")
     suspend fun sessionsBeforeCount(before: Long): Int
 
     /** 级联：主题变化/人气点挂在场次上，先删子表 */
-    @Query("DELETE FROM stream_title_changes WHERE session_id IN (SELECT id FROM stream_sessions WHERE start_ts < :before)")
+    @Query("DELETE FROM stream_title_changes WHERE session_id IN (SELECT id FROM stream_sessions WHERE start_ts < :before AND end_ts IS NOT NULL)")
     suspend fun deleteTitleChangesBefore(before: Long): Int
 
-    @Query("DELETE FROM popularity_points WHERE session_id IN (SELECT id FROM stream_sessions WHERE start_ts < :before)")
+    @Query("DELETE FROM popularity_points WHERE session_id IN (SELECT id FROM stream_sessions WHERE start_ts < :before AND end_ts IS NOT NULL)")
     suspend fun deletePopularityBefore(before: Long): Int
 
-    @Query("DELETE FROM stream_sessions WHERE start_ts < :before")
+    @Query("DELETE FROM stream_sessions WHERE start_ts < :before AND end_ts IS NOT NULL")
     suspend fun deleteSessionsBefore(before: Long): Int
+
+    @Query("DELETE FROM stream_sessions WHERE end_ts IS NOT NULL")
+    suspend fun deleteAllClosedSessions(): Int
 
     @Query("DELETE FROM stream_title_changes")
     suspend fun deleteAllTitleChanges()
@@ -123,6 +183,12 @@ interface StreamSessionDao {
     /** 导入去重：同 场次+变更时间 视为重复 */
     @Query("SELECT COUNT(*) FROM stream_title_changes WHERE session_id = :sessionId AND changed_at = :changedAt")
     suspend fun countTitleChange(sessionId: Long, changedAt: Long): Int
+
+    @Query("SELECT * FROM stream_title_changes WHERE session_id = :sessionId AND changed_at = :changedAt LIMIT 1")
+    suspend fun findTitleChange(sessionId: Long, changedAt: Long): StreamTitleChangeEntity?
+
+    @Update
+    suspend fun updateTitleChange(change: StreamTitleChangeEntity)
 
     /** 导入去重：同 场次+采样时间 视为重复 */
     @Query("SELECT COUNT(*) FROM popularity_points WHERE session_id = :sessionId AND ts = :ts")

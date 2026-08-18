@@ -1,6 +1,7 @@
 package com.bilibili.livemonitor.util
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import com.bilibili.livemonitor.api.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,18 +28,42 @@ open class CoverStore {
     /** 已存在直接返回路径（去重短路）；否则下载原图落盘 */
     open suspend fun acquire(context: Context, coverUrl: String): String? = withContext(Dispatchers.IO) {
         val file = fileFor(context, coverUrl)
-        if (file.exists() && file.length() > 0) {
+        if (isValidImage(file)) {
             return@withContext file.absolutePath
         }
+        file.delete()
         val bytes = fetcher(coverUrl) ?: return@withContext null
         file.parentFile?.mkdirs()
-        file.writeBytes(bytes)
-        file.absolutePath
+        val temp = File.createTempFile(".${file.name}.", ".part", file.parentFile)
+        try {
+            temp.outputStream().use { output ->
+                output.write(bytes)
+                output.flush()
+                (output as? java.io.FileOutputStream)?.fd?.sync()
+            }
+            if (!isValidImage(temp) || !AppUpdater.publishAtomically(temp, file)) {
+                return@withContext null
+            }
+            file.absolutePath
+        } finally {
+            temp.delete()
+        }
     }
 
     /** 去重后的落地文件（URL sha256 命名） */
     fun fileFor(context: Context, coverUrl: String): File =
         File(File(context.filesDir, "covers"), sha256Hex(coverUrl) + ".jpg")
+
+    private fun isValidImage(file: File): Boolean {
+        if (!file.isFile || file.length() == 0L) return false
+        return runCatching {
+            BitmapFactory.decodeFile(file.absolutePath)?.let { bitmap ->
+                val valid = bitmap.width > 0 && bitmap.height > 0
+                bitmap.recycle()
+                valid
+            } ?: false
+        }.getOrDefault(false)
+    }
 
     private fun sha256Hex(s: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8))

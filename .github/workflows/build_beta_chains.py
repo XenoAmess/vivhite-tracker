@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """beta 通道增量更新（ApkDiffPatch）：维护 beta-archive 滚动 release（最近 8 个内测包 + 补丁），
-生成单跳直达补丁，把元数据写进 version.json（随后部署到 Pages）。
+生成单跳直达补丁，把固定通道资产发布到 beta-archive（Pages 仅作 legacy 回退）。
 
 - beta-archive release 常驻且固定为 prerelease（防止劫持 releases/latest），资产命名：
     beta-<versionCode>.apk                存档内测包（归一化+apksigner34 重签的发布物）
@@ -11,7 +11,8 @@
   stable 客户端可增量切到 beta（同一 keystore + 同一归一化/重签管线，可字节级回放）
 - 只对「已装包内含 libapkpatch.so」的 from-版本生成（jbsdiff-only 旧客户端自动全量）
 - 单跳直达，不构建多跳链
-- 任何失败只丢对应条目，绝不阻断 beta 发布
+- 单个底包的补丁生成/验证失败只丢对应条目，客户端回退整包
+- beta-archive 创建、固定通道资产或元数据上传失败会让发布 job 失败
 
 依赖（环境变量）：
   APKDIFF_BIN  含 ZipDiff/ZipPatch/ApkNormalized 的目录（默认 "."）
@@ -24,6 +25,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "XenoAmess/vivhite-tracker")
@@ -81,15 +83,45 @@ def upload_asset(path):
     print(f"uploaded {path}")
 
 
+def release_asset_names():
+    result = gh(
+        "release", "view", ARCHIVE_TAG,
+        "--json", "assets", "--jq", ".assets[].name",
+    )
+    return set(result.stdout.splitlines())
+
+
 def upload_channel_files(apk_path):
     """beta 检查通道固定名资产（App「内测版尝鲜」读取的固定 URL，
     github.com 主机 → 客户端可走镜像加速；Pages 仅作 legacy 回退）。
     滚动裁剪只动 beta-<vc>.apk / patch-*，固定名不受裁剪影响。"""
-    upload_asset("version.json")
     fixed = "beta-latest.apk"
-    run(["cp", apk_path, fixed])
-    upload_asset(fixed)
-    os.remove(fixed)
+    assets = (fixed, "version.json")
+    with tempfile.TemporaryDirectory(prefix="beta-channel-backup-") as backup_dir:
+        previous_assets = release_asset_names()
+        had_previous = {name: name in previous_assets for name in assets}
+        for name, existed in had_previous.items():
+            if existed and not download_asset(name, backup_dir):
+                raise RuntimeError(f"cannot back up existing channel asset: {name}")
+        run(["cp", apk_path, fixed])
+        try:
+            # APK 先就位，version.json 最后作为客户端可见的发布提交点。
+            upload_asset(fixed)
+            upload_asset("version.json")
+        except Exception:
+            # 固定 URL 必须成对回滚，不能留下旧 metadata 指向新 APK。
+            for name in assets:
+                try:
+                    if had_previous[name]:
+                        upload_asset(os.path.join(backup_dir, name))
+                    else:
+                        delete_asset(name)
+                except Exception as rollback_error:
+                    print(f"rollback {name} failed: {rollback_error}", file=sys.stderr)
+            raise
+        finally:
+            if os.path.exists(fixed):
+                os.remove(fixed)
 
 
 def download_release_asset(tag, pattern, dest):
@@ -107,6 +139,17 @@ def download_asset(name, dest):
 def delete_asset(name):
     gh("release", "delete-asset", ARCHIVE_TAG, name, "--yes", check=False)
     print(f"pruned asset {name}")
+
+
+def publish_history_and_prune(history, pruned_entries):
+    """Publish the retained history first; obsolete assets are unreferenced before deletion."""
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump({str(k): v for k, v in history.items()}, f, ensure_ascii=False)
+    upload_asset(HISTORY_FILE)
+    for entry in pruned_entries:
+        delete_asset(entry["apk"])
+        for patch in (entry.get("patches") or {}).values():
+            delete_asset(patch["file"])
 
 
 def apk_has_native_lib(apk_path):
@@ -140,19 +183,49 @@ def try_patch(old_apk, new_apk, pf, new_size, label):
     return None
 
 
+def select_recent_sources(sources, new_vc, limit):
+    """筛选小于目标 versionCode 的最近底包，返回按 versionCode 升序的列表。"""
+    eligible = [(vc, ref) for vc, ref in sources if 0 < vc < new_vc]
+    eligible.sort()
+    return eligible[-limit:]
+
+
+def build_direct_chains(patches, source_sha, new_vc, new_sha):
+    """把已验证的单跳补丁转换为客户端 chains 元数据。"""
+    chains = {}
+    for from_vc, patch in patches.items():
+        if from_vc not in source_sha:
+            continue
+        chains[str(from_vc)] = {
+            "fromApkSha256": source_sha[from_vc],
+            "totalSize": patch["size"],
+            "hops": [
+                {
+                    "toVersionCode": new_vc,
+                    "url": (
+                        f"https://github.com/{REPO}/releases/download/"
+                        f"{ARCHIVE_TAG}/{patch['file']}"
+                    ),
+                    "size": patch["size"],
+                    "patchSha256": patch["patchSha256"],
+                    "resultSha256": new_sha,
+                }
+            ],
+        }
+    return chains
+
+
 def stable_cross_sources(new_vc):
     """最近 STABLE_CROSS_BASES 个 stable tag：[(vc, tag)]，按 vc 升序。
 
     versionCode 口径与 build.gradle.kts / build_delta_chains.py 一致
     （git rev-list --count，checkout 必须 fetch-depth: 0）。
     """
-    out = []
+    sources = []
     for tag in git("tag", "-l", "v*").splitlines():
         vc = int(git("rev-list", "--count", tag))
-        if 0 < vc < new_vc:
-            out.append((vc, tag))
-    out.sort()
-    return out[-STABLE_CROSS_BASES:]
+        sources.append((vc, tag))
+    return select_recent_sources(sources, new_vc, STABLE_CROSS_BASES)
 
 
 def main():
@@ -247,33 +320,16 @@ def main():
     }
     kept = sorted(history)[-MAX_KEEP:]
     pruned = [vc for vc in history if vc not in kept]
-    for vc in pruned:
-        delete_asset(history[vc]["apk"])
-        for p in (history[vc].get("patches") or {}).values():
-            delete_asset(p["file"])
-        del history[vc]
+    pruned_entries = [history[vc] for vc in pruned]
+    history = {vc: entry for vc, entry in history.items() if vc in kept}
 
     # 单跳直达链：from 版本 → 当前版本
     source_sha = {vc: entry["sha256"] for vc, entry in history.items()}
     source_sha.update(cross_sha)
-    chains = {}
+    chains = build_direct_chains(patches, source_sha, new_vc, new_sha)
     for from_vc, p in patches.items():
-        sha = source_sha.get(from_vc)
-        if sha is None:
+        if str(from_vc) not in chains:
             continue
-        chains[str(from_vc)] = {
-            "fromApkSha256": sha,
-            "totalSize": p["size"],
-            "hops": [
-                {
-                    "toVersionCode": new_vc,
-                    "url": f"https://github.com/{REPO}/releases/download/{ARCHIVE_TAG}/{p['file']}",
-                    "size": p["size"],
-                    "patchSha256": p["patchSha256"],
-                    "resultSha256": new_sha,
-                }
-            ],
-        }
         print(f"chain {from_vc} -> {new_vc}: 1 hop, {p['size']} bytes")
 
     # 写回 version.json（部署到 Pages）+ 滚动历史（存档）
@@ -282,9 +338,7 @@ def main():
     vj["chains"] = chains
     with open("version.json", "w", encoding="utf-8") as f:
         json.dump(vj, f, ensure_ascii=False)
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump({str(k): v for k, v in history.items()}, f, ensure_ascii=False)
-    upload_asset(HISTORY_FILE)
+    publish_history_and_prune(history, pruned_entries)
     upload_channel_files(new_apk)
     print(f"beta: {len(patches)} patch(es), {len(chains)} chain(s), keep {len(history)} builds")
 

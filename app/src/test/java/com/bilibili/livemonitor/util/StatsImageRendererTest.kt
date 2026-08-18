@@ -97,4 +97,15 @@ class StatsImageRendererTest {
                 StatsImageRenderer.computeHeight(context, withoutMagic)
         )
     }
+
+    @Test
+    fun `超多记录限制位图高度并保留总数语义`() {
+        val data = sampleData(List(1_000) {
+            StatsImageRenderer.RecordLine(StatsImageRenderer.RecordKind.SESSION, "超长月份记录 $it")
+        })
+
+        assertTrue(StatsImageRenderer.computeHeight(context, data) <= StatsImageRenderer.MAX_HEIGHT)
+        val bitmap = StatsImageRenderer.render(context, data)
+        assertTrue(bitmap.height <= StatsImageRenderer.MAX_HEIGHT)
+    }
 }

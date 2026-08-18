@@ -37,14 +37,14 @@ class RoomMigrationTest {
         // 全链迁移 + 按 v4 schema 校验
         helper.runMigrationsAndValidate(
             dbName, 4, true,
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
         ).close()
         // 校验过后用 Room 正常打开做 DAO 断言
         val db = androidx.room.Room.databaseBuilder(
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
         ).build()
         val sessions = db.streamSessionDao().recentSessions(5)
         assertEquals(1, sessions.size)
@@ -84,7 +84,7 @@ class RoomMigrationTest {
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
         ).build()
         // v2 心情数据迁移后 duration_min 补默认 0
         val moods = db.moodEventDao().eventsBetween(0, 10_000)
@@ -108,16 +108,17 @@ class RoomMigrationTest {
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
         ).build()
 
         val moods = db.moodEventDao().eventsBetween(0, 10_000)
         assertEquals(1, moods.size)
         assertEquals(90, moods[0].durationMin)
+        val sessionId = db.streamSessionDao().insertSession(StreamSessionEntity(startTs = 50))
         db.streamSessionDao().insertPopularityPoint(
-            PopularityPointEntity(sessionId = 1, ts = 100, online = 7)
+            PopularityPointEntity(sessionId = sessionId, ts = 100, online = 7)
         )
-        assertEquals(1, db.streamSessionDao().popularityPoints(1).size)
+        assertEquals(1, db.streamSessionDao().popularityPoints(sessionId).size)
         db.close()
         Unit
     }
@@ -135,7 +136,7 @@ class RoomMigrationTest {
         val db = androidx.room.Room.databaseBuilder(
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
-        ).addMigrations(AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6).build()
+        ).addMigrations(AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7).build()
 
         val sessions = db.streamSessionDao().recentSessions(5)
         assertEquals(1, sessions.size)
@@ -163,7 +164,7 @@ class RoomMigrationTest {
         val db = androidx.room.Room.databaseBuilder(
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
-        ).addMigrations(AppDatabase.MIGRATION_5_6).build()
+        ).addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7).build()
 
         val sessions = db.streamSessionDao().recentSessions(5)
         assertEquals(1, sessions.size)
@@ -176,4 +177,52 @@ class RoomMigrationTest {
         db.close()
         Unit
     }
+
+    @Test
+    fun migrate6To7AddsIndexesRemovesOrphansAndCascades() {
+        helper.createDatabase(dbName, 6).apply {
+            execSQL("PRAGMA foreign_keys = OFF")
+            execSQL("INSERT INTO stream_sessions (id, start_ts, end_ts, title, cover_path) VALUES (1, 1000, 2000, 'v6场次', NULL)")
+            execSQL("INSERT INTO stream_title_changes (session_id, changed_at, new_title) VALUES (1, 1500, '有效')")
+            execSQL("INSERT INTO stream_title_changes (session_id, changed_at, new_title) VALUES (99, 1600, '孤儿')")
+            execSQL("INSERT INTO popularity_points (session_id, ts, online) VALUES (1, 1500, 42)")
+            execSQL("INSERT INTO popularity_points (session_id, ts, online) VALUES (99, 1600, 7)")
+            execSQL("INSERT INTO stream_sessions (id, start_ts, end_ts, title, cover_path) VALUES (2, 3000, NULL, '旧开放行', NULL)")
+            execSQL("INSERT INTO stream_sessions (id, start_ts, end_ts, title, cover_path) VALUES (3, 4000, NULL, '最新开放行', NULL)")
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            dbName, 7, true, AppDatabase.MIGRATION_6_7
+        )
+        assertEquals(1, scalar(db, "SELECT COUNT(*) FROM stream_title_changes"))
+        assertEquals(1, scalar(db, "SELECT COUNT(*) FROM popularity_points"))
+        assertEquals(1, scalar(db, "SELECT COUNT(*) FROM stream_sessions WHERE end_ts IS NULL"))
+        assertEquals(4000, scalar(db, "SELECT end_ts FROM stream_sessions WHERE id = 2"))
+        assertEquals(
+            5,
+            listOf(
+                "index_stream_sessions_start_ts",
+                "index_mood_events_event_ts",
+                "index_follower_snapshots_ts",
+                "index_stream_title_changes_session_id_changed_at",
+                "index_popularity_points_session_id_ts"
+            ).count { indexName ->
+                db.query("SELECT name FROM sqlite_master WHERE type='index' AND name=?", arrayOf(indexName))
+                    .use { it.moveToFirst() }
+            }
+        )
+
+        db.execSQL("PRAGMA foreign_keys = ON")
+        db.execSQL("DELETE FROM stream_sessions WHERE id = 1")
+        assertEquals(0, scalar(db, "SELECT COUNT(*) FROM stream_title_changes"))
+        assertEquals(0, scalar(db, "SELECT COUNT(*) FROM popularity_points"))
+        db.close()
+    }
+
+    private fun scalar(db: androidx.sqlite.db.SupportSQLiteDatabase, sql: String): Int =
+        db.query(sql).use { cursor ->
+            cursor.moveToFirst()
+            cursor.getInt(0)
+        }
 }

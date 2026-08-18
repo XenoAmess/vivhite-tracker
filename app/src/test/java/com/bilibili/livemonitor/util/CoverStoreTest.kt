@@ -1,6 +1,8 @@
 package com.bilibili.livemonitor.util
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -11,9 +13,12 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import java.io.ByteArrayOutputStream
 
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class CoverStoreTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
@@ -32,9 +37,19 @@ class CoverStoreTest {
         return store to callCount
     }
 
+    private fun imageBytes(color: Int = Color.MAGENTA): ByteArray {
+        val bitmap = Bitmap.createBitmap(24, 16, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(color)
+        return ByteArrayOutputStream().use { output ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            bitmap.recycle()
+            output.toByteArray()
+        }
+    }
+
     @Test
     fun `同 URL 二次 acquire 去重短路 字节一致`() = runBlocking {
-        val original = ByteArray(10_000) { (it % 251).toByte() }
+        val original = imageBytes()
         val (store, calls) = storeWith(original)
         val p1 = store.acquire(context, "https://i0.hdslb.com/cover/a.jpg")
         val p2 = store.acquire(context, "https://i0.hdslb.com/cover/a.jpg")
@@ -47,7 +62,7 @@ class CoverStoreTest {
 
     @Test
     fun `不同 URL 两个文件`() = runBlocking {
-        val (store, _) = storeWith(ByteArray(100) { 1 })
+        val (store, _) = storeWith(imageBytes())
         val p1 = store.acquire(context, "https://i0.hdslb.com/cover/a.jpg")
         val p2 = store.acquire(context, "https://i0.hdslb.com/cover/b.jpg")
         assertNotNull(p1); assertNotNull(p2)
@@ -60,5 +75,29 @@ class CoverStoreTest {
         val (store, _) = storeWith(null)
         assertNull(store.acquire(context, "https://i0.hdslb.com/cover/x.jpg"))
         assertEquals(0, coversDir.listFiles()?.size ?: 0)
+    }
+
+    @Test
+    fun `非法图片不发布且临时文件被清理`() = runBlocking {
+        val (store, _) = storeWith("not-an-image".toByteArray())
+
+        assertNull(store.acquire(context, "https://i0.hdslb.com/cover/broken.jpg"))
+        assertTrue(coversDir.listFiles().orEmpty().none { it.name.endsWith(".part") })
+        assertEquals(0, coversDir.listFiles()?.size ?: 0)
+    }
+
+    @Test
+    fun `损坏的已有缓存不会被接受并会重新下载`() = runBlocking {
+        val url = "https://i0.hdslb.com/cover/recover.jpg"
+        val (store, calls) = storeWith(imageBytes(Color.CYAN))
+        val cache = store.fileFor(context, url)
+        cache.parentFile?.mkdirs()
+        cache.writeText("partial")
+
+        val result = store.acquire(context, url)
+
+        assertNotNull(result)
+        assertEquals(1, calls[0])
+        assertTrue(cache.length() > "partial".length)
     }
 }

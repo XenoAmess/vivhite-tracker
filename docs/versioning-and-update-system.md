@@ -7,7 +7,7 @@
 项目有两个更新通道：
 
 - 稳定版：推送 `v*` tag 后由 GitHub Actions 构建，发布到 GitHub Releases。
-- Beta 内测版：`master` 每次 push 后构建，APK 和元数据发布到 GitHub Pages；历史底包和补丁保存于 `beta-archive` GitHub Release。
+- Beta 内测版：`master` 每次 push 后构建，固定 APK、元数据、历史底包和补丁发布到 `beta-archive` GitHub Release；GitHub Pages 仅作 legacy 回退。
 
 两个通道都使用 `versionCode` 判断是否有更新，并通过 `version.json` 传递版本、更新说明、整包校验和增量更新元数据。客户端优先尝试可用的增量链，失败时自动回退整包下载。
 
@@ -18,9 +18,9 @@ Git history + v* tag
         |
         +-- v* tag -> GitHub Release -> stable version.json / APK / patches
         |
-        +-- master push -> GitHub Pages beta -> beta version.json / APK
-                                         |
-                                         +-> beta-archive -> history APKs / patches
+        +-- master push -> beta-archive -> beta version.json / APK
+                                      |    history APKs / patches
+                                      +-> GitHub Pages legacy fallback
 ```
 
 ## 版本模型
@@ -116,14 +116,14 @@ vivhite-tracker-<versionName>.apk
 
 工作流：`.github/workflows/android-ci.yml`。
 
-`master` 的 push 在 lint、单测和 debug APK 构建完成后，会额外执行 Beta 发布流程：
+`master` 的 push 先由必需的 `build` job 完成 lint、单测、覆盖率和 debug APK 验证。仅当它成功后，`publish-beta` job 才执行 Beta 发布流程；PR 不运行发布 job，发布故障也不会改变 required `build` 的结论。
 
 1. 使用 release 变体构建签名 APK，避免侧载 `debuggable=true` 包带来更重的安全提示。
 2. 按与 Gradle 相同的规则生成 `versionCode`、`versionName`、更新说明和 `version.json`。
 3. 将 APK 固定命名为 `vivhite-tracker-beta.apk`。
 4. 运行 `build_beta_chains.py` 生成补丁和升级链。
-5. 将当前 APK 和 `version.json` 作为 workflow artifact 交给 `coverage-pages` job。
-6. 部署至 GitHub Pages：
+5. 将 `version.json` 和固定名 `beta-latest.apk` 上传到 `beta-archive`，这是 App 使用的主通道。
+6. 将当前 APK 和 `version.json` 作为 workflow artifact 交给 `coverage-pages`，部署为 legacy Pages 回退：
 
 ```text
 https://xenoamess.github.io/vivhite-tracker/beta/version.json
@@ -140,9 +140,10 @@ Beta 的历史底包不能由 Pages 获得，所以 `.github/workflows/build_bet
 - 固定为 **prerelease**（每次运行钉住）：普通 Release 一旦被重建，创建日期变新会劫持 `releases/latest`，Stable 更新检查会解析到错误 Release。
 - 保存最近 8 个 Beta APK，文件名为 `beta-<versionCode>.apk`。
 - 保存可复用的补丁和 `beta-history.json`。
+- 保存主通道固定资产 `version.json` 和 `beta-latest.apk`。
 - 每次发布后裁剪较旧 APK 及其关联补丁。
 
-该 Release 仅作为增量更新底包和补丁的存档，用户下载最新 Beta 仍走 GitHub Pages。
+该 Release 同时承载最新 Beta 主通道和增量历史。GitHub Pages `/beta/` 只作为 legacy 回退。
 
 ## version.json 协议
 
@@ -221,7 +222,7 @@ https://api.github.com/repos/XenoAmess/vivhite-tracker/releases/latest
 
 ### Beta 检查
 
-`UpdateChecker.checkBetaChannel()` 只下载 Pages 上的 `version.json`，并使用固定的 Beta APK URL。它不依赖 GitHub Release 的“最新发布”语义。
+`UpdateChecker.checkBetaChannel()` 优先读取 `beta-archive` 的固定 `version.json` 和 `beta-latest.apk`，失败时回退 Pages 固定地址。它不依赖 GitHub Release 的“最新发布”语义。
 
 ### 决策规则
 
@@ -262,7 +263,7 @@ APK 下载网络异常时会删除未完成文件并返回失败。
 
 实测（v1.7.0→v1.8.0）：ApkDiffPatch 补丁 **0.58MB**，原 jbsdiff 为 **6.74MB**（缩小 11.6 倍，仅全量 1.5%）。
 
-发布或补丁生成失败不会阻断完整 APK 的发布；缺少补丁或链条时客户端仅下载整包。
+单个历史底包的补丁生成或验证失败只会省略对应链，客户端改下整包。发布物准备、元数据写入或 Release 资产上传失败仍会让发布 job 失败，避免把不完整通道报告为成功。
 
 ### 生成策略（Beta：ApkDiffPatch）
 
@@ -293,5 +294,5 @@ Beta 脚本 `build_beta_chains.py` 与稳定版同一套 ApkDiffPatch 管线（�
 - 不要删除或更换已发布版本的 APK 资产，否则稳定版增量链可能无法构建；客户端最终仍能通过最新完整包更新。
 - 不要随意删除或移动 `beta-archive`，否则 Beta 增量历史丢失；最新 Beta 的完整下载仍可用。
 - 变更签名密钥前必须评估已安装用户的迁移路径。Android 不允许不同签名的 APK 覆盖安装。
-- 自建更新通道依赖 GitHub Releases、GitHub API 与 GitHub Pages 可用。网络受限或服务不可用时，客户端应显示检查失败，而不是将其判为“已是最新”。
+- 自建更新通道以 GitHub Releases 为主、GitHub Pages 为 legacy 回退。网络受限或服务不可用时，客户端应显示检查失败，而不是将其判为“已是最新”。
 - 更新相关纯决策与解析应优先补充 `UpdateDeciderTest` 和 `UpdateCheckerTest`；增量链行为应覆盖 `IncrementalUpdaterTest`，必要时通过 instrumented test 验证真实 APK 安装场景。

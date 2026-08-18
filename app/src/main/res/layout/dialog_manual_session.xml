@@ -49,14 +49,47 @@
             app:iconSize="16dp" />
     </LinearLayout>
 
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchManualSessionNextDay"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="结束时间在次日"
+        android:textSize="14sp" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchManualSessionOngoing"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="仍在进行中（不填写结束时间）"
+        android:textSize="14sp" />
+
     <EditText
         android:id="@+id/etManualSessionTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:hint="标题（可选，如：闲聊杂谈）"
+        android:importantForAutofill="no"
         android:inputType="text"
         android:maxLines="1"
         android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/tvManualSessionError"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="6dp"
+        android:textColor="@android:color/holo_red_dark"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnManualSessionPopularity"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="8dp"
+        android:text="查看本场人气曲线"
+        android:visibility="gone" />
 
 </LinearLayout>

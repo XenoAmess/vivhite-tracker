@@ -114,6 +114,51 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/cvStatus" />
 
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardReadiness"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/purple_500"
+            app:strokeWidth="1dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/tvLastCheck">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:id="@+id/tvReadinessSummary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="监控准备：正在检查"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnReadiness"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:text="查看"
+                    android:textColor="@color/purple_500" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- 打开直播间 | 打开空间：同一行各占 1/2 宽度 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenLive"
@@ -129,7 +174,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toStartOf="@id/btnOpenSpace"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvLastCheck" />
+            app:layout_constraintTop_toBottomOf="@id/cardReadiness" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnOpenSpace"
@@ -145,7 +190,7 @@
             app:icon="@android:drawable/ic_menu_view"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/btnOpenLive"
-            app:layout_constraintTop_toBottomOf="@id/tvLastCheck" />
+            app:layout_constraintTop_toBottomOf="@id/cardReadiness" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnToggle"
@@ -302,7 +347,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:gravity="center"
-            android:text="• 每分钟检查直播状态 • 开播响铃+震动+屏幕提醒\n• 后台运行需关闭电池优化 • 通知栏显示直播状态"
+            android:text="• 按配置频率检查直播状态 • 开播响铃+震动+屏幕提醒\n• 电池优化/OEM 等后台准备需确认 • 通知栏显示直播状态"
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="13sp"
             app:layout_constraintEnd_toEndOf="parent"

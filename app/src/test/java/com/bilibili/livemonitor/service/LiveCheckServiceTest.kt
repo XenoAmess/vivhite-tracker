@@ -18,6 +18,8 @@ import com.bilibili.livemonitor.util.AlertSoundProvider
 import com.bilibili.livemonitor.util.FakeExoPlayer
 import com.bilibili.livemonitor.util.PreferenceManager
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,6 +34,9 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.Shadows.shadowOf
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * LiveCheckService 生命周期与检测编排（P0+P1）。
@@ -102,6 +107,42 @@ class LiveCheckServiceTest {
     }
 
     // ---------- P0: 三条设计约束 ----------
+
+    @Test
+    fun `同会话stale恢复会屏蔽不响应取消的旧检测结果`() {
+        prefs.setServiceRunning(true)
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val calls = AtomicInteger()
+        val stubbornApi = object : LiveStatusChecker {
+            override suspend fun checkLiveStatus(roomId: Long): BilibiliApi.LiveStatus {
+                return if (calls.incrementAndGet() == 1) {
+                    withContext(NonCancellable) {
+                        started.countDown()
+                        release.await(5, TimeUnit.SECONDS)
+                        BilibiliApi.LiveStatus.Live("1700000000", "旧请求")
+                    }
+                } else {
+                    BilibiliApi.LiveStatus.NotLive
+                }
+            }
+        }
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get().apply { api = stubbornApi }
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        controller.startCommand(0, 1)
+        assertTrue(started.await(5, TimeUnit.SECONDS))
+        controller.withIntent(
+            Intent(context, LiveCheckService::class.java)
+                .setAction(LiveCheckService.ACTION_RECOVER_STALE)
+        ).startCommand(0, 2)
+        release.countDown()
+
+        waitFor("fresh recovery result") { calls.get() >= 2 && !service.isChecking.get() }
+        assertFalse(prefs.isLastCheckLive())
+        assertNull(shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT))
+    }
 
     @Test
     fun `S1 prefs为false时启动 服务立即自毁不检测`() {
@@ -211,6 +252,7 @@ class LiveCheckServiceTest {
         controller.startCommand(0, 1)
 
         controller.get().onTaskRemoved(Intent())
+        controller.get().onTaskRemoved(Intent())
 
         val oneTime = WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork("live_check_one_time").get()
@@ -218,6 +260,7 @@ class LiveCheckServiceTest {
             "应排一次性兜底任务",
             oneTime.any { it.state == WorkInfo.State.ENQUEUED }
         )
+        assertEquals("KEEP 应避免重复一次性任务", 1, oneTime.size)
     }
 
     // ---------- P1: 检测编排 ----------
@@ -344,6 +387,7 @@ class LiveCheckServiceTest {
 
         fakeApi.enqueue(
             BilibiliApi.LiveStatus.NotLive,
+            BilibiliApi.LiveStatus.Live(liveStartTime = startTs, title = "旧标题"),
             BilibiliApi.LiveStatus.Live(liveStartTime = startTs, title = "新标题")
         )
         val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
@@ -351,7 +395,9 @@ class LiveCheckServiceTest {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         controller.startCommand(0, 1) // NotLive
         waitFor("check1 done") { fakeApi.callCount >= 1 && !service.isChecking.get() }
-        controller.startCommand(0, 2) // Live 新标题
+        controller.startCommand(0, 2) // Live 旧标题，建立本场基线
+        waitFor("check2 done") { fakeApi.callCount >= 2 && !service.isChecking.get() }
+        controller.startCommand(0, 3) // 同场标题变化
         waitFor("title change notif", 20_000) {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_TITLE_CHANGE) != null
         }
@@ -463,6 +509,73 @@ class LiveCheckServiceTest {
             shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT)
         )
         assertNull(shadowOf(context).nextStartedActivity)
+    }
+
+    @Test
+    fun `S10a Live A到Live B 明确换场会提醒并记录新场`() {
+        val oldStart = "1700000000"
+        val newStart = " 1700003600 "
+        prefs.setServiceRunning(true)
+        prefs.setLastCheck(System.currentTimeMillis() - 60_000, isLive = true, success = true)
+        prefs.setLastLiveStartTime(oldStart)
+        fakeApi.enqueue(BilibiliApi.LiveStatus.Live(newStart, "新一场"))
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        controller.startCommand(0, 1)
+
+        waitFor("new session alert") {
+            shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT) != null &&
+                !service.isChecking.get()
+        }
+        assertEquals("场次标识应归一后落盘", "1700003600", prefs.getLastLiveStartTime())
+        waitFor("new session recorded") {
+            runBlocking {
+                com.bilibili.livemonitor.db.AppDatabase.get(context)
+                    .streamSessionDao().findOpenSession()?.startTs == 1_700_003_600_000L
+            }
+        }
+        val open = runBlocking {
+            com.bilibili.livemonitor.db.AppDatabase.get(context).streamSessionDao().findOpenSession()
+        }
+        assertNotNull("持续 Live 换场也必须记录新场", open)
+        assertEquals(1_700_003_600_000L, open?.startTs)
+    }
+
+    @Test
+    fun `S10b STOP取消在途检查 非协作旧结果不得提交或提醒`() {
+        val generation = prefs.beginMonitoringSession()
+        val started = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val blockingApi = object : LiveStatusChecker {
+            override suspend fun checkLiveStatus(roomId: Long): BilibiliApi.LiveStatus {
+                started.countDown()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    release.await()
+                }
+                return BilibiliApi.LiveStatus.Live("1700003600", "stale")
+            }
+        }
+        val controller = buildService(Intent(context, LiveCheckService::class.java)).create()
+        val service = controller.get()
+        service.api = blockingApi
+        controller.withIntent(Intent(context, LiveCheckService::class.java).apply {
+            putExtra(LiveCheckService.EXTRA_MONITORING_GENERATION, generation)
+        }).startCommand(0, 1)
+        assertTrue("检查应已进入 API", started.await(5, java.util.concurrent.TimeUnit.SECONDS))
+
+        controller.withIntent(Intent(LiveCheckService.ACTION_STOP_SERVICE).apply {
+            putExtra(LiveCheckService.EXTRA_MONITORING_GENERATION, generation)
+        }).startCommand(0, 2)
+        release.countDown()
+        waitFor("cancelled check exits") { !service.isChecking.get() }
+
+        assertFalse(prefs.isServiceRunning())
+        assertEquals("旧结果不得写检测状态", 0L, prefs.getLastCheckTime())
+        assertTrue("旧结果不得写健康记录", prefs.getCheckRecords().isEmpty())
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        assertNull(shadowOf(nm).getNotification(LiveMonitorApp.NOTIFICATION_ID_ALERT))
     }
 
     @Test

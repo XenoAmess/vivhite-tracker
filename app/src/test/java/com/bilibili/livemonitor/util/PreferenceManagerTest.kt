@@ -39,6 +39,17 @@ class PreferenceManagerTest {
     }
 
     @Test
+    fun `monitoring heartbeat 存取并绑定会话`() {
+        val generation = prefs.beginMonitoringSession()
+        assertEquals(0L, prefs.getMonitoringHeartbeatTime())
+        assertEquals(generation, prefs.getMonitoringHeartbeatGeneration())
+
+        prefs.setMonitoringHeartbeat(123_456L, generation)
+        assertEquals(123_456L, prefs.getMonitoringHeartbeatTime())
+        assertEquals(generation, prefs.getMonitoringHeartbeatGeneration())
+    }
+
+    @Test
     fun `lastLiveStartTime 存取 round trip`() {
         assertEquals("", prefs.getLastLiveStartTime())
         prefs.setLastLiveStartTime("2026-08-02 12:00:00")
@@ -109,6 +120,18 @@ class PreferenceManagerTest {
         assertEquals(123456L, prefs.getLastUpdateCheckTime())
         prefs.setDismissedVersionCode(92)
         assertEquals(92, prefs.getDismissedVersionCode())
+    }
+
+    @Test
+    fun `部分备份只含自动备份开关时不清空现有目录`() {
+        prefs.setBackupTreeUri("content://backup/tree")
+        prefs.setAutoBackupEnabled(true)
+
+        val result = prefs.importSnapshot("""{"auto_backup_enabled":false}""")
+
+        assertTrue(result.imported)
+        assertEquals("content://backup/tree", prefs.getBackupTreeUri())
+        assertFalse(prefs.isAutoBackupEnabled())
     }
 
     @Test
@@ -257,5 +280,36 @@ class PreferenceManagerTest {
         assertEquals(1000L, records[0].ts)
         // 超限后丢最旧（cap 500，这里直接验证追加语义即可，cap 值不测满）
         records.forEachIndexed { i, r -> assertEquals(1000L + i, r.ts) }
+    }
+
+    @Test
+    fun `备份快照恢复魔法期并报告结果`() {
+        prefs.setMagicPeriodsJson("[]")
+        val magic = """[{"start":1000,"end":2000}]"""
+        val result = prefs.importSnapshot(
+            org.json.JSONObject().put("magic_periods", magic).put("quiet_enabled", true).toString()
+        )
+        assertTrue(result.imported)
+        assertTrue(result.magicPeriodsImported)
+        assertEquals(magic, prefs.getMagicPeriodsJson())
+        assertTrue(prefs.isQuietHoursEnabled())
+        prefs.setMagicPeriodsJson("[]")
+    }
+
+    @Test
+    fun `无效快照不会部分覆盖已有设置`() {
+        prefs.setMagicPeriodsJson("[]")
+        prefs.setQuietHoursEnabled(false)
+        val result = prefs.importSnapshot(
+            org.json.JSONObject()
+                .put("magic_periods", """[{"start":1000,"end":2000}]""")
+                .put("quiet_enabled", true)
+                .put("quiet_start", 2_000)
+                .toString()
+        )
+
+        assertFalse(result.imported)
+        assertEquals("[]", prefs.getMagicPeriodsJson())
+        assertFalse(prefs.isQuietHoursEnabled())
     }
 }

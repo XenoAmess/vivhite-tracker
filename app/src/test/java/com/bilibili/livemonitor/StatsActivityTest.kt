@@ -26,6 +26,9 @@ class StatsActivityTest {
     fun setUp() {
         // 每个用例清空场次与心情事件（Robolectric 同一测试类共享 filesDir/DB）
         runBlocking {
+            AppDatabase.get(context).streamSessionDao().deleteAllTitleChanges()
+            AppDatabase.get(context).streamSessionDao().deleteAllPopularityPoints()
+            AppDatabase.get(context).streamSessionDao().deleteAllFollowerSnapshots()
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
         }
@@ -37,6 +40,17 @@ class StatsActivityTest {
             if (System.currentTimeMillis() > deadline) throw AssertionError("timeout: $what")
             shadowOf(android.os.Looper.getMainLooper()).idle()
             Thread.sleep(50)
+        }
+    }
+
+    private fun pngBytes(): ByteArray {
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            8, 8, android.graphics.Bitmap.Config.ARGB_8888
+        )
+        return java.io.ByteArrayOutputStream().use { output ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
+            bitmap.recycle()
+            output.toByteArray()
         }
     }
 
@@ -343,8 +357,13 @@ class StatsActivityTest {
         }
         val rv = activity.findViewById<RecyclerView>(R.id.rvSessions)
         rv.findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+        val editDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        editDialog.findViewById<android.view.View>(R.id.btnManualSessionPopularity)!!.performClick()
         waitFor("popularity dialog") {
-            org.robolectric.shadows.ShadowDialog.getLatestDialog() != null
+            org.robolectric.shadows.ShadowDialog.getLatestDialog()?.findViewById<android.view.View>(
+                R.id.popularityChart
+            ) != null
         }
         val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
         assertNotNull(dialog.findViewById(R.id.popularityChart))
@@ -442,9 +461,11 @@ class StatsActivityTest {
         }
         val result = activity.importCsvText(csv)
         assertEquals(1, result.sessionsAdded)
+        assertEquals(0, result.sessionsMerged)
         assertEquals(1, result.sessionsSkipped)
         assertEquals(1, result.moodsAdded)
-        assertEquals(1, result.moodsSkipped)
+        assertEquals(1, result.moodsMerged)
+        assertEquals(0, result.moodsSkipped)
         assertEquals(1, result.badLines)
 
         // DB 终态：2 场次 + 2 心情；心情 display 已反查为 key
@@ -452,6 +473,20 @@ class StatsActivityTest {
         val allMoods = mdao.all()
         assertEquals(2, allMoods.size)
         assertTrue(allMoods.any { it.mood == "sad" && it.note == "备注" })
+    }
+
+    @Test
+    fun `导入CSV 不会制造第二个开放场次`() = runBlocking {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        val currentId = dao.insertSession(StreamSessionEntity(startTs = 2000, title = "当前场"))
+        val csv = com.bilibili.livemonitor.domain.SessionBackup.HEADER + "\n" +
+            "场次,1970-01-01 00:00,,0,旧开放场,,,,\n"
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+
+        activity.importCsvText(csv)
+
+        assertEquals(1, dao.allSessions().count { it.endTs == null })
+        assertEquals(currentId, dao.findOpenSession()!!.id)
     }
 
     @Test
@@ -605,6 +640,93 @@ class StatsActivityTest {
     }
 
     @Test
+    fun `手动场次跨午夜开关明确保存到次日`() = runBlocking {
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("calendar rendered") {
+            activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid).childCount > 7
+        }
+        activity.findViewById<android.view.View>(R.id.btnAddManualSession).performClick()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        val nextDay = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
+            R.id.switchManualSessionNextDay
+        )!!
+        nextDay.isChecked = true
+        assertTrue(dialog.findViewById<TextView>(R.id.btnManualSessionEnd)!!.text.startsWith("次日结束"))
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+
+        waitFor("cross-midnight session saved") {
+            runBlocking { AppDatabase.get(context).streamSessionDao().allSessions().size == 1 }
+        }
+        val saved = AppDatabase.get(context).streamSessionDao().allSessions().single()
+        assertTrue(saved.endTs!! - saved.startTs > 24 * 60 * 60_000L / 2)
+    }
+
+    @Test
+    fun `场次编辑弹窗可修改并级联删除`() = runBlocking {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        val start = todayStart() + 20 * 3_600_000L
+        val id = dao.insertSession(StreamSessionEntity(startTs = start, endTs = start + 3_600_000, title = "原标题"))
+        dao.insertTitleChange(
+            com.bilibili.livemonitor.db.StreamTitleChangeEntity(
+                sessionId = id, changedAt = start + 1_000, newTitle = "变化"
+            )
+        )
+        dao.insertPopularityPoint(
+            com.bilibili.livemonitor.db.PopularityPointEntity(id = 0, sessionId = id, ts = start + 1_000, online = 10)
+        )
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        waitFor("session list") {
+            activity.findViewById<RecyclerView>(R.id.rvSessions).adapter!!.itemCount == 1
+        }
+        activity.findViewById<RecyclerView>(R.id.rvSessions)
+            .findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+        var dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        dialog.findViewById<android.widget.EditText>(R.id.etManualSessionTitle)!!.setText("新标题")
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        waitFor("session edited") {
+            runBlocking { dao.allSessions().singleOrNull()?.title == "新标题" }
+        }
+
+        activity.findViewById<RecyclerView>(R.id.rvSessions)
+            .findViewHolderForAdapterPosition(0)!!.itemView.performClick()
+        dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        val confirm = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        confirm.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        waitFor("session deleted") { runBlocking { dao.allSessions().isEmpty() } }
+        assertTrue(dao.titleChanges(id).isEmpty())
+        assertTrue(dao.popularityPoints(id).isEmpty())
+    }
+
+    @Test
+    fun `翻月与选中日经 recreation 保持`() = runBlocking {
+        val target = java.util.Calendar.getInstance().apply {
+            add(java.util.Calendar.MONTH, -1)
+            set(java.util.Calendar.DAY_OF_MONTH, 7)
+            set(java.util.Calendar.HOUR_OF_DAY, 12)
+        }
+        AppDatabase.get(context).streamSessionDao().insertSession(
+            StreamSessionEntity(startTs = target.timeInMillis, endTs = target.timeInMillis + 3_600_000)
+        )
+        val controller = Robolectric.buildActivity(StatsActivity::class.java).setup()
+        val activity = controller.get()
+        waitFor("calendar") { activity.findViewById<android.widget.GridLayout>(R.id.calendarGrid).childCount > 7 }
+        activity.findViewById<android.view.View>(R.id.btnPrevMonth).performClick()
+        waitFor("target month") {
+            activity.findViewById<TextView>(R.id.tvSelectedDayHint).text.contains("7日")
+        }
+
+        controller.recreate()
+        val recreated = controller.get()
+        waitFor("restored month") {
+            recreated.findViewById<TextView>(R.id.tvSelectedDayHint).text.contains("7日")
+        }
+        assertTrue(recreated.findViewById<TextView>(R.id.tvMonthTitle).text.contains("${target.get(java.util.Calendar.MONTH) + 1}月"))
+    }
+
+    @Test
     fun `编辑对话框有日期按钮且显示事件日`() = runBlocking {
         val dao = AppDatabase.get(context).moodEventDao()
         dao.insert(
@@ -671,7 +793,7 @@ class StatsActivityTest {
     fun `导入ZIP 全量恢复 含主题变化人气粉丝封面`() = runBlocking {
         val sdao = AppDatabase.get(context).streamSessionDao()
         val mdao = AppDatabase.get(context).moodEventDao()
-        val coverBytes = ByteArray(256) { (it % 251).toByte() }
+        val coverBytes = pngBytes()
         val data = com.bilibili.livemonitor.domain.FullBackup.Data(
             sessions = listOf(
                 StreamSessionEntity(
@@ -722,5 +844,66 @@ class StatsActivityTest {
         assertTrue(restored.exists() && restored.readBytes().contentEquals(coverBytes))
         restored.delete()
         Unit
+    }
+
+    @Test
+    fun `导入ZIP 重复记录补全缺失详情并返回结构报告`() = runBlocking {
+        val sdao = AppDatabase.get(context).streamSessionDao()
+        val mdao = AppDatabase.get(context).moodEventDao()
+        val start = 1_700_100_000_000L
+        val end = start + 3_600_000L
+        sdao.insertSession(StreamSessionEntity(startTs = start, endTs = end))
+        mdao.insert(
+            com.bilibili.livemonitor.db.MoodEventEntity(
+                eventTs = start + 1_000, durationMin = 0, mood = "happy",
+                title = "重复心情", createdAt = 0
+            )
+        )
+        val cover = "merge-cover.jpg"
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        val report = activity.doImportZip(
+            com.bilibili.livemonitor.domain.FullBackup.Data(
+                sessions = listOf(
+                    StreamSessionEntity(startTs = start, endTs = end, title = "补全标题", coverPath = cover)
+                ),
+                moods = listOf(
+                    com.bilibili.livemonitor.db.MoodEventEntity(
+                        eventTs = start + 1_000, durationMin = 45, mood = "happy",
+                        title = "重复心情", reason = "补全原因", note = "补全备注", createdAt = 1234
+                    )
+                ),
+                titleChanges = emptyList(), popularity = emptyList(), followers = emptyList(),
+                prefsJson = null, covers = mapOf(cover to pngBytes())
+            )
+        )
+
+        assertEquals(1, report.sessions.merged)
+        assertEquals(1, report.moods.merged)
+        val session = sdao.findByStartEnd(start, end)!!
+        assertEquals("补全标题", session.title)
+        assertTrue(session.coverPath!!.endsWith(cover))
+        val mood = mdao.findByKey(start + 1_000, "happy", "重复心情")!!
+        assertEquals(45, mood.durationMin)
+        assertEquals("补全原因", mood.reason)
+        assertEquals("补全备注", mood.note)
+        assertEquals(1234L, mood.createdAt)
+        java.io.File(context.filesDir, "covers/$cover").delete()
+        Unit
+    }
+
+    @Test
+    fun `导入ZIP 中途校验失败回滚全部数据库写入`() = runBlocking {
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        val data = com.bilibili.livemonitor.domain.FullBackup.Data(
+            sessions = listOf(
+                StreamSessionEntity(startTs = 10, endTs = 20, title = "应回滚"),
+                StreamSessionEntity(startTs = 30, endTs = 29, title = "坏数据")
+            ),
+            moods = emptyList(), titleChanges = emptyList(), popularity = emptyList(),
+            followers = emptyList(), prefsJson = null
+        )
+        val error = runCatching { activity.doImportZip(data) }.exceptionOrNull()
+        assertTrue(error is IllegalArgumentException)
+        assertTrue(AppDatabase.get(context).streamSessionDao().allSessions().isEmpty())
     }
 }

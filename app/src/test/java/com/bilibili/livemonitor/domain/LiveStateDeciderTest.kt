@@ -42,6 +42,26 @@ class LiveStateDeciderTest {
         assertFalse(LiveStateDecider.shouldAlert(lastStatus = true, isLive = true))
     }
 
+    @Test
+    fun `持续在播但明确换场 应提醒`() {
+        assertTrue(
+            LiveStateDecider.shouldAlert(
+                lastStatus = true,
+                isLive = true,
+                isNewSession = true
+            )
+        )
+    }
+
+    @Test
+    fun `场次标识归一后不同才算新场`() {
+        assertFalse(LiveStateDecider.isNewLiveSession(true, " 100 ", "100"))
+        assertTrue(LiveStateDecider.isNewLiveSession(true, " 100 ", " 200 "))
+        assertFalse(LiveStateDecider.isNewLiveSession(true, "100", null))
+        assertFalse(LiveStateDecider.isNewLiveSession(true, "100", "   "))
+        assertFalse(LiveStateDecider.isNewLiveSession(false, "100", "200"))
+    }
+
     // ---------- 观播静音 ----------
 
     @Test
@@ -173,5 +193,13 @@ class LiveStateDeciderTest {
     @Test
     fun `确定的未开播结果 不重试`() {
         assertFalse(LiveStateDecider.shouldRetry(BilibiliApi.LiveStatus.NotLive))
+    }
+
+    @Test
+    fun `心跳必须属于当前会话且未过期`() {
+        assertFalse(LiveStateDecider.isHeartbeatStale(1_000, 7, 7, 1_500, 500))
+        assertTrue(LiveStateDecider.isHeartbeatStale(1_000, 7, 7, 1_501, 500))
+        assertTrue(LiveStateDecider.isHeartbeatStale(1_000, 6, 7, 1_100, 500))
+        assertTrue(LiveStateDecider.isHeartbeatStale(0, 7, 7, 1_100, 500))
     }
 }

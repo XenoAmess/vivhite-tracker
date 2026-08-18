@@ -29,6 +29,14 @@ class WeekdayHourHeatmapView @JvmOverloads constructor(
     fun setData(heat: Array<IntArray>) {
         require(heat.size == 7 && heat.all { it.size == 4 })
         this.heat = heat
+        val busiest = heat.indices.flatMap { row ->
+            heat[row].indices.map { col -> Triple(row, col, heat[row][col]) }
+        }.maxByOrNull { it.third }
+        contentDescription = if (busiest == null || busiest.third == 0) {
+            "开播时段分布图：暂无记录"
+        } else {
+            "开播时段分布图：最常在周${WEEK_LABELS[busiest.first]} ${SLOT_LABELS[busiest.second]}时开播，共${busiest.third}场"
+        }
         invalidate()
     }
 

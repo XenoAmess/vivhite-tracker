@@ -40,9 +40,11 @@ class LiveCheckService : Service() {
     // @Volatile：主线程写（房间变更/onStartCommand）、IO 协程读（检测），跨线程可见
     @Volatile private var roomId: Long = DEFAULT_ROOM_ID
     @Volatile private var lastStatus: Boolean? = null
-    private var monitoringGeneration: Long = 0L
+    @Volatile private var monitoringGeneration: Long = 0L
     private var stopRequestedByUser = false
     private var stopRequestedGeneration: Long = NO_MONITORING_GENERATION
+    private var activeCheckJob: Job? = null
+    private val checkEpoch = java.util.concurrent.atomic.AtomicLong(0L)
 
     // 用于保护检测的轻量级WakeLock
     private lateinit var checkWakeLock: PowerManager.WakeLock
@@ -131,6 +133,7 @@ class LiveCheckService : Service() {
         }
 
         isRunning = true
+        preferenceManager.setMonitoringHeartbeat(System.currentTimeMillis(), monitoringGeneration)
 
         // 确保WorkManager兜底任务已注册
         LiveCheckWorker.schedulePeriodic(this)
@@ -154,7 +157,10 @@ class LiveCheckService : Service() {
             }
             stopRequestedByUser = true
             stopRequestedGeneration = requestedGeneration
+            checkEpoch.incrementAndGet()
+            activeCheckJob?.cancel()
             preferenceManager.setServiceRunning(false)
+            activeCheckJob?.cancel()
             preferenceManager.setAlertSuppressed(false)
             LiveCheckWorker.cancelAll(this)
             cancelScheduledChecks(this)
@@ -200,6 +206,7 @@ class LiveCheckService : Service() {
         }
         if (monitoringGeneration != currentGeneration) {
             AppLogger.d(TAG, "adopting current monitoring generation $currentGeneration")
+            activeCheckJob?.cancel()
             monitoringGeneration = currentGeneration
             stopRequestedByUser = false
             stopRequestedGeneration = NO_MONITORING_GENERATION
@@ -217,19 +224,30 @@ class LiveCheckService : Service() {
             return START_STICKY
         }
 
+        if (intent?.action == ACTION_TEST_ALERT) {
+            AppLogger.d(TAG, "sending user-requested test alert")
+            playAlertSound()
+            vibrate()
+            notificationBuilder.sendAlert()
+            return START_STICKY
+        }
+
         // 活动流检测（独立 5min Alarm 触发）：视频、动态、置顶共用同一风险敏感端点，
         // 必须一起降频，不能让视频/置顶开关把动态接口重新拉回每分钟。
         if (intent?.action == ACTION_CHECK_DYNAMICS) {
+            val generation = monitoringGeneration
             serviceScope.launch {
                 try {
-                    checkNewDynamics()
+                    checkNewDynamics(generation)
                 } catch (e: Exception) {
                     AppLogger.e(TAG, "checkNewDynamics error", e)
                 }
-                scheduleNextDynamicAlarm()
+                if (isCurrentGeneration(generation)) scheduleNextDynamicAlarm()
             }
             return START_STICKY
         }
+
+        val recoveringStaleCheck = intent?.action == ACTION_RECOVER_STALE
 
         val newRoomId = intent?.getLongExtra(EXTRA_ROOM_ID, DEFAULT_ROOM_ID) ?: DEFAULT_ROOM_ID
 
@@ -243,53 +261,75 @@ class LiveCheckService : Service() {
         updateNotification(lastLiveStatus)
 
         // 执行检查（由AlarmManager触发或用户启动触发）
-        serviceScope.launch {
-            val started = isChecking.compareAndSet(false, true)
-            if (started) {
-                try {
-                    checkLiveStatusWithRetry()
-                } catch (e: Exception) {
-                    AppLogger.e(TAG, "checkLiveStatus error", e)
-                } finally {
-                    isChecking.set(false)
-                }
-                // 检查已启动：设置下一次Alarm（作为保底，AlarmReceiver也会设置）
-                scheduleNextCheckAlarm()
-            } else {
-                // 在检中跳过：不重排 60s Alarm（AlarmReceiver 已排好下一次），
-                // 否则慢检查期间每次到达的 Alarm 都把周期往后推，造成节奏漂移。
-                AppLogger.d(TAG, "check already in progress, skip")
-            }
-            // 动态流独立 5min Alarm：常规 60s 检查只确保它存在，不能每分钟重置
-            // 触发时间，否则 Alarm 永远到不了真正的动态检查。
-            ensureDynamicAlarmScheduled()
-        }
+        launchLiveCheck(monitoringGeneration, recoveringStaleCheck)
 
         return START_STICKY
     }
 
-    private suspend fun checkLiveStatusWithRetry() {
+    private fun launchLiveCheck(generation: Long, recoverStale: Boolean) {
+        val previous = activeCheckJob
+        if (previous?.isActive == true && !recoverStale) {
+            AppLogger.d(TAG, "check already in progress, skip")
+            return
+        }
+        val epoch = checkEpoch.incrementAndGet()
+        if (recoverStale) previous?.cancel()
+        activeCheckJob = serviceScope.launch {
+            if (recoverStale) previous?.join()
+            if (!isCurrentCheck(generation, epoch)) return@launch
+            if (!isChecking.compareAndSet(false, true)) return@launch
+            try {
+                checkLiveStatusWithRetry(generation, epoch)
+            } catch (_: CancellationException) {
+                AppLogger.d(TAG, "live check cancelled for generation $generation")
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "checkLiveStatus error", e)
+            } finally {
+                isChecking.set(false)
+            }
+            if (!isCurrentCheck(generation, epoch)) return@launch
+            preferenceManager.setMonitoringHeartbeat(System.currentTimeMillis(), generation)
+            scheduleNextCheckAlarm(generation)
+            ensureDynamicAlarmScheduled()
+        }
+    }
+
+    private fun isCurrentGeneration(generation: Long): Boolean =
+        preferenceManager.isServiceRunning() &&
+            generation == monitoringGeneration &&
+            generation == preferenceManager.getMonitoringGeneration()
+
+    private fun isCurrentCheck(generation: Long, epoch: Long): Boolean =
+        isCurrentGeneration(generation) && checkEpoch.get() == epoch
+
+    private suspend fun checkLiveStatusWithRetry(generation: Long, epoch: Long) {
         // 单把锁覆盖 首次检测 + 重试间隔 + 重试 全程，防止 Doze 在间隔期休眠把重试推迟
         if (!checkWakeLock.isHeld) {
             checkWakeLock.acquire(CHECK_WAKE_LOCK_TIMEOUT)
         }
         try {
-            val result = checkLiveStatusOnce()
-            if (LiveStateDecider.shouldRetry(result)) {
+            var finalResult = checkLiveStatusOnce(generation, epoch)
+            if (LiveStateDecider.shouldRetry(finalResult)) {
                 // shouldRetry 保证 result 是 Error，但用 when 而非强转，避免逻辑变更时 ClassCastException
-                val reason = when (result) {
-                    is BilibiliApi.LiveStatus.Error -> result.reason
+                val reason = when (finalResult) {
+                    is BilibiliApi.LiveStatus.Error -> finalResult.reason
                     else -> "unknown"
                 }
                 AppLogger.w(TAG, "first check failed: $reason, retry in ${ERROR_RETRY_DELAY / 1000}s")
                 delay(ERROR_RETRY_DELAY)
-                val retryResult = checkLiveStatusOnce()
-                if (retryResult is BilibiliApi.LiveStatus.Error) {
-                    AppLogger.e(TAG, "retry also failed: ${retryResult.reason}")
+                if (!isCurrentCheck(generation, epoch)) return
+                finalResult = checkLiveStatusOnce(generation, epoch)
+                if (finalResult is BilibiliApi.LiveStatus.Error && isCurrentCheck(generation, epoch)) {
+                    AppLogger.e(TAG, "retry also failed: ${finalResult.reason}")
                     // 两次都失败，记录但不更新状态，等待下一个周期
                     preferenceManager.setLastCheck(System.currentTimeMillis(), lastLiveStatus, false)
+                    runSideEffect(generation, "refresh failed status", epoch) {
+                        updateNotification(lastLiveStatus)
+                        com.bilibili.livemonitor.widget.LiveStatusWidgetProvider.updateAll(this)
+                    }
                 }
             }
+            recordCheckOutcome(generation, epoch, finalResult)
         } finally {
             if (checkWakeLock.isHeld) {
                 checkWakeLock.release()
@@ -297,7 +337,7 @@ class LiveCheckService : Service() {
         }
     }
 
-    private suspend fun checkLiveStatusOnce(): BilibiliApi.LiveStatus {
+    private suspend fun checkLiveStatusOnce(generation: Long, epoch: Long): BilibiliApi.LiveStatus {
         AppLogger.d(TAG, "checkLiveStatus roomId=$roomId")
         // WakeLock 由 checkLiveStatusWithRetry 统一持有（覆盖 检测+重试 全程），这里不再单独加锁
         // 添加超时保护，确保检测不会挂起太久
@@ -307,29 +347,26 @@ class LiveCheckService : Service() {
 
         AppLogger.d(TAG, "checkLiveStatus result=$status lastStatus=$lastStatus")
 
-        // 监控健康度：每次检测写环形记录（近 24h 自查页数据源）
-        when (status) {
-            is BilibiliApi.LiveStatus.Live -> preferenceManager.appendCheckRecord(
-                System.currentTimeMillis(), true, true, ""
-            )
-            is BilibiliApi.LiveStatus.NotLive -> preferenceManager.appendCheckRecord(
-                System.currentTimeMillis(), true, false, ""
-            )
-            is BilibiliApi.LiveStatus.Error -> preferenceManager.appendCheckRecord(
-                System.currentTimeMillis(), false, lastLiveStatus, status.reason.take(40)
-            )
-        }
+        if (!isCurrentCheck(generation, epoch)) return status
 
         when (status) {
             is BilibiliApi.LiveStatus.Live -> {
-                handleResult(true, status.liveStartTime, status.title)
-                streamSessionTracker.recordPopularity(status.online)
-                streamSessionTracker.collectStreamCover(roomId)
-                streamSessionTracker.maybeSnapshotFollower()
+                handleResult(generation, epoch, true, status.liveStartTime, status.title)
+                runSideEffect(generation, "record popularity", epoch) {
+                    streamSessionTracker.recordPopularity(status.online)
+                }
+                runSideEffect(generation, "collect stream cover", epoch) {
+                    streamSessionTracker.collectStreamCover(roomId)
+                }
+                runSideEffect(generation, "snapshot follower", epoch) {
+                    streamSessionTracker.maybeSnapshotFollower()
+                }
             }
             is BilibiliApi.LiveStatus.NotLive -> {
-                handleResult(false)
-                streamSessionTracker.maybeSnapshotFollower()
+                handleResult(generation, epoch, false)
+                runSideEffect(generation, "snapshot follower", epoch) {
+                    streamSessionTracker.maybeSnapshotFollower()
+                }
             }
             is BilibiliApi.LiveStatus.Error -> {
                 // 错误不更新状态，由调用方决定是否重试
@@ -338,77 +375,125 @@ class LiveCheckService : Service() {
         return status
     }
 
-    private fun handleResult(isLive: Boolean, liveStartTime: String? = null, liveTitle: String? = null) {
-        // 记录本场直播的 live_start_time（供置静音时绑定参照）
-        if (isLive && liveStartTime != null) {
-            preferenceManager.setLastLiveStartTime(liveStartTime)
+    private fun recordCheckOutcome(
+        generation: Long,
+        epoch: Long,
+        status: BilibiliApi.LiveStatus
+    ) {
+        runSideEffect(generation, "append health record", epoch) {
+            when (status) {
+                is BilibiliApi.LiveStatus.Live -> preferenceManager.appendCheckRecord(
+                    System.currentTimeMillis(), true, true, ""
+                )
+                is BilibiliApi.LiveStatus.NotLive -> preferenceManager.appendCheckRecord(
+                    System.currentTimeMillis(), true, false, ""
+                )
+                is BilibiliApi.LiveStatus.Error -> preferenceManager.appendCheckRecord(
+                    System.currentTimeMillis(), false, lastLiveStatus, status.reason.take(40)
+                )
+            }
         }
-        // 每次确认在播都刷新"存活证据"时间戳（进程死亡后 reconcile 残留场次的闭合上限）
-        if (isLive) {
-            preferenceManager.setLastLiveObservedTime(System.currentTimeMillis())
-        }
+    }
 
-        // 观播静音解除判定：下播即解除；检测到新一场直播（live_start_time 与
-        // 置静音时绑定的不一致）也解除——修复"置静音后服务在下播窗口期被杀，
-        // 标记卡死导致之后所有开播都不响铃"的真机 bug
+    private fun handleResult(
+        generation: Long,
+        epoch: Long,
+        isLive: Boolean,
+        liveStartTime: String? = null,
+        liveTitle: String? = null
+    ) {
+        if (!isCurrentCheck(generation, epoch)) return
+        val now = System.currentTimeMillis()
+        val normalizedStart = LiveStateDecider.normalizeLiveStartTime(liveStartTime)
+        val previousStart = preferenceManager.getLastLiveStartTime()
+        val wasLive = lastStatus == true
+        val isNewSession = isLive && LiveStateDecider.isNewLiveSession(
+            lastStatus,
+            previousStart,
+            normalizedStart
+        )
+
         var suppressed = preferenceManager.isAlertSuppressed()
         if (suppressed) {
-            val bound = preferenceManager.getSuppressedLiveStart()
-            val isNewSession = isLive &&
-                bound.isNotBlank() &&
-                liveStartTime != null &&
-                liveStartTime != bound
-            if (LiveStateDecider.shouldClearSuppression(isLive, isNewSession)) {
-                val reason = if (!isLive) "notlive" else "new-session"
-                AppLogger.d(TAG, "watch-live mute cleared: reason=$reason bound=$bound current=$liveStartTime")
+            val bound = LiveStateDecider.normalizeLiveStartTime(
+                preferenceManager.getSuppressedLiveStart()
+            )
+            val suppressionIsForOldSession = isLive && bound != null &&
+                normalizedStart != null && normalizedStart != bound
+            if (LiveStateDecider.shouldClearSuppression(isLive, suppressionIsForOldSession)) {
+                AppLogger.d(
+                    TAG,
+                    "watch-live mute cleared: reason=${if (!isLive) "notlive" else "new-session"} " +
+                        "bound=$bound current=$normalizedStart"
+                )
                 suppressed = false
                 preferenceManager.setAlertSuppressed(false)
                 preferenceManager.setSuppressedLiveStart("")
-                if (isNewSession) {
-                    // 新一场 = 新的开播跳变：重置 lastStatus 让 shouldAlert 按
-                    // null→Live 触发提醒，否则内存中 lastStatus=true 会吞掉本次提醒
-                    lastStatus = null
-                }
             }
         }
 
+        val shouldAlert = LiveStateDecider.shouldAlert(
+            lastStatus,
+            isLive,
+            suppressed,
+            isNewSession
+        )
+        val shouldRecordStart = isLive && (!wasLive || isNewSession)
+
+        // Commit the complete decision baseline before notifications, sound, widgets, or DB work.
+        if (!isCurrentCheck(generation, epoch)) return
+        if (isLive && normalizedStart != null) {
+            preferenceManager.setLastLiveStartTime(normalizedStart)
+        }
+        if (isLive) preferenceManager.setLastLiveObservedTime(now)
         lastLiveStatus = isLive
-        preferenceManager.setLastCheck(System.currentTimeMillis(), isLive, true)
+        lastStatus = isLive
+        preferenceManager.setLastCheck(now, isLive, true)
+        preferenceManager.setMonitoringHeartbeat(now, generation)
 
-        // 更新通知栏图标 + 桌面小组件
-        updateNotification(isLive)
-        com.bilibili.livemonitor.widget.LiveStatusWidgetProvider.updateAll(this)
-
-        // 检查是否需要提醒：从未开播转为已开播，或者首次检查就在开播（静音期不提醒）
-        val shouldAlert = LiveStateDecider.shouldAlert(lastStatus, isLive, suppressed)
-        val wasLive = lastStatus == true
-
-        // 场次记录：任何 未开播→开播 跳变都记（含观播静音期，静音只影响提醒不影响记录）
-        if (isLive && !wasLive) {
-            streamSessionTracker.recordStreamStart(liveStartTime, liveTitle)
+        runSideEffect(generation, "update service notification", epoch) { updateNotification(isLive) }
+        runSideEffect(generation, "update widget", epoch) {
+            com.bilibili.livemonitor.widget.LiveStatusWidgetProvider.updateAll(this)
+        }
+        if (shouldRecordStart) {
+            runSideEffect(generation, "record stream start", epoch) {
+                streamSessionTracker.recordStreamStart(normalizedStart, liveTitle)
+            }
         }
         if (shouldAlert) {
-            AppLogger.d(TAG, "triggerAlert")
-            triggerAlert()
+            runSideEffect(generation, "trigger live alert", epoch) {
+                AppLogger.d(TAG, "triggerAlert newSession=$isNewSession")
+                triggerAlert()
+            }
         }
-        // 下播：闭合场次 + 下播提醒
         if (!isLive && wasLive) {
-            streamSessionTracker.recordStreamEnd()
+            runSideEffect(generation, "record stream end", epoch) { streamSessionTracker.recordStreamEnd() }
         }
-        // 无跳变的 NotLive（进程死亡跨过下播、状态恢复超龄）：静默补闭合残留开放行，
-        // 否则它会挂到下一场开播被错闭合成数天长的假场次。与 recordStreamEnd 经
-        // wasLive 门控互斥，不会双跑
         if (!isLive && !wasLive) {
-            streamSessionTracker.reconcileOpenSessionIfNotLive()
+            runSideEffect(generation, "reconcile open stream", epoch) {
+                streamSessionTracker.reconcileOpenSessionIfNotLive()
+            }
         }
-        // 直播中主题变化提醒（每次 Live 轮询都追踪）
         if (isLive) {
-            streamSessionTracker.trackTitleChange(liveTitle)
+            runSideEffect(generation, "track live title", epoch) {
+                streamSessionTracker.trackTitleChange(liveTitle)
+            }
         }
+        runSideEffect(generation, "send quiet missed summary", epoch) { maybeSendQuietMissedSummary() }
+    }
 
-        lastStatus = isLive
-        // 勿扰错过提醒：勿扰窗口内静音过的开播，等窗口结束后补一条汇总
-        maybeSendQuietMissedSummary()
+    private inline fun runSideEffect(
+        generation: Long,
+        name: String,
+        epoch: Long? = null,
+        action: () -> Unit
+    ) {
+        if (epoch?.let { !isCurrentCheck(generation, it) } ?: !isCurrentGeneration(generation)) return
+        try {
+            action()
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "$name failed", e)
+        }
     }
 
     // ========== B 站全活动监控 ==========
@@ -419,9 +504,9 @@ class LiveCheckService : Service() {
 
     // 由 ACTION_CHECK_DYNAMICS 单独触发（5min 周期）。三个活动功能共用 feed，
     // 所以一次请求统一处理视频、动态和置顶，而不是随直播检查每分钟打接口。
-    private suspend fun checkNewDynamics() {
-        if (!preferenceManager.isServiceRunning() || !isActivityMonitoringEnabled()) return
-        checkDynamicFeed()
+    private suspend fun checkNewDynamics(generation: Long) {
+        if (!isCurrentGeneration(generation) || !isActivityMonitoringEnabled()) return
+        checkDynamicFeed(generation)
     }
 
     private fun isActivityMonitoringEnabled(): Boolean =
@@ -429,7 +514,7 @@ class LiveCheckService : Service() {
             || preferenceManager.isMonitorDynamics()
             || preferenceManager.isMonitorPinned()
 
-    private suspend fun checkDynamicFeed() {
+    private suspend fun checkDynamicFeed(generation: Long) {
         if (!activityCheckMutex.tryLock()) {
             AppLogger.d(TAG, "activity check already in progress, skip")
             return
@@ -439,7 +524,7 @@ class LiveCheckService : Service() {
         // Err/NoData 统一等 15s 重试一次（对齐直播检测策略），避免偶发漏检
             when (val result = fetchDynamicOnce()) {
                 is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
-                    handleDynamicResult(result.data)
+                    if (isCurrentGeneration(generation)) handleDynamicResult(generation, result.data)
                 }
                 else -> {
                     AppLogger.w(TAG, "dynamic check failed ($result), retry in ${dynamicRetryDelayMillis / 1000}s")
@@ -447,7 +532,7 @@ class LiveCheckService : Service() {
                     when (val retry = fetchDynamicOnce()) {
                         is com.bilibili.livemonitor.api.BilibiliActivityApi.ActivityResult.Ok -> {
                             AppLogger.d(TAG, "dynamic retry succeeded")
-                            handleDynamicResult(retry.data)
+                            if (isCurrentGeneration(generation)) handleDynamicResult(generation, retry.data)
                         }
                         else -> AppLogger.w(TAG, "dynamic retry also failed ($retry)")
                     }
@@ -467,7 +552,11 @@ class LiveCheckService : Service() {
         )
     }
 
-    private fun handleDynamicResult(dynamic: com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo) {
+    private fun handleDynamicResult(
+        generation: Long,
+        dynamic: com.bilibili.livemonitor.api.BilibiliActivityApi.DynamicInfo
+    ) {
+        if (!isCurrentGeneration(generation)) return
         val lastId = com.bilibili.livemonitor.domain.ActivityDecider.stringToNullable(
             preferenceManager.getLastDynamicId()
         )
@@ -483,9 +572,11 @@ class LiveCheckService : Service() {
             preferenceManager.setLastVideoAid(latestVideo.aid)
             if (com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertVideo(latestVideo.aid, lastAid)) {
                 AppLogger.d(TAG, "new video: aid=${latestVideo.aid} title=${latestVideo.title.take(40)}")
-                triggerActivityAlert(
-                    com.bilibili.livemonitor.domain.ActivityType.Video(latestVideo.aid, latestVideo.title)
-                )
+                runSideEffect(generation, "trigger video alert") {
+                    triggerActivityAlert(
+                        com.bilibili.livemonitor.domain.ActivityType.Video(latestVideo.aid, latestVideo.title)
+                    )
+                }
             }
         }
 
@@ -496,9 +587,11 @@ class LiveCheckService : Service() {
                 com.bilibili.livemonitor.domain.ActivityDecider.shouldAlertDynamic(dynamic.id, lastId)
             ) {
                 AppLogger.d(TAG, "new dynamic: id=${dynamic.id} text=${dynamic.displayText.take(40)}")
-                triggerActivityAlert(
-                    com.bilibili.livemonitor.domain.ActivityType.Dynamic(dynamic.id, dynamic.displayText)
-                )
+                runSideEffect(generation, "trigger dynamic alert") {
+                    triggerActivityAlert(
+                        com.bilibili.livemonitor.domain.ActivityType.Dynamic(dynamic.id, dynamic.displayText)
+                    )
+                }
             }
         } else {
             // 即便不需要动态通知，也要记录 id（下次跳变判断的基线）
@@ -522,12 +615,14 @@ class LiveCheckService : Service() {
                     )
                 ) {
                     val title = pinnedVideo?.title ?: "置顶已取消"
-                    triggerActivityAlert(
-                        com.bilibili.livemonitor.domain.ActivityType.Pinned(
-                            currentPinnedAid ?: 0,
-                            title
+                    runSideEffect(generation, "trigger pinned alert") {
+                        triggerActivityAlert(
+                            com.bilibili.livemonitor.domain.ActivityType.Pinned(
+                                currentPinnedAid ?: 0,
+                                title
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -544,29 +639,37 @@ class LiveCheckService : Service() {
             ) {
                 preferenceManager.setLastRemindedLiveDynamicId(rcmd.dynamicId)
                 AppLogger.d(TAG, "live reminder: start=${rcmd.liveStartMs} title=${rcmd.title}")
-                notificationBuilder.sendLiveReminder(rcmd)
+                runSideEffect(generation, "send live reminder") {
+                    notificationBuilder.sendLiveReminder(rcmd)
+                }
             }
         }
     }
 
     private fun triggerActivityAlert(type: com.bilibili.livemonitor.domain.ActivityType) {
-        val ring = preferenceManager.isAlertRingOnActivity() && !isInQuietHours()
+        val quiet = isInQuietHours()
+        val ring = preferenceManager.isAlertRingOnActivity() && !quiet
         when (type) {
             is com.bilibili.livemonitor.domain.ActivityType.Video -> {
-                notificationBuilder.sendVideo(type.aid, type.title, "新视频投稿")
+                notificationBuilder.sendVideo(type.aid, type.title, "新视频投稿", silent = quiet)
                 if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Pinned -> {
                 if (type.aid == 0L) {
                     // 置顶被取消
-                    notificationBuilder.sendText(LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID, "白绮置顶已取消", null)
+                    notificationBuilder.sendText(
+                        LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID,
+                        "白绮置顶已取消",
+                        null,
+                        silent = quiet
+                    )
                 } else {
-                    notificationBuilder.sendVideo(type.aid, type.title, "置顶视频变更")
+                    notificationBuilder.sendVideo(type.aid, type.title, "置顶视频变更", silent = quiet)
                 }
                 if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Dynamic -> {
-                notificationBuilder.sendDynamic(type.id, type.displayText)
+                notificationBuilder.sendDynamic(type.id, type.displayText, silent = quiet)
                 if (ring) playAlertSound()
             }
             is com.bilibili.livemonitor.domain.ActivityType.Live -> {
@@ -869,7 +972,8 @@ class LiveCheckService : Service() {
         stopRequestedGeneration = NO_MONITORING_GENERATION
     }
 
-    private fun scheduleNextCheckAlarm() {
+    private fun scheduleNextCheckAlarm(generation: Long = monitoringGeneration) {
+        if (!isCurrentGeneration(generation)) return
         try {
             val intent = Intent(this, AlarmReceiver::class.java)
             val pendingIntent = PendingIntent.getBroadcast(
@@ -950,6 +1054,8 @@ class LiveCheckService : Service() {
         const val ACTION_STOP_SERVICE = "com.bilibili.livemonitor.STOP_SERVICE"
         const val ACTION_STOP_ALERT = "com.bilibili.livemonitor.STOP_ALERT"
         const val ACTION_WATCH_LIVE = "com.bilibili.livemonitor.WATCH_LIVE"
+        const val ACTION_TEST_ALERT = "com.bilibili.livemonitor.TEST_ALERT"
+        const val ACTION_RECOVER_STALE = "com.bilibili.livemonitor.RECOVER_STALE"
         const val ACTION_RESTART_SERVICE = "com.bilibili.livemonitor.RESTART_SERVICE"
         const val ACTION_CHECK_DYNAMICS = "com.bilibili.livemonitor.CHECK_DYNAMICS"
         const val EXTRA_MONITORING_GENERATION = "monitoring_generation"

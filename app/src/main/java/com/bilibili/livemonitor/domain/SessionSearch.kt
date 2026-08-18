@@ -31,7 +31,7 @@ object SessionSearch {
             }
         }
         moods.forEach { m ->
-            val haystack = listOfNotNull(m.title, m.reason, m.note, MoodCatalog.display(m.mood))
+            val haystack = listOfNotNull(m.title, m.reason, m.note, m.mood, MoodCatalog.display(m.mood))
                 .joinToString("\n").lowercase()
             if (haystack.contains(q)) {
                 hits += Hit(

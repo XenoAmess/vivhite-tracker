@@ -5,12 +5,13 @@ Android 单模块 Kotlin 应用：监控 B 站直播间 11258892（白绮）开�
 ## 构建与验证
 
 ```bash
-# 本地验证（与 CI 一致，按此顺序）
-./gradlew lintDebug testDebugUnitTest assembleDebug
+# 本地验证（与 CI build job 一致，按此顺序）
+python3 -m unittest discover -s .github/workflows/tests -v
+./gradlew lintDebug testDebugUnitTest jacocoUnitTestReport assembleDebug
 ```
 
 - 单测在 `app/src/test`（JUnit4 + Robolectric，sdk 锁 35）。覆盖率：`./gradlew jacocoUnitTestReport`，报告在 `app/build/reports/jacoco/`。Robolectric 覆盖率依赖 `includeNoLocationClasses`（build.gradle.kts 里已配，别删）。
-- instrumented test 在 `app/src/androidTest`，本地跑需模拟器/真机：`./gradlew connectedDebugAndroidTest`；CI 有独立 `android-test` job（不在必需检查里）。
+- instrumented test 在 `app/src/androidTest`，本地跑需模拟器/真机：`./gradlew connectedDebugAndroidTest`。CI 必需检查 `android-test`（显示名 `Instrumented tests (emulator)`）排除依赖真实 B 站网络/Doze 的两个类；后者在 master push 的非必需 `android-test-network-doze` job 单独运行。
 - **状态决策逻辑在 `domain/LiveStateDecider`**（纯函数）：提醒/状态恢复/重试。改提醒行为先改这里并补 `LiveStateDeciderTest`。
 - **prefs 的 `serviceRunning` 是监控开关的唯一权威**：`LiveCheckService.onCreate/onStartCommand` 在 prefs=false 时必须自毁（防止 START_STICKY 重投/残留任务在用户停止后复活监控）；`onDestroy` 只在用户停止时才能清这个标记。改服务生命周期时这三处约束不能破。
 - 发布：打 `v*` tag 触发 `.github/workflows/android-release.yml`。
@@ -18,7 +19,7 @@ Android 单模块 Kotlin 应用：监控 B 站直播间 11258892（白绮）开�
 ## 工具链（2026-07-24 迁移后）
 
 - **AGP 9.3.1 + 内置 Kotlin**：没有也不得有外部 `org.jetbrains.kotlin.android` 插件——AGP 9 默认注册 `kotlin` 扩展，加外部 KGP 会直接冲突报 `Cannot add extension with name 'kotlin'`。Kotlin 版本随 AGP 走。
-- `compileSdk`/`targetSdk` = 36，`minSdk` = 26，JDK 17，Gradle 9.6.1。
+- `compileSdk`/`targetSdk` = 36，`minSdk` = 26，JDK 17，Gradle Wrapper 9.7.0。
 - JaCoCo 的 classDirectories 必须指向内置 Kotlin 输出 `app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes`（旧外部 KGP 的 `tmp/kotlin-classes/debug` 已不存在），否则报告 0%。
 
 ## 环境坑（已验证）
@@ -55,16 +56,17 @@ AlarmManager(60s exact) → AlarmReceiver → startForegroundService
 ```
 
 - `BilibiliApi.checkLiveStatus()` 返回三态 `LiveStatus.Live / NotLive / Error`。Error **不更新** `lastStatus`，15 秒后重试一次；只有 NotLive→Live 跳变才触发提醒。改这里时不要把 Error 合并成 false，会污染状态导致重复/漏提醒。
+- 新安装的 `serviceRunning` 默认 false；用户点击开始后才开启监控，后续按该标记自动恢复。直播检测档位为 15s/60s/300s，标准档 60s 为默认。
 - WorkManager（`LiveCheckWorker`，15min 周期）**只是服务死掉的拉起兜底，本身不做检测**。Doze 下 60s 轮询必被系统节流到 ~15min，这是平台限制，只能靠电池白名单 + 精确闹钟权限 + 国产 ROM 自启动引导缓解，代码绕不开。
 - 服务状态靠 `LiveCheckService` companion 的 `@Volatile` 静态变量（`isRunning`/`lastLiveStatus`/`isUserStopped`）+ `PreferenceManager` 共享；Worker/Receiver/Activity 都读这两处。
 - 重启链：`onDestroy`（非用户停止时）广播 `RESTART_SERVICE` → `ServiceRestartReceiver`；`onTaskRemoved` 排 Alarm + 一次性 Worker；`BootReceiver` 开机拉起；`PackageReplacedReceiver`（MY_PACKAGE_REPLACED）覆盖安装后拉起。四个 Receiver 捕获 `ForegroundServiceStartNotAllowedException` 后降级到一次性 WorkManager。
 - `AppLogger` 写 `filesDir/logs/monitor.log`（1MB 截断），排查后台问题先让用户导出这个（应用内「查看运行日志」页）。
-- 房间号/UID 单一来源在 `util/BiliTargets`（ROOM_ID / MONITOR_MID）；头像源用 `live_user/v1/Master/info`（未登录可用），`x/space/acc/info` 已被风控（-799）仅作兜底；`AnchorAvatarLoader` 带 24h 磁盘缓存。改房间号/UID 只改 BiliTargets，但通知/页面文案里的展示文本仍需全局搜。
+- 房间号/UID 单一来源在 `util/BiliTargets`（`ROOM_ID=11258892` / `MONITOR_MID=251990176`）；头像源用 `live_user/v1/Master/info`（未登录可用），`x/space/acc/info` 已被风控（-799）仅作兜底；`AnchorAvatarLoader` 带 24h 磁盘缓存。改房间号/UID 只改 BiliTargets，但通知/页面文案里的展示文本仍需全局搜。
 - **场次记录进程死亡约束**（2026-08 修复后）：`recordStreamStart` 对同一场（liveStartTime 一致）幂等复用开放行；NotLive 且无跳变时静默 reconcile 残留开放行，闭合到 `last_live_observed_time`（每次 Live 检测刷新；`lastCheckTime` 每次检测含 NotLive 都覆盖，**不能**当存活证据）。这两条破了升级场景会造出 0 分钟幽灵行/数天长假场次。
 
 ## 绮迹手账（StatsActivity，原「场次记录」页）
 
-- Room DB 当前 v3：`stream_sessions`（场次）/`stream_title_changes`（主题变化）/`mood_events`（心情事件，v2 加，v3 加 duration_min）。加表必须写 Migration，禁止删库重建。
+- Room DB 当前 v6，共 5 表：`stream_sessions`、`stream_title_changes`、`mood_events`、`popularity_points`、`follower_snapshots`。现有迁移为 1→2（心情）、2→3（心情时长）、3→4（人气采样）、4→5（场次封面）、5→6（粉丝快照）；加表/字段必须继续写 Migration，禁止删库重建。
 - 心情目录在 `domain/MoodCatalog`（22 种，key→emoji+中文文案+分组），**DB 只存 key 不存 emoji**；CSV 里存「😄开心」display，导入用 `keyOf` 反查（裸 key 也认）。
 - 备份编解码在 `domain/SessionBackup`（混合 CSV：类型列区分场次/心情，兼容旧 5 列格式；引号/逗号/换行转义）。导入合并去重（场次=起止时间，心情=时间+心情+标题）。
 - 导出海报 `util/StatsImageRenderer`：**纯按月维度**（摘要/逐周柱状/月历热力/心情统计/魔法期/全记录），可变高度；柱状离屏复用 `WeekStreamBarsView`（柱数随数据）；纯绘制无 IO 好测试。
@@ -85,6 +87,7 @@ AlarmManager(60s exact) → AlarmReceiver → startForegroundService
 ## CI / 仓库约定
 
 - master 受保护：必需状态检查为 `build`（android-ci.yml job 名）+ `Instrumented tests (emulator)`（android-test job 显示名），strict + 线性历史。改 CI workflow 的 job 名/matrix 后必须同步更新 branch protection（gh api PATCH .../protection/required_status_checks）。
+- `build` 只做 lint、单测、覆盖率和 debug APK 验证；master push 的 `publish-beta` 必须 `needs: build`，发布失败不得污染 required `build` 的结论。稳定版 tag workflow 必须在 `assembleRelease` 前跑 lint + 单测。
 - Dependabot：`.github/dependabot.yml`（**gradle**（不是 maven，本项目是 Gradle 没有 pom.xml）+ github-actions，每周一 04:00 Asia/Shanghai）。`auto-merge.yml` 自动合并 patch/minor 及 github-actions 的 major，maven major 留人工。`MYTOKEN` 和 `DEBUG_KEYSTORE_BASE64` 两个 secret 都在 **dependabot** namespace（`gh secret list --app dependabot` 才能看到）——dependabot PR 的 workflow 读不到 actions namespace 的 secret，只放一边会导致 keystore 解码成空文件、签名报 `Tag number over 30 is not supported`。
 - 提交信息：Conventional Commits，中英文混用均可（如 `fix(service): 修复...`、`ci: ...`）。
 - 改动后如无特殊说明，立刻自动 commit + push，不用等用户确认。

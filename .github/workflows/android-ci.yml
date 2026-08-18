@@ -10,8 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      # beta-archive 滚动 release 的资产上传/裁剪（build_beta_chains.py）
-      contents: write
+      contents: read
 
     steps:
     - name: Checkout code
@@ -29,6 +28,9 @@ jobs:
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
+
+    - name: Run workflow Python tests
+      run: python3 -m unittest discover -s .github/workflows/tests -v
 
     - name: Decode debug signing key
       env:
@@ -52,116 +54,6 @@ jobs:
 
     - name: Build debug APK
       run: ./gradlew assembleDebug
-
-    # 内测包用 release 构建（debuggable=false）：Play Protect 对 debuggable
-    # 侧载包告警更重，release 与 debug 共用 keystore 可覆盖安装
-    - name: Decode release signing key
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      env:
-        SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-      run: |
-        if [ -n "$SIGNING_KEY" ]; then
-          echo "$SIGNING_KEY" | base64 -d > app/release.keystore
-          ls -la app/release.keystore
-        else
-          echo "SIGNING_KEY unavailable; beta release signing will fail" >&2
-          exit 1
-        fi
-
-    - name: Build beta release APK
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      run: ./gradlew assembleRelease
-      env:
-        SIGNING_KEY_FILE: "release.keystore"
-        KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-        ALIAS: ${{ secrets.ALIAS }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-
-    # ========== beta 增量更新（ApkDiffPatch，与稳定版同一套）==========
-    - name: Install ApkDiffPatch toolchain
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      run: |
-        mkdir -p apkdiff && cd apkdiff
-        gh release download v1.8.1 -R sisong/ApkDiffPatch -p '*bin_linux64*' --clobber
-        unzip -o -q ApkDiffPatch_v1.8.1_bin_linux64.zip
-        mv -f linux64/ApkNormalized linux64/ZipDiff linux64/ZipPatch ./
-        chmod +x ApkNormalized ZipDiff ZipPatch
-        echo "APKDIFF_BIN=$PWD" >> "$GITHUB_ENV"
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Ensure apksigner 34
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      run: |
-        APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
-        if [ ! -x "$APKSIGNER" ]; then
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null 2>&1 || true
-        fi
-        if [ ! -x "$APKSIGNER" ]; then
-          echo "::warning::build-tools 34.0.0 不可用：本次 beta 仅全量，跳过增量补丁"
-          echo "APKSIGNER_OK=0" >> "$GITHUB_ENV"
-        else
-          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
-          echo "APKSIGNER_OK=1" >> "$GITHUB_ENV"
-        fi
-
-    - name: Normalize and re-sign beta APK
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      run: |
-        if [ "${APKSIGNER_OK:-0}" = "1" ]; then
-          "$APKDIFF_BIN/ApkNormalized" app/build/outputs/apk/release/app-release.apk app-normalized.apk
-          "$APKSIGNER" sign --ks app/release.keystore \
-            --ks-pass "pass:${KEY_STORE_PASSWORD}" --key-pass "pass:${KEY_PASSWORD}" \
-            --ks-key-alias "${ALIAS}" \
-            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
-            --out app-published.apk app-normalized.apk
-        else
-          cp app/build/outputs/apk/release/app-release.apk app-published.apk
-        fi
-      env:
-        KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-        ALIAS: ${{ secrets.ALIAS }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-
-    # 内测版尝鲜通道：master 最新构建 → GitHub Pages /beta/
-    # （App 内「内测版尝鲜」按钮比对这里的 version.json）
-    - name: Prepare beta channel files
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      run: |
-        # versionCode/versionName 单一来源：build.gradle.kts 推导后写 version-info.properties
-        VERSION_CODE=$(sed -n 's/^versionCode=//p' app/build/outputs/version-info.properties)
-        VERSION_NAME=$(sed -n 's/^versionName=//p' app/build/outputs/version-info.properties)
-        # 更新说明：最近 tag 以来的提交摘要（无 tag 则全部历史，取前 20 条）
-        LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
-        if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..HEAD"; else RANGE="HEAD"; fi
-        git log --oneline --no-decorate "$RANGE" | head -20 > changelog.txt
-        # 发布物 = 归一化+重签的 beta 包（与稳定版同 keystore，可覆盖安装）
-        cp app-published.apk vivhite-tracker-beta.apk
-        python3 - "$VERSION_CODE" "$VERSION_NAME" <<'PY'
-        import json, sys
-        changelog = open("changelog.txt", encoding="utf-8").read().strip()
-        with open("version.json", "w", encoding="utf-8") as f:
-            json.dump({"versionCode": int(sys.argv[1]), "versionName": sys.argv[2], "changelog": changelog}, f, ensure_ascii=False)
-        PY
-        cat version.json
-
-    # beta 增量更新：滚动存档 beta-archive（最近 8 个内测包）+ ApkDiffPatch 单跳补丁
-    # （失败只丢条目，不阻断发布；旧客户端自动全量）
-    - name: Build beta delta patches and update beta-archive
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        APKDIFF_BIN: ${{ env.APKDIFF_BIN }}
-      run: python3 .github/workflows/build_beta_chains.py
-
-    - name: Upload beta channel artifact
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      uses: actions/upload-artifact@v7
-      with:
-        name: beta-channel
-        path: |
-          vivhite-tracker-beta.apk
-          version.json
 
     - name: Upload lint report
       if: always()
@@ -190,6 +82,128 @@ jobs:
       with:
         name: debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
+
+  publish-beta:
+    name: Publish beta
+    needs: build
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        # versionCode/versionName 和 beta-archive 根 tag 都依赖完整 git 历史
+        fetch-depth: 0
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v5.7.0
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    # 内测包使用 release 变体，并与稳定版走相同的签名管线。
+    - name: Decode release signing key
+      env:
+        SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+      run: |
+        if [ -n "$SIGNING_KEY" ]; then
+          echo "$SIGNING_KEY" | base64 -d > app/release.keystore
+          ls -la app/release.keystore
+        else
+          echo "SIGNING_KEY unavailable; beta release signing will fail" >&2
+          exit 1
+        fi
+
+    - name: Build beta release APK
+      run: ./gradlew assembleRelease
+      env:
+        SIGNING_KEY_FILE: "release.keystore"
+        KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+        ALIAS: ${{ secrets.ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+    # ========== beta 增量更新（ApkDiffPatch，与稳定版同一套）==========
+    - name: Install ApkDiffPatch toolchain
+      run: |
+        mkdir -p apkdiff && cd apkdiff
+        gh release download v1.8.1 -R sisong/ApkDiffPatch -p '*bin_linux64*' --clobber
+        unzip -o -q ApkDiffPatch_v1.8.1_bin_linux64.zip
+        mv -f linux64/ApkNormalized linux64/ZipDiff linux64/ZipPatch ./
+        chmod +x ApkNormalized ZipDiff ZipPatch
+        echo "APKDIFF_BIN=$PWD" >> "$GITHUB_ENV"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Ensure apksigner 34
+      run: |
+        APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+        if [ ! -x "$APKSIGNER" ]; then
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null 2>&1 || true
+        fi
+        if [ ! -x "$APKSIGNER" ]; then
+          echo "::warning::build-tools 34.0.0 不可用：本次 beta 仅全量，跳过增量补丁"
+          echo "APKSIGNER_OK=0" >> "$GITHUB_ENV"
+        else
+          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+          echo "APKSIGNER_OK=1" >> "$GITHUB_ENV"
+        fi
+
+    - name: Normalize and re-sign beta APK
+      run: |
+        if [ "${APKSIGNER_OK:-0}" = "1" ]; then
+          "$APKDIFF_BIN/ApkNormalized" app/build/outputs/apk/release/app-release.apk app-normalized.apk
+          "$APKSIGNER" sign --ks app/release.keystore \
+            --ks-pass "pass:${KEY_STORE_PASSWORD}" --key-pass "pass:${KEY_PASSWORD}" \
+            --ks-key-alias "${ALIAS}" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out app-published.apk app-normalized.apk
+        else
+          cp app/build/outputs/apk/release/app-release.apk app-published.apk
+        fi
+      env:
+        KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+        ALIAS: ${{ secrets.ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+    - name: Prepare beta channel files
+      run: |
+        VERSION_CODE=$(sed -n 's/^versionCode=//p' app/build/outputs/version-info.properties)
+        VERSION_NAME=$(sed -n 's/^versionName=//p' app/build/outputs/version-info.properties)
+        LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
+        if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..HEAD"; else RANGE="HEAD"; fi
+        git log --oneline --no-decorate "$RANGE" | head -20 > changelog.txt
+        cp app-published.apk vivhite-tracker-beta.apk
+        python3 - "$VERSION_CODE" "$VERSION_NAME" <<'PY'
+        import json, sys
+        changelog = open("changelog.txt", encoding="utf-8").read().strip()
+        with open("version.json", "w", encoding="utf-8") as f:
+            json.dump({"versionCode": int(sys.argv[1]), "versionName": sys.argv[2], "changelog": changelog}, f, ensure_ascii=False)
+        PY
+        cat version.json
+
+    # beta-archive 的固定 version.json/beta-latest.apk 是主通道。单个补丁失败
+    # 只省略该链并回退整包；主通道资产上传失败则必须让发布 job 失败。
+    - name: Build beta delta patches and publish beta-archive
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        APKDIFF_BIN: ${{ env.APKDIFF_BIN }}
+      run: python3 .github/workflows/build_beta_chains.py
+
+    # Pages 仅是 legacy 回退；artifact 交给 coverage-pages 合并部署。
+    - name: Upload beta channel artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: beta-channel
+        path: |
+          vivhite-tracker-beta.apk
+          version.json
 
   android-test:
     name: Instrumented tests (emulator)
@@ -232,7 +246,9 @@ jobs:
         target: default
         arch: x86_64
         profile: pixel_6
-        script: ./gradlew connectedDebugAndroidTest
+        script: >-
+          ./gradlew connectedDebugAndroidTest
+          -Pandroid.testInstrumentationRunnerArguments.notClass=com.bilibili.livemonitor.ActivityMonitorInstrumentedTest,com.bilibili.livemonitor.MonitoringInstrumentedTest
 
     - name: Upload instrumented test reports
       if: always()
@@ -241,10 +257,62 @@ jobs:
         name: android-test-reports
         path: app/build/reports/androidTests/
 
+  android-test-network-doze:
+    name: Network and Doze instrumented tests
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v5.7.0
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Decode debug signing key
+      env:
+        DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+      run: |
+        if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
+          echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > app/debug.keystore
+        fi
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Run real network and Doze tests
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 36
+        target: default
+        arch: x86_64
+        profile: pixel_6
+        script: >-
+          ./gradlew connectedDebugAndroidTest
+          -Pandroid.testInstrumentationRunnerArguments.class=com.bilibili.livemonitor.ActivityMonitorInstrumentedTest,com.bilibili.livemonitor.MonitoringInstrumentedTest
+
+    - name: Upload network and Doze test reports
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: android-test-network-doze-reports
+        path: app/build/reports/androidTests/
+
   coverage-pages:
     name: Deploy Coverage to GitHub Pages
     runs-on: ubuntu-latest
-    needs: [ build ]
+    needs: [ build, publish-beta ]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     permissions:
       contents: read
@@ -287,7 +355,7 @@ jobs:
         cp -R coverage/html/* pages/report/
         mv pages/report/index.html pages/report/coverage.html
 
-    # 内测版尝鲜通道文件进 Pages（/beta/version.json + /beta/vivhite-tracker-beta.apk）
+    # beta-archive 是主通道；Pages 的 /beta/ 仅保留为 legacy 回退。
     - name: Download beta channel files
       uses: actions/download-artifact@v8
       with:

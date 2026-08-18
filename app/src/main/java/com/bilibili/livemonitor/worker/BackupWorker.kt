@@ -33,13 +33,13 @@ class BackupWorker(
             return Result.success()
         }
         return try {
-            val zipBytes = com.bilibili.livemonitor.util.FullBackupBuilder
-                .build(applicationContext)
             val name = "vivhite_backup_" +
                 SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date()) + ".zip"
-            writeToTree(treeUri, name, zipBytes)
+            writeToTree(treeUri, name) { output ->
+                com.bilibili.livemonitor.util.FullBackupBuilder.write(applicationContext, output)
+            }
             prefs.setLastBackupTime(System.currentTimeMillis())
-            AppLogger.d(TAG, "auto backup done: $name (${zipBytes.size} bytes)")
+            AppLogger.d(TAG, "auto backup done: $name")
             Result.success()
         } catch (e: Exception) {
             AppLogger.w(TAG, "auto backup failed", e)
@@ -48,7 +48,11 @@ class BackupWorker(
     }
 
     // internal 便于单测（可注入假 tree uri 验证失败路径）；纯 framework API，无新依赖
-    internal fun writeToTree(treeUri: String, fileName: String, content: ByteArray) {
+    internal suspend fun writeToTree(
+        treeUri: String,
+        fileName: String,
+        writer: suspend (java.io.OutputStream) -> Unit
+    ) {
         val resolver = applicationContext.contentResolver
         val tree = Uri.parse(treeUri)
         val parentDoc = android.provider.DocumentsContract.buildDocumentUriUsingTree(
@@ -58,7 +62,7 @@ class BackupWorker(
             resolver, parentDoc, "application/zip", fileName
         ) ?: throw java.io.IOException("createDocument returned null")
         resolver.openOutputStream(fileUri, "wt")?.use {
-            it.write(content)
+            writer(it)
         } ?: throw java.io.IOException("openOutputStream returned null")
     }
 

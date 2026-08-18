@@ -60,6 +60,10 @@ class LogActivityTest {
 
         val activity = Robolectric.buildActivity(LogActivity::class.java).create().get()
 
+        waitFor {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            activity.findViewById<TextView>(R.id.tvLog).text.toString().contains("log-page-content-marker")
+        }
         val text = activity.findViewById<TextView>(R.id.tvLog).text.toString()
         assertTrue(text.contains("log-page-content-marker"))
     }
@@ -69,6 +73,10 @@ class LogActivityTest {
         AppLogger.d("TestTag", "clipboard-marker")
         waitFor { AppLogger.readAll().contains("clipboard-marker") }
         val activity = Robolectric.buildActivity(LogActivity::class.java).create().get()
+        waitFor {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            activity.findViewById<TextView>(R.id.tvLog).text.toString().contains("clipboard-marker")
+        }
 
         activity.findViewById<com.google.android.material.button.MaterialButton>(
             R.id.btnCopy
@@ -88,7 +96,13 @@ class LogActivityTest {
         activity.findViewById<com.google.android.material.button.MaterialButton>(
             R.id.btnClear
         ).performClick()
-        waitFor { AppLogger.readAll().isEmpty() }
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        assertEquals("清空运行日志？", dialog.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)?.text)
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        // Background components can append new lines immediately; old content must be gone.
+        waitFor { !AppLogger.readAll().contains("to-clear-marker") }
 
         assertEquals("", activity.findViewById<TextView>(R.id.tvLog).text.toString())
     }
@@ -103,8 +117,46 @@ class LogActivityTest {
             R.id.btnRefresh
         ).performClick()
 
+        waitFor {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            activity.findViewById<TextView>(R.id.tvLog).text.toString().contains("refresh-marker")
+        }
         val text = activity.findViewById<TextView>(R.id.tvLog).text.toString()
         assertTrue(text.contains("refresh-marker"))
+    }
+
+    @Test
+    fun `关键词与级别可组合筛选`() {
+        AppLogger.d("Sync", "request complete")
+        AppLogger.w("Sync", "request retry")
+        AppLogger.e("Other", "request failed")
+        waitFor { AppLogger.readAll().contains("request failed") }
+        val activity = Robolectric.buildActivity(LogActivity::class.java).setup().get()
+
+        activity.findViewById<android.widget.EditText>(R.id.etLogFilter).setText("request")
+        activity.findViewById<android.widget.Spinner>(R.id.spinnerLogLevel).setSelection(2)
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        waitFor {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            activity.findViewById<TextView>(R.id.tvLog).text.toString().contains("request retry")
+        }
+        val text = activity.findViewById<TextView>(R.id.tvLog).text.toString()
+        assertTrue(text.contains("request retry"))
+        assertFalse(text.contains("request complete"))
+        assertFalse(text.contains("request failed"))
+    }
+
+    @Test
+    fun `日志页有标题返回入口且触控目标至少48dp`() {
+        val activity = Robolectric.buildActivity(LogActivity::class.java).setup().get()
+        val toolbar = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.logToolbar)
+        val minTouch = (48 * activity.resources.displayMetrics.density).toInt()
+
+        assertEquals("运行日志", toolbar.title.toString())
+        assertTrue(toolbar.navigationIcon != null)
+        assertTrue(activity.findViewById<android.view.View>(R.id.btnClear).minimumHeight >= minTouch)
+        assertTrue(activity.findViewById<android.view.View>(R.id.etLogFilter).minimumHeight >= minTouch)
     }
 
     @Test
@@ -117,6 +169,10 @@ class LogActivityTest {
 
         val activity = Robolectric.buildActivity(LogActivity::class.java).create().get()
 
+        waitFor {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            activity.findViewById<TextView>(R.id.tvLog).text.toString().contains("TAIL_MARKER_SHOULD_SHOW")
+        }
         val text = activity.findViewById<TextView>(R.id.tvLog).text.toString()
         assertTrue("应有截断提示: ${text.take(100)}", text.contains("仅显示最近"))
         assertTrue("尾部标记应显示", text.contains("TAIL_MARKER_SHOULD_SHOW"))
@@ -133,16 +189,30 @@ class LogActivityTest {
         activity.findViewById<com.google.android.material.button.MaterialButton>(
             R.id.btnExport
         ).performClick()
-        val started = shadowOf(context).nextStartedActivity
+        var started: Intent? = null
+        waitFor {
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            started = shadowOf(context).nextStartedActivity
+            started != null
+        }
+        val actual = started!!
         // startActivity(createChooser(...))：外层是 CHOOSER，内嵌 ACTION_SEND
-        assertTrue(started != null)
-        val sendIntent = started.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT)
-        if (started.action == Intent.ACTION_CHOOSER && sendIntent != null) {
+        val sendIntent = actual.getParcelableExtra<android.content.Intent>(Intent.EXTRA_INTENT)
+        if (actual.action == Intent.ACTION_CHOOSER && sendIntent != null) {
             assertEquals(Intent.ACTION_SEND, sendIntent.action)
             val uri = sendIntent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
             assertTrue("应带 FileProvider 链接: $uri", uri.toString().contains("com.bilibili.livemonitor.fileprovider"))
         } else {
-            assertEquals(Intent.ACTION_SEND, started.action)
+            assertEquals(Intent.ACTION_SEND, actual.action)
         }
+    }
+
+    @Test
+    fun `纯函数筛选保留尾部且支持级别关键词`() {
+        val raw = "2026 D/A: alpha\n2026 W/A: alpha\n2026 W/B: beta"
+
+        val result = LogActivity.formatLog(raw, "alpha", "W")
+
+        assertEquals("2026 W/A: alpha", result)
     }
 }

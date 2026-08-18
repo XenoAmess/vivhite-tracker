@@ -31,6 +31,7 @@ class SessionSearchTest {
         assertEquals(1, SessionSearch.search(sessions, moods, "深夜").size)
         // 心情 display 文案也可命中
         assertEquals(1, SessionSearch.search(sessions, moods, "开心").size)
+        assertEquals(1, SessionSearch.search(sessions, moods, "happy").size)
     }
 
     @Test

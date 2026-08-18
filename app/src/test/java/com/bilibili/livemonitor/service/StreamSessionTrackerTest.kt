@@ -76,6 +76,44 @@ class StreamSessionTrackerTest {
     }
 
     @Test
+    fun `关闭标题通知仍记录标题变化`() {
+        val sessionId = runBlocking {
+            AppDatabase.get(context).streamSessionDao().insertSession(
+                StreamSessionEntity(startTs = System.currentTimeMillis() - 60_000)
+            )
+        }
+        prefs.setNotifyTitleChange(false)
+        prefs.setLastLiveTitle("旧标题")
+
+        tracker.trackTitleChange("新标题")
+
+        waitFor("title change persisted") {
+            runBlocking { AppDatabase.get(context).streamSessionDao().titleChanges(sessionId).size == 1 }
+        }
+        val change = runBlocking {
+            AppDatabase.get(context).streamSessionDao().titleChanges(sessionId).single()
+        }
+        assertEquals("旧标题", change.oldTitle)
+        assertEquals("新标题", change.newTitle)
+    }
+
+    @Test
+    fun `新场次标题初始化基线不串联上一场`() {
+        prefs.setLastLiveTitle("上一场")
+        tracker.recordStreamStart("1700000000", "本场标题")
+        tracker.trackTitleChange("本场标题")
+
+        waitFor("session inserted") {
+            runBlocking { AppDatabase.get(context).streamSessionDao().findOpenSession() != null }
+        }
+        val open = runBlocking { AppDatabase.get(context).streamSessionDao().findOpenSession()!! }
+        assertEquals("本场标题", prefs.getLastLiveTitle())
+        assertTrue(runBlocking {
+            AppDatabase.get(context).streamSessionDao().titleChanges(open.id).isEmpty()
+        })
+    }
+
+    @Test
     fun `recordStreamEnd 闭合开场次并回调时长`() {
         val now = System.currentTimeMillis()
         runBlocking {
@@ -108,6 +146,24 @@ class StreamSessionTrackerTest {
         tracker.recordStreamEnd()
         Thread.sleep(300)
         assertNull("下播提醒关闭不应回调", streamEndDuration)
+    }
+
+    @Test
+    fun `紧邻的开始和结束按调用顺序落库`() {
+        prefs.setNotifyStreamEnd(false)
+
+        tracker.recordStreamStart("1700000000", "短场")
+        tracker.recordStreamEnd()
+
+        waitFor("ordered start and end") {
+            runBlocking {
+                val sessions = AppDatabase.get(context).streamSessionDao().allSessions()
+                sessions.size == 1 && sessions.single().endTs != null
+            }
+        }
+        assertNull(AppDatabase.get(context).streamSessionDao().let { dao ->
+            runBlocking { dao.findOpenSession() }
+        })
     }
 
     // ---------- 升级/进程死亡场景（recordStreamStart 幂等 + NotLive reconcile） ----------

@@ -3,6 +3,10 @@ package com.bilibili.livemonitor.util
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.domain.UpdateDecider
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -34,6 +38,7 @@ class IncrementalUpdaterTest {
 
     @Before
     fun setUp() {
+        File(context.filesDir, "updates").deleteRecursively()
         updater = IncrementalUpdater(context)
         // fake 打补丁：把"补丁"（= 目标字节）原样写进输出。
         // 真实 native 打补丁在 Robolectric 跑不了，由 instrumented 夹具覆盖。
@@ -192,6 +197,28 @@ class IncrementalUpdaterTest {
 
         assertTrue("进度应单调不减", percents.zipWithNext().all { (a, b) -> b >= a })
         assertEquals("最后一跳完成应到 100", 100, percents.last())
+    }
+
+    @Test
+    fun `取消时清理工作目录且不发布最终APK`() = runBlocking {
+        addRelease(100, makeApk(100)); addRelease(101, makeApk(101))
+        installBase(100)
+        val chain = chainFrom(100, listOf(addPatch(100, 101)))
+        val downloadStarted = CompletableDeferred<Unit>()
+        updater.downloader = { _, _, _ ->
+            downloadStarted.complete(Unit)
+            awaitCancellation()
+        }
+
+        val job = launch { updater.executeChain(chain, "1.1.101") {} }
+        downloadStarted.await()
+        job.cancelAndJoin()
+
+        assertFalse("取消后工作目录应清理", File(context.filesDir, "updates/incremental").exists())
+        assertFalse(
+            "取消后不得发布最终 APK",
+            File(context.filesDir, "updates/vivhite-tracker-1.1.101.apk").exists()
+        )
     }
 
     private fun assertFalse(msg: String, value: Boolean) = org.junit.Assert.assertFalse(msg, value)

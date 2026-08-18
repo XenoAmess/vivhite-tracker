@@ -71,58 +71,62 @@ class NotificationBuilder(
         )
     }
 
-    fun sendText(channelId: String, title: String, text: String?) {
+    fun sendText(channelId: String, title: String, text: String?, silent: Boolean = false) {
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.img_on)
             .setContentTitle(title)
             .setContentIntent(mainActivityPendingIntent(title.hashCode()))
             .setAutoCancel(true)
+        if (silent) builder.setSilent(true)
         if (!text.isNullOrBlank()) builder.setContentText(text.take(50))
         notify(title.hashCode(), builder.build())
     }
 
-    fun sendVideo(aid: Long, title: String, prefix: String) {
+    fun sendVideo(aid: Long, title: String, prefix: String, silent: Boolean = false) {
+        val builder = NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle("白绮 $prefix")
+            .setContentText(title.take(50))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent(videoIntent(aid), aid.toInt()))
+        if (silent) builder.setSilent(true)
         notify(
             LiveMonitorApp.NOTIFICATION_ID_VIDEO,
-            NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_VIDEO_ALERT_ID)
-                .setSmallIcon(R.drawable.img_on)
-                .setContentTitle("白绮 $prefix")
-                .setContentText(title.take(50))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent(videoIntent(aid), aid.toInt()))
-                .build()
+            builder.build()
         )
     }
 
-    fun sendDynamic(dynamicId: String, displayText: String) {
+    fun sendDynamic(dynamicId: String, displayText: String, silent: Boolean = false) {
         val text = displayText.takeIf { it.isNotBlank() } ?: "白绮发布了新动态"
+        val builder = NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_DYNAMIC_ALERT_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle("白绮新动态")
+            .setContentText(text.take(50))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent(dynamicIntent(dynamicId), dynamicId.hashCode()))
+        if (silent) builder.setSilent(true)
         notify(
             LiveMonitorApp.NOTIFICATION_ID_DYNAMIC,
-            NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_DYNAMIC_ALERT_ID)
-                .setSmallIcon(R.drawable.img_on)
-                .setContentTitle("白绮新动态")
-                .setContentText(text.take(50))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent(dynamicIntent(dynamicId), dynamicId.hashCode()))
-                .build()
+            builder.build()
         )
     }
 
     // 勿扰时段内的静音开播通知：无 fullScreenIntent、setSilent 覆盖通道 HIGH 的默认声音
     fun sendSilentAlert() {
+        val builder = NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_ALERT_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setContentTitle("🎉 白绮开播啦！")
+            .setContentText("直播间 $roomId 正在直播中（勿扰时段已静音）")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setSilent(true)
+            .setContentIntent(mainActivityPendingIntent(0))
+        addLiveAlertActions(builder)
         notify(
             LiveMonitorApp.NOTIFICATION_ID_ALERT,
-            NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_ALERT_ID)
-                .setSmallIcon(R.drawable.img_on)
-                .setContentTitle("🎉 白绮开播啦！")
-                .setContentText("直播间 $roomId 正在直播中（勿扰时段已静音）")
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setAutoCancel(true)
-                .setSilent(true)
-                .setContentIntent(mainActivityPendingIntent(0))
-                .build()
+            builder.build()
         )
     }
 
@@ -134,9 +138,7 @@ class NotificationBuilder(
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        notify(
-            LiveMonitorApp.NOTIFICATION_ID_ALERT,
-            NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_ALERT_ID)
+        val builder = NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_ALERT_ID)
                 .setSmallIcon(R.drawable.img_on)
                 .setLargeIcon(BitmapFactory.decodeResource(context.resources, R.drawable.img_on))
                 .setContentTitle("🎉 白绮开播啦！")
@@ -146,8 +148,8 @@ class NotificationBuilder(
                 .setAutoCancel(true)
                 .setContentIntent(mainActivityPendingIntent(0))
                 .setFullScreenIntent(fullScreenIntent, true)
-                .build()
-        )
+        addLiveAlertActions(builder)
+        notify(LiveMonitorApp.NOTIFICATION_ID_ALERT, builder.build())
     }
 
     /** 构建前台服务常驻通知（startForeground 用，不 post） */
@@ -216,6 +218,35 @@ class NotificationBuilder(
     private fun pendingIntent(intent: Intent, requestCode: Int): PendingIntent =
         PendingIntent.getActivity(
             context, requestCode, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+    private fun addLiveAlertActions(builder: NotificationCompat.Builder) {
+        builder.addAction(
+            R.drawable.img_on,
+            "观看直播",
+            PendingIntent.getActivity(
+                context,
+                10,
+                Intent(context, MainActivity::class.java).apply {
+                    action = MainActivity.ACTION_OPEN_WATCH_LIVE
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        )
+        builder.addAction(
+            R.drawable.img_off,
+            "停止声音",
+            serviceActionPendingIntent(LiveCheckService.ACTION_STOP_ALERT, 11)
+        )
+    }
+
+    private fun serviceActionPendingIntent(action: String, requestCode: Int): PendingIntent =
+        PendingIntent.getService(
+            context,
+            requestCode,
+            Intent(context, LiveCheckService::class.java).setAction(action),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 

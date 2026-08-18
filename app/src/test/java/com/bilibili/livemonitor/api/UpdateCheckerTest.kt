@@ -2,7 +2,11 @@ package com.bilibili.livemonitor.api
 
 import com.bilibili.livemonitor.domain.UpdateDecider
 import com.bilibili.livemonitor.domain.UpdateMirrors
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -476,5 +480,71 @@ class UpdateCheckerTest {
 
         assertFalse(ok)
         assertFalse("失败后半成品文件必须删除", dest.exists())
+    }
+
+    @Test
+    fun `e2e downloadApk 取消后不发布目标且清理partial`() = runBlocking {
+        val chunk = ByteArray(8192) { 7 }
+        withServer({ exchange ->
+            runCatching {
+                exchange.sendResponseHeaders(200, (chunk.size * 500L))
+                exchange.responseBody.use { output ->
+                    repeat(500) {
+                        output.write(chunk)
+                        output.flush()
+                        Thread.sleep(2)
+                    }
+                }
+            }
+        }) { baseUrl ->
+            val dir = java.nio.file.Files.createTempDirectory("cancel-apk").toFile()
+            val dest = java.io.File(dir, "update.apk")
+            val started = CompletableDeferred<Unit>()
+            val job = launch {
+                UpdateChecker().downloadApk("$baseUrl/app.apk", dest) {
+                    started.complete(Unit)
+                }
+            }
+
+            started.await()
+            job.cancelAndJoin()
+
+            assertFalse("取消后不得发布最终文件", dest.exists())
+            assertTrue("取消后不得残留 partial", dir.listFiles().orEmpty().none { it.name.endsWith(".part") })
+            dir.deleteRecursively()
+        }
+        Unit
+    }
+
+    @Test
+    fun `e2e downloadApk 首字节前取消会立即断开连接`() = runBlocking {
+        val requestReceived = java.util.concurrent.CountDownLatch(1)
+        val releaseServer = java.util.concurrent.CountDownLatch(1)
+        withServer({ exchange ->
+            requestReceived.countDown()
+            releaseServer.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            runCatching {
+                exchange.sendResponseHeaders(200, 1)
+                exchange.responseBody.use { it.write(1) }
+            }
+        }) { baseUrl ->
+            val dir = java.nio.file.Files.createTempDirectory("cancel-stalled-apk").toFile()
+            val dest = java.io.File(dir, "update.apk")
+            val job = launch(kotlinx.coroutines.Dispatchers.IO) {
+                UpdateChecker().downloadApk("$baseUrl/app.apk", dest) { }
+            }
+            assertTrue(requestReceived.await(2, java.util.concurrent.TimeUnit.SECONDS))
+
+            try {
+                withTimeout(3_000) { job.cancelAndJoin() }
+            } finally {
+                releaseServer.countDown()
+            }
+
+            assertFalse(dest.exists())
+            assertTrue(dir.listFiles().orEmpty().none { it.name.endsWith(".part") })
+            dir.deleteRecursively()
+        }
+        Unit
     }
 }

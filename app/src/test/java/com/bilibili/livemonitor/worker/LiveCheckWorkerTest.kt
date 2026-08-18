@@ -8,6 +8,7 @@ import com.bilibili.livemonitor.util.PreferenceManager
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -48,7 +49,12 @@ class LiveCheckWorkerTest {
     @Test
     fun `服务活着 Worker跳过不重启`() = runBlocking {
         // B2 真机场景：60s Alarm 链路正常时，15min Worker 触发只确认不动作
-        PreferenceManager(context).setServiceRunning(true)
+        val prefs = PreferenceManager(context)
+        prefs.setServiceRunning(true)
+        prefs.setMonitoringHeartbeat(
+            System.currentTimeMillis(),
+            prefs.getMonitoringGeneration()
+        )
         LiveCheckService.isRunning = true
 
         val result = buildWorker().doWork()
@@ -72,6 +78,44 @@ class LiveCheckWorkerTest {
             LiveCheckService::class.java.name,
             startedIntent?.component?.className
         )
+    }
+
+    @Test
+    fun `服务静态存活但心跳过期 Worker触发恢复`() = runBlocking {
+        val prefs = PreferenceManager(context)
+        prefs.setServiceRunning(true)
+        val generation = prefs.getMonitoringGeneration()
+        val maxAge = LiveCheckWorker.heartbeatMaxAge(prefs.getCheckIntervalSeconds())
+        prefs.setMonitoringHeartbeat(
+            System.currentTimeMillis() - maxAge - 1,
+            generation
+        )
+        LiveCheckService.isRunning = true
+
+        val result = buildWorker().doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        val startedIntent = shadowOf(context.applicationContext as android.app.Application)
+            .peekNextStartedService()
+        assertNotNull(startedIntent)
+        assertEquals(LiveCheckService.ACTION_RECOVER_STALE, startedIntent?.action)
+        assertEquals(
+            generation,
+            startedIntent?.getLongExtra(LiveCheckService.EXTRA_MONITORING_GENERATION, -1)
+        )
+    }
+
+    @Test
+    fun `节能档五分钟心跳在检查宽限期内不误恢复`() = runBlocking {
+        val prefs = PreferenceManager(context)
+        prefs.setServiceRunning(true)
+        prefs.setCheckIntervalSeconds(PreferenceManager.CHECK_INTERVAL_ECO_SECONDS)
+        val generation = prefs.getMonitoringGeneration()
+        prefs.setMonitoringHeartbeat(System.currentTimeMillis() - 5 * 60_000L - 30_000L, generation)
+        LiveCheckService.isRunning = true
+
+        assertEquals(ListenableWorker.Result.success(), buildWorker().doWork())
+        assertNoServiceStarted()
     }
 
     private fun assertNoServiceStarted() {

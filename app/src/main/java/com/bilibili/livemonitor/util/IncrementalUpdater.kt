@@ -3,6 +3,7 @@ package com.bilibili.livemonitor.util
 import android.content.Context
 import com.bilibili.livemonitor.domain.UpdateDecider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -36,68 +37,78 @@ class IncrementalUpdater(
         val workDir = File(context.filesDir, "updates/incremental")
         workDir.deleteRecursively()
         workDir.mkdirs()
+        try {
+            if (chain.hops.isEmpty()) {
+                AppLogger.w(TAG, "incremental: empty chain")
+                return@withContext null
+            }
+            val base = installedApkProvider(context)
+            if (base == null) {
+                AppLogger.w(TAG, "incremental: installed apk unreadable")
+                return@withContext null
+            }
+            val baseFile: File = base
+            val baseSha = ApkPatcher.sha256(baseFile)
+            if (!baseSha.equals(chain.fromApkSha256, ignoreCase = true)) {
+                AppLogger.w(TAG, "incremental: base apk sha mismatch (local=$baseSha expect=${chain.fromApkSha256})")
+                return@withContext null
+            }
 
-        val base = installedApkProvider(context)
-        if (base == null) {
-            AppLogger.w(TAG, "incremental: installed apk unreadable")
-            return@withContext null
+            var current = baseFile
+            var downloadedBefore = 0L
+            val totalSize = chain.totalSize.takeIf { it > 0 } ?: chain.hops.sumOf { it.size }
+
+            for ((index, hop) in chain.hops.withIndex()) {
+                coroutineContext.ensureActive()
+                val patchFile = File(workDir, "hop-$index.bspatch")
+                val hopBase = downloadedBefore
+                val ok = downloader(hop.url, patchFile) { hopPercent ->
+                    val overall = if (totalSize > 0) {
+                        ((hopBase + hop.size * hopPercent / 100) * 100 / totalSize).toInt()
+                    } else hopPercent
+                    onProgress(overall.coerceIn(0, 100))
+                }
+                if (!ok) {
+                    AppLogger.w(TAG, "incremental: hop $index download failed")
+                    return@withContext null
+                }
+                val patchSha = ApkPatcher.sha256(patchFile)
+                if (!patchSha.equals(hop.patchSha256, ignoreCase = true)) {
+                    AppLogger.w(TAG, "incremental: hop $index patch sha mismatch")
+                    return@withContext null
+                }
+
+                val outFile = File(workDir, "hop-$index.apk")
+                try {
+                    patcher(current, patchFile, outFile)
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "incremental: hop $index patch apply failed", e)
+                    outFile.delete()
+                    return@withContext null
+                }
+                coroutineContext.ensureActive()
+                val resultSha = ApkPatcher.sha256(outFile)
+                if (!resultSha.equals(hop.resultSha256, ignoreCase = true)) {
+                    AppLogger.w(TAG, "incremental: hop $index result sha mismatch")
+                    outFile.delete()
+                    return@withContext null
+                }
+                AppLogger.d(TAG, "incremental: hop $index -> vc ${hop.toVersionCode} ok (${hop.size} bytes)")
+                downloadedBefore += hop.size
+                patchFile.delete()
+                current = outFile
+            }
+
+            val destination = AppUpdater.apkFile(context, finalVersionName)
+            if (!AppUpdater.publishAtomically(current, destination)) {
+                AppLogger.w(TAG, "incremental: could not publish final apk atomically")
+                return@withContext null
+            }
+            AppLogger.d(TAG, "incremental: chain complete, ${chain.hops.size} hop(s), saved vs full apk")
+            destination
+        } finally {
+            cleanup(workDir)
         }
-        val baseFile: File = base
-        val baseSha = ApkPatcher.sha256(baseFile)
-        if (!baseSha.equals(chain.fromApkSha256, ignoreCase = true)) {
-            AppLogger.w(TAG, "incremental: base apk sha mismatch (local=$baseSha expect=${chain.fromApkSha256})")
-            return@withContext null
-        }
-
-        var current = baseFile
-        var downloadedBefore = 0L
-        val totalSize = chain.totalSize.takeIf { it > 0 } ?: chain.hops.sumOf { it.size }
-
-        for ((index, hop) in chain.hops.withIndex()) {
-            val patchFile = File(workDir, "hop-$index.bspatch")
-            val hopBase = downloadedBefore
-            val ok = downloader(hop.url, patchFile) { hopPercent ->
-                val overall = if (totalSize > 0) {
-                    ((hopBase + hop.size * hopPercent / 100) * 100 / totalSize).toInt()
-                } else hopPercent
-                onProgress(overall.coerceIn(0, 100))
-            }
-            if (!ok) {
-                AppLogger.w(TAG, "incremental: hop $index download failed")
-                cleanup(workDir); return@withContext null
-            }
-            val patchSha = ApkPatcher.sha256(patchFile)
-            if (!patchSha.equals(hop.patchSha256, ignoreCase = true)) {
-                AppLogger.w(TAG, "incremental: hop $index patch sha mismatch")
-                cleanup(workDir); return@withContext null
-            }
-
-            val isLast = index == chain.hops.lastIndex
-            val outFile = if (isLast) {
-                AppUpdater.apkFile(context, finalVersionName)
-            } else {
-                File(workDir, "hop-$index.apk")
-            }
-            try {
-                patcher(current, patchFile, outFile)
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "incremental: hop $index patch apply failed", e)
-                outFile.delete(); cleanup(workDir); return@withContext null
-            }
-            val resultSha = ApkPatcher.sha256(outFile)
-            if (!resultSha.equals(hop.resultSha256, ignoreCase = true)) {
-                AppLogger.w(TAG, "incremental: hop $index result sha mismatch")
-                outFile.delete(); cleanup(workDir); return@withContext null
-            }
-            AppLogger.d(TAG, "incremental: hop $index -> vc ${hop.toVersionCode} ok (${hop.size} bytes)")
-            downloadedBefore += hop.size
-            patchFile.delete()
-            current = outFile
-        }
-
-        cleanup(workDir)
-        AppLogger.d(TAG, "incremental: chain complete, ${chain.hops.size} hop(s), saved vs full apk")
-        current
     }
 
     private fun cleanup(workDir: File) {

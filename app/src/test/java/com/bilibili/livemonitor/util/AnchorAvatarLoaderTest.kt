@@ -12,9 +12,11 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AnchorAvatarLoaderTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
@@ -27,6 +29,9 @@ class AnchorAvatarLoaderTest {
     @Before
     fun setUp() {
         cacheFile().delete()
+        context.filesDir.listFiles { file ->
+            file.name.startsWith(".${cacheFile().name}.") && file.name.endsWith(".part")
+        }?.forEach(File::delete)
     }
 
     private fun loaderWith(
@@ -77,6 +82,21 @@ class AnchorAvatarLoaderTest {
     fun `无缓存且网络失败 返回null`() = runBlocking {
         val loader = loaderWith({ null }, { null })
         assertNull(loader.load(context))
+    }
+
+    @Test
+    fun `损坏缓存不会短路网络且刷新不留临时文件`() = runBlocking {
+        cacheFile().writeText("partial-avatar")
+        var fetched = false
+        val loader = loaderWith(
+            { fetched = true; "https://i1.hdslb.com/fresh.jpg" },
+            { fakeBitmap() }
+        )
+
+        assertNotNull(loader.load(context))
+        assertTrue(fetched)
+        assertNotNull(android.graphics.BitmapFactory.decodeFile(cacheFile().absolutePath))
+        assertTrue(context.filesDir.listFiles().orEmpty().none { it.name.endsWith(".part") })
     }
 
     @Test

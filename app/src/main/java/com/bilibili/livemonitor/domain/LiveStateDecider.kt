@@ -17,13 +17,32 @@ object LiveStateDecider {
      * - lastStatus == null（首次检查/状态未知）：在播就提醒
      * - 否则仅在 未开播→开播 跳变时提醒，避免重复打扰
      */
-    fun shouldAlert(lastStatus: Boolean?, isLive: Boolean, suppressed: Boolean = false): Boolean {
+    fun shouldAlert(
+        lastStatus: Boolean?,
+        isLive: Boolean,
+        suppressed: Boolean = false,
+        isNewSession: Boolean = false
+    ): Boolean {
         if (suppressed) return false
-        return if (lastStatus == null) {
-            isLive
-        } else {
-            !lastStatus && isLive
-        }
+        return isLive && (lastStatus != true || isNewSession)
+    }
+
+    /** B 站场次标识只做首尾空白归一；空值不具备场次身份。 */
+    fun normalizeLiveStartTime(raw: String?): String? = raw?.trim()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * 持续 Live 时，仅两个明确且不同的场次标识才能证明已经换场。
+     * 当前标识缺失时保持同场，避免网页兜底结果制造重复提醒。
+     */
+    fun isNewLiveSession(
+        lastStatus: Boolean?,
+        previousLiveStartTime: String?,
+        currentLiveStartTime: String?
+    ): Boolean {
+        if (lastStatus != true) return false
+        val previous = normalizeLiveStartTime(previousLiveStartTime) ?: return false
+        val current = normalizeLiveStartTime(currentLiveStartTime) ?: return false
+        return previous != current
     }
 
     /**
@@ -59,5 +78,16 @@ object LiveStateDecider {
      */
     fun shouldRetry(status: BilibiliApi.LiveStatus): Boolean {
         return status is BilibiliApi.LiveStatus.Error
+    }
+
+    fun isHeartbeatStale(
+        heartbeatTime: Long,
+        heartbeatGeneration: Long,
+        monitoringGeneration: Long,
+        now: Long,
+        maxAgeMillis: Long
+    ): Boolean {
+        if (heartbeatTime <= 0L || heartbeatGeneration != monitoringGeneration) return true
+        return now - heartbeatTime > maxAgeMillis
     }
 }

@@ -1,5 +1,7 @@
 # 项目优化计划
 
+> 历史实施计划：行号、规模和问题状态对应当时基线，不作为当前事实。当前状态以 `AGENTS.md` 与源码为准。
+
 > 本计划基于 2026-08-04 全代码库分析（覆盖 app/src/main 44 文件 / 9173 行，app/src/test 40 文件 / 5535 行）。
 > 按用户要求**忽略安全相关问题**（usesCleartextTraffic、allowBackup、FGS specialUse 合规等均不在范围内）。
 

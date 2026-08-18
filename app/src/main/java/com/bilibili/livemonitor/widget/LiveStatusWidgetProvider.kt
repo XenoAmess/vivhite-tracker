@@ -23,6 +23,8 @@ import kotlinx.coroutines.launch
  */
 class LiveStatusWidgetProvider : AppWidgetProvider() {
 
+    internal enum class WidgetState { STOPPED, LIVE, NOT_LIVE, ERROR_OR_STALE }
+
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         for (id in appWidgetIds) {
             updateWidget(context, appWidgetManager, id)
@@ -42,21 +44,35 @@ class LiveStatusWidgetProvider : AppWidgetProvider() {
             val showLiveTitle: Boolean
         )
 
-        // 纯渲染决策（可单测）：monitoring + live → 图标/文案
-        internal fun buildStatus(monitoring: Boolean, live: Boolean): Pair<Int, String> = when {
-            !monitoring -> R.drawable.img_off to "已停止监控"
-            live -> R.drawable.img_on to "🔴 直播中"
-            else -> R.drawable.img_off to "未开播"
+        internal fun resolveState(
+            monitoring: Boolean,
+            lastCheckTime: Long,
+            lastCheckSuccess: Boolean,
+            lastCheckLive: Boolean,
+            now: Long,
+            staleAfterMillis: Long = STATUS_STALE_AFTER
+        ): WidgetState = when {
+            !monitoring -> WidgetState.STOPPED
+            !lastCheckSuccess || lastCheckTime <= 0L || now - lastCheckTime > staleAfterMillis ->
+                WidgetState.ERROR_OR_STALE
+            lastCheckLive -> WidgetState.LIVE
+            else -> WidgetState.NOT_LIVE
+        }
+
+        internal fun buildStatus(state: WidgetState): Pair<Int, String> = when (state) {
+            WidgetState.STOPPED -> R.drawable.img_off to "已停止监控"
+            WidgetState.LIVE -> R.drawable.img_on to "🔴 直播中"
+            WidgetState.NOT_LIVE -> R.drawable.img_off to "未开播"
+            WidgetState.ERROR_OR_STALE -> R.drawable.img_off to "监控异常或状态过期"
         }
 
         /** prefs 派生值 → 完整渲染内容；liveTitle 只在直播中且非空时展示 */
         internal fun computeContent(
-            monitoring: Boolean,
-            live: Boolean,
+            state: WidgetState,
             lastLiveTitle: String
         ): WidgetContent {
-            val (iconRes, statusText) = buildStatus(monitoring, live)
-            val showTitle = live && lastLiveTitle.isNotBlank()
+            val (iconRes, statusText) = buildStatus(state)
+            val showTitle = state == WidgetState.LIVE && lastLiveTitle.isNotBlank()
             return WidgetContent(iconRes, statusText, lastLiveTitle.takeIf { showTitle }, showTitle)
         }
 
@@ -78,9 +94,14 @@ class LiveStatusWidgetProvider : AppWidgetProvider() {
         private fun updateWidget(context: Context, manager: AppWidgetManager, id: Int) {
             val prefs = PreferenceManager(context)
             val monitoring = prefs.isServiceRunning()
-            // 用持久化的最近检测结果（进程重启后静态变量为 false，prefs 才可靠）
-            val live = monitoring && prefs.isLastCheckSuccess() && prefs.isLastCheckLive()
-            val content = computeContent(monitoring, live, prefs.getLastLiveTitle())
+            val state = resolveState(
+                monitoring = monitoring,
+                lastCheckTime = prefs.getLastCheckTime(),
+                lastCheckSuccess = prefs.isLastCheckSuccess(),
+                lastCheckLive = prefs.isLastCheckLive(),
+                now = System.currentTimeMillis()
+            )
+            val content = computeContent(state, prefs.getLastLiveTitle())
 
             val views = RemoteViews(context.packageName, R.layout.widget_live_status)
             views.setImageViewResource(R.id.ivWidgetIcon, content.iconRes)
@@ -140,5 +161,7 @@ class LiveStatusWidgetProvider : AppWidgetProvider() {
                 }
             }
         }
+
+        internal const val STATUS_STALE_AFTER = 10 * 60_000L
     }
 }

@@ -1,5 +1,7 @@
 # 增量更新方案选型与设计（bsdiff → 更高效替代）
 
+> 历史选型记录：保留候选方案和实测依据；当前发布流程以 `versioning-and-update-system.md`、workflow 与源码为准。
+
 > 日期：2026-08-04
 > 背景：当前增量链路用 `io.sigpipe:jbsdiff`（bsdiff 的 Java 移植）。实测相邻版本补丁 7~7.7MB / 全量 41.7MB（17-18%），远古版本补丁高达全量 83%。评估是否有更高效的替代。
 

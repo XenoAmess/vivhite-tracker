@@ -79,4 +79,20 @@ class MoodEventDaoTest {
         assertEquals(2, dao.deleteBefore(5000))
         assertEquals(listOf("新"), dao.eventsBetween(0, 20_000).map { it.title })
     }
+
+    @Test
+    fun `搜索覆盖事件原因备注与心情字段`() = runBlocking {
+        dao.insert(
+            MoodEventEntity(
+                eventTs = 1000, mood = "happy", title = "看直播",
+                reason = "唱了喜欢的歌", note = "下次继续", createdAt = 1000
+            )
+        )
+
+        assertEquals(1, dao.search("直播").size)
+        assertEquals(1, dao.search("喜欢").size)
+        assertEquals(1, dao.search("下次").size)
+        assertEquals(1, dao.search("HAPPY").size)
+        assertEquals(1, dao.eventsWithMoods(listOf("happy")).size)
+    }
 }

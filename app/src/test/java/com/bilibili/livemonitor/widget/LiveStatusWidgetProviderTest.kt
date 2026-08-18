@@ -26,26 +26,54 @@ class LiveStatusWidgetProviderTest {
     }
 
     @Test
-    fun `buildStatus 三种状态`() {
-        assertEquals(R.drawable.img_on to "🔴 直播中", LiveStatusWidgetProvider.buildStatus(monitoring = true, live = true))
-        assertEquals(R.drawable.img_off to "未开播", LiveStatusWidgetProvider.buildStatus(monitoring = true, live = false))
-        assertEquals(R.drawable.img_off to "已停止监控", LiveStatusWidgetProvider.buildStatus(monitoring = false, live = false))
+    fun `resolveState 区分停止在播未播和异常过期`() {
+        val now = 1_000_000L
+        assertEquals(
+            LiveStatusWidgetProvider.WidgetState.STOPPED,
+            LiveStatusWidgetProvider.resolveState(false, now, true, true, now)
+        )
+        assertEquals(
+            LiveStatusWidgetProvider.WidgetState.LIVE,
+            LiveStatusWidgetProvider.resolveState(true, now, true, true, now)
+        )
+        assertEquals(
+            LiveStatusWidgetProvider.WidgetState.NOT_LIVE,
+            LiveStatusWidgetProvider.resolveState(true, now, true, false, now)
+        )
+        assertEquals(
+            LiveStatusWidgetProvider.WidgetState.ERROR_OR_STALE,
+            LiveStatusWidgetProvider.resolveState(true, now, false, true, now)
+        )
+        assertEquals(
+            LiveStatusWidgetProvider.WidgetState.ERROR_OR_STALE,
+            LiveStatusWidgetProvider.resolveState(
+                true,
+                now - LiveStatusWidgetProvider.STATUS_STALE_AFTER - 1,
+                true,
+                true,
+                now
+            )
+        )
+        assertEquals(
+            R.drawable.img_off to "监控异常或状态过期",
+            LiveStatusWidgetProvider.buildStatus(LiveStatusWidgetProvider.WidgetState.ERROR_OR_STALE)
+        )
     }
 
     @Test
     fun `computeContent 直播中展示标题 否则隐藏`() {
-        val live = LiveStatusWidgetProvider.computeContent(monitoring = true, live = true, lastLiveTitle = "今晚播点什么")
+        val live = LiveStatusWidgetProvider.computeContent(LiveStatusWidgetProvider.WidgetState.LIVE, "今晚播点什么")
         assertTrue(live.showLiveTitle)
         assertEquals("今晚播点什么", live.liveTitle)
         assertEquals(R.drawable.img_on, live.iconRes)
 
-        val liveBlank = LiveStatusWidgetProvider.computeContent(monitoring = true, live = true, lastLiveTitle = "")
+        val liveBlank = LiveStatusWidgetProvider.computeContent(LiveStatusWidgetProvider.WidgetState.LIVE, "")
         assertFalse("标题为空不应展示", liveBlank.showLiveTitle)
 
-        val notLive = LiveStatusWidgetProvider.computeContent(monitoring = true, live = false, lastLiveTitle = "残留标题")
+        val notLive = LiveStatusWidgetProvider.computeContent(LiveStatusWidgetProvider.WidgetState.NOT_LIVE, "残留标题")
         assertFalse("未开播不展示标题", notLive.showLiveTitle)
 
-        val stopped = LiveStatusWidgetProvider.computeContent(monitoring = false, live = false, lastLiveTitle = "残留标题")
+        val stopped = LiveStatusWidgetProvider.computeContent(LiveStatusWidgetProvider.WidgetState.STOPPED, "残留标题")
         assertFalse("停止监控不展示标题", stopped.showLiveTitle)
         assertEquals(R.drawable.img_off, stopped.iconRes)
         assertEquals("已停止监控", stopped.statusText)

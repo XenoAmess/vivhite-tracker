@@ -2,6 +2,7 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="logs" path="logs/" />
     <files-path name="updates" path="updates/" />
+    <files-path name="posters" path="posters/" />
     <!-- 分享配图（封面/长宣传图），供 ACTION_SEND EXTRA_STREAM 授权读取 -->
     <cache-path name="shared" path="shared/" />
 </paths>

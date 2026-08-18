@@ -2,11 +2,18 @@ package com.bilibili.livemonitor.api
 
 import com.bilibili.livemonitor.domain.UpdateDecider
 import com.bilibili.livemonitor.domain.UpdateMirrors
+import com.bilibili.livemonitor.util.AppUpdater
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
 
 open class UpdateChecker {
 
@@ -221,43 +228,73 @@ open class UpdateChecker {
         dest: File,
         onProgress: (percent: Int) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
+        var partial: File? = null
+        var publishedByThisCall = false
         val candidates = UpdateMirrors.candidates(url)
-        candidates.forEachIndexed { index, candidate ->
-            if (index > 0) {
-                onProgress(0) // 重试时进度条归零
+        try {
+            candidates.forEachIndexed { index, candidate ->
+                currentCoroutineContext().ensureActive()
+                if (index > 0) {
+                    onProgress(0) // 重试时进度条归零
+                }
+                partial = AppUpdater.tempFileFor(dest)
+                if (downloadOnce(candidate, partial!!, onProgress)) {
+                    currentCoroutineContext().ensureActive()
+                }
+                if (partial?.isFile == true && AppUpdater.publishAtomically(partial!!, dest)) {
+                    publishedByThisCall = true
+                    partial = null
+                    currentCoroutineContext().ensureActive()
+                    return@withContext true
+                }
+                partial?.delete()
+                partial = null
             }
-            if (downloadOnce(candidate, dest, onProgress)) return@withContext true
+            dest.delete()
+            false
+        } finally {
+            partial?.delete()
+            if (!currentCoroutineContext().isActive && publishedByThisCall) dest.delete()
         }
-        dest.delete()
-        false
     }
 
-    private fun downloadOnce(
+    private suspend fun downloadOnce(
         url: String,
         dest: File,
         onProgress: (percent: Int) -> Unit
-    ): Boolean {
-        return try {
-            val connection = URL(url).openConnection() as HttpURLConnection
-            connection.apply {
+    ): Boolean = suspendCancellableCoroutine { continuation ->
+        val connection = AtomicReference<HttpURLConnection?>()
+        continuation.invokeOnCancellation {
+            connection.getAndSet(null)?.disconnect()
+            dest.delete()
+        }
+        if (!continuation.isActive) return@suspendCancellableCoroutine
+        try {
+            val openedConnection = URL(url).openConnection() as HttpURLConnection
+            connection.set(openedConnection)
+            if (!continuation.isActive) {
+                openedConnection.disconnect()
+                return@suspendCancellableCoroutine
+            }
+            openedConnection.apply {
                 setRequestProperty("User-Agent", USER_AGENT)
                 connectTimeout = 10000
                 readTimeout = 15000
             }
-            val total = connection.contentLength.toLong()
+            val total = openedConnection.contentLength.toLong()
             dest.parentFile?.mkdirs()
-            connection.inputStream.use { input ->
+            openedConnection.inputStream.use { input ->
                 dest.outputStream().use { output ->
                     val buffer = ByteArray(8192)
                     var downloaded = 0L
                     var lastPercent = -1
-                    while (true) {
+                    while (continuation.isActive) {
                         val read = input.read(buffer)
                         if (read < 0) break
                         output.write(buffer, 0, read)
                         downloaded += read
                         if (total > 0) {
-                            val percent = (downloaded * 100 / total).toInt()
+                            val percent = (downloaded * 100 / total).toInt().coerceIn(0, 100)
                             if (percent != lastPercent) {
                                 lastPercent = percent
                                 onProgress(percent)
@@ -266,11 +303,12 @@ open class UpdateChecker {
                     }
                 }
             }
-            connection.disconnect()
-            true
-        } catch (e: Exception) {
+            if (continuation.isActive) continuation.resume(true)
+        } catch (_: Exception) {
             dest.delete()
-            false
+            if (continuation.isActive) continuation.resume(false)
+        } finally {
+            connection.getAndSet(null)?.disconnect()
         }
     }
 

@@ -8,16 +8,20 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.GridLayout
+import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.room.withTransaction
+import com.bilibili.livemonitor.controller.BackupRestoreCoordinator
 import com.bilibili.livemonitor.databinding.ActivityStatsBinding
 import com.bilibili.livemonitor.db.AppDatabase
 import com.bilibili.livemonitor.db.MoodEventEntity
@@ -26,9 +30,16 @@ import com.bilibili.livemonitor.domain.MoodCatalog
 import com.bilibili.livemonitor.domain.MoodTiming
 import com.bilibili.livemonitor.domain.SessionBackup
 import com.bilibili.livemonitor.domain.StreamStats
+import com.bilibili.livemonitor.repository.StatsRepository
+import com.bilibili.livemonitor.util.PreferenceManager
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -38,6 +49,14 @@ import java.util.Locale
  * 直播场次统计页：月份日历（有场次的日期高亮 + 圆点）→ 点选日期查看当天场次。
  */
 class StatsActivity : AppCompatActivity() {
+
+    private data class OverviewData(
+        val allSessions: List<StreamSessionEntity>,
+        val summaryText: String,
+        val daily: List<Int>,
+        val labels: List<String>,
+        val now: Long
+    )
 
     private lateinit var binding: ActivityStatsBinding
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -49,16 +68,46 @@ class StatsActivity : AppCompatActivity() {
     private var selectedDayStart: Long = 0
     private lateinit var sessionAdapter: SessionAdapter
     private lateinit var moodAdapter: MoodEventAdapter
-    private val loadedSessions = mutableListOf<StreamSessionEntity>()
     private var magicPeriods: List<com.bilibili.livemonitor.domain.MagicPeriod> = emptyList()
+    private var hasInitialSelection = false
+    private var searchJob: Job? = null
+    private var dataLoadJob: Job? = null
+    private var monthLoadJob: Job? = null
+    private var loadGeneration = 0L
+    private val pendingImportDirs = mutableSetOf<java.io.File>()
+    private val database by lazy { AppDatabase.get(this) }
+    private val statsRepository by lazy { StatsRepository(database) }
+    private val backupRestoreCoordinator by lazy { BackupRestoreCoordinator(this, database) }
 
     // internal seam：单测注入 fake 头像加载（避免真实网络）
     internal var avatarLoader = com.bilibili.livemonitor.util.AnchorAvatarLoader()
+    internal var moodEditDialog: AlertDialog? = null
+        private set
+    internal var moodDatePickerDialog: android.app.DatePickerDialog? = null
+        private set
+    internal var moodDeleteDialog: AlertDialog? = null
+        private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityStatsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        val requestedMonth = intent.getStringExtra(EXTRA_MONTH_KEY)
+        when {
+            savedInstanceState != null -> {
+                cal.timeInMillis = savedInstanceState.getLong(STATE_MONTH, System.currentTimeMillis())
+                selectedDayStart = savedInstanceState.getLong(STATE_DAY, 0L)
+                hasInitialSelection = selectedDayStart != 0L
+            }
+            requestedMonth != null -> {
+                parseMonthKey(requestedMonth)?.let {
+                    cal.timeInMillis = it
+                    selectedDayStart = it
+                    hasInitialSelection = true
+                }
+            }
+        }
 
         // targetSdk 35+ edge-to-edge：给系统栏高度加 padding，避免顶部被状态栏遮盖
         val baseL = binding.root.paddingLeft
@@ -71,9 +120,7 @@ class StatsActivity : AppCompatActivity() {
             insets
         }
 
-        sessionAdapter = SessionAdapter(emptyList(), timeFormat) { session ->
-            showPopularityDialog(session)
-        }
+        sessionAdapter = SessionAdapter(emptyList(), timeFormat) { session -> showSessionDialog(session) }
         binding.rvSessions.layoutManager = LinearLayoutManager(this)
         binding.rvSessions.adapter = sessionAdapter
 
@@ -89,15 +136,28 @@ class StatsActivity : AppCompatActivity() {
 
         binding.btnPrevMonth.setOnClickListener { cal.add(Calendar.MONTH, -1); loadMonthAndRender() }
         binding.btnNextMonth.setOnClickListener { cal.add(Calendar.MONTH, 1); loadMonthAndRender() }
-        binding.btnExportStats.setOnClickListener { exportSessions() }
-        binding.btnImportStats.setOnClickListener { importLauncher.launch("*/*") }
         binding.btnExportImage.setOnClickListener { exportStatsImage() }
         binding.btnStatsTrend.setOnClickListener { showStatsTrendDialog() }
         binding.btnSearchRecords.setOnClickListener { showSearchDialog() }
-        binding.btnManageRecords.setOnClickListener { showManageDialog() }
+        binding.btnStatsMore.setOnClickListener { showMoreMenu(it) }
+        binding.btnRecentPoster.setOnClickListener {
+            latestPosterFile()?.let { file -> sharePoster(file) }
+        }
+        binding.btnStatsRetry.setOnClickListener { refreshData() }
 
         loadAnchorAvatar()
         refreshData()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putLong(STATE_MONTH, cal.timeInMillis)
+        outState.putLong(STATE_DAY, selectedDayStart)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        pendingImportDirs.toList().forEach(::cleanupImportDir)
+        super.onDestroy()
     }
 
     // 左上角主播头像：磁盘缓存优先（AnchorAvatarLoader），全空显示占位圆
@@ -114,56 +174,84 @@ class StatsActivity : AppCompatActivity() {
 
     // 首次加载与导入后共用的全量刷新：场次列表/摘要/柱状/日历/心情
     private fun refreshData() {
-        lifecycleScope.launch {
-            magicPeriods = com.bilibili.livemonitor.util.MagicPeriodStore.load(
-                com.bilibili.livemonitor.util.PreferenceManager(this@StatsActivity)
-            )
-            val dao = AppDatabase.get(this@StatsActivity).streamSessionDao()
-            val now = System.currentTimeMillis()
-            val recent = dao.recentSessions(200)
-            loadedSessions.clear()
-            loadedSessions.addAll(recent)
-            val summary = StreamStats.summarize(dao.closedSessionsSince(now - 30L * 86_400_000L), now)
-            var summaryText =
-                "本周 ${summary.weekCount} 场 · 本月 ${summary.monthCount} 场 · " +
-                    "平均 ${formatDuration(summary.avgDurationMs)} · 最长 ${formatDuration(summary.maxDurationMs)}"
-            // 星期偏好并入摘要：常播日（0=周日..6=周六）
-            val localOffset = java.util.TimeZone.getDefault().getOffset(now).toLong()
-            val fav = StreamStats.favoriteWeekday(recent, localOffset)
-            if (fav != null) {
-                summaryText += " · 常播：${WEEKDAY_NAMES[fav.first]}"
-            }
-            binding.tvStatsSummary.text = summaryText
+        dataLoadJob?.cancel()
+        monthLoadJob?.cancel()
+        val generation = ++loadGeneration
+        showLoadState("正在加载手账…", retry = false)
+        dataLoadJob = lifecycleScope.launch {
+            try {
+                magicPeriods = com.bilibili.livemonitor.util.MagicPeriodStore.load(
+                    com.bilibili.livemonitor.util.PreferenceManager(this@StatsActivity)
+                )
+                val overview = withContext(Dispatchers.Default) {
+                    val now = System.currentTimeMillis()
+                    val allSessions = statsRepository.allSessions()
+                    val summary = StreamStats.summarize(
+                        allSessions.filter { it.startTs >= now - 30L * DAY_MS }, now
+                    )
+                    var summaryText =
+                        "本周 ${summary.weekCount} 场 · 本月 ${summary.monthCount} 场 · " +
+                            "平均 ${formatDuration(summary.avgDurationMs)} · 最长 ${formatDuration(summary.maxDurationMs)}"
+                    val localOffset = java.util.TimeZone.getDefault().getOffset(now).toLong()
+                    StreamStats.favoriteWeekday(allSessions, localOffset)?.let { favorite ->
+                        summaryText += " · 常播：${WEEKDAY_NAMES[favorite.first]}"
+                    }
+                    OverviewData(
+                        allSessions = allSessions,
+                        summaryText = summaryText,
+                        daily = StreamStats.dailyCounts(allSessions, now, 7, localOffset),
+                        labels = StreamStats.weekdayLabels(now, 7, localOffset).map { WEEKDAY_NAMES[it] },
+                        now = now
+                    )
+                }
+                if (generation != loadGeneration) return@launch
+                binding.tvStatsSummary.text = overview.summaryText
+                binding.weekBars.setData(overview.daily, overview.labels)
 
-            // 最近 7 天开播柱状（标签与 dailyCounts 桶逐日对齐，下标 0 = 最早一天）
-            val daily = StreamStats.dailyCounts(recent, now, 7, localOffset)
-            val labels = StreamStats.weekdayLabels(now, 7, localOffset).map { WEEKDAY_NAMES[it] }
-            binding.weekBars.setData(daily, labels)
-
-            sessionsByDay.clear()
-            // 日历按月从 DB 加载（不再依赖 recent(200) 内存过滤——
-            // 否则超 200 场后老月份从日历上消失）
-            val today = dayStart(now)
-            cal.timeInMillis = today
-            loadMonthIntoMap(cal)
+                sessionsByDay.clear()
+                // 日历按月从 DB 加载（不再依赖 recent(200) 内存过滤）。
+                val today = dayStart(overview.now)
+                if (!hasInitialSelection) {
+                    cal.timeInMillis = today
+                }
+                if (!loadMonthIntoMap(cal, generation)) return@launch
             // 完全没有场次时显示首次使用引导
-            binding.tvEmptyGuide.visibility = if (recent.isEmpty()) View.VISIBLE else View.GONE
+                binding.tvEmptyGuide.visibility = if (overview.allSessions.isEmpty()) View.VISIBLE else View.GONE
             // 默认选中：今天；今天无场次则本月最近一场所在的日期
-            selectedDayStart = if (sessionsByDay.containsKey(today)) today
-                else (sessionsByDay.keys.maxOrNull() ?: today)
-            renderCalendar()
+                if (!hasInitialSelection) {
+                    selectedDayStart = if (sessionsByDay.containsKey(today)) today
+                        else (sessionsByDay.keys.maxOrNull() ?: today)
+                    hasInitialSelection = true
+                }
+                renderCalendar()
+                binding.statsLoadState.visibility = View.GONE
+                updateRecentPosterEntry()
+                if (intent.getBooleanExtra(EXTRA_PREVIEW_POSTER, false)) {
+                    intent.removeExtra(EXTRA_PREVIEW_POSTER)
+                    val requested = intent.getStringExtra(EXTRA_POSTER_PATH)?.let { java.io.File(it) }
+                    (requested?.takeIf { it.isFile } ?: latestPosterFile())?.let(::sharePoster)
+                }
+            } catch (e: Exception) {
+                showLoadState("手账加载失败，请重试", retry = true)
+            }
         }
     }
 
+    private fun showLoadState(message: String, retry: Boolean) {
+        binding.statsLoadState.visibility = View.VISIBLE
+        binding.tvStatsLoadState.text = message
+        binding.btnStatsRetry.visibility = if (retry) View.VISIBLE else View.GONE
+    }
+
     /** 把 target 月的场次从 DB 装进 sessionsByDay（清掉该月旧数据再装） */
-    private suspend fun loadMonthIntoMap(target: Calendar) {
+    private suspend fun loadMonthIntoMap(target: Calendar, generation: Long): Boolean {
         val monthStart = (target.clone() as Calendar).apply {
             set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
         val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
-        val list = AppDatabase.get(this).streamSessionDao()
-            .sessionsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+        val list = statsRepository.sessionsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+        if (generation != loadGeneration) return false
         sessionsByDay.keys.removeAll {
             it >= monthStart.timeInMillis && it < monthEnd.timeInMillis
         }
@@ -171,13 +259,20 @@ class StatsActivity : AppCompatActivity() {
         list.forEach { s ->
             sessionsByDay.getOrPut(dayStart(s.startTs)) { mutableListOf() }.add(s)
         }
+        return true
     }
 
     // 翻月：异步装该月数据再渲染；选中日落进当前显示月
     private fun loadMonthAndRender() {
-        lifecycleScope.launch {
-            loadMonthIntoMap(cal)
-            val monthStart = (cal.clone() as Calendar).apply {
+        dataLoadJob?.cancel()
+        monthLoadJob?.cancel()
+        val generation = ++loadGeneration
+        val requestedMonth = cal.clone() as Calendar
+        monthLoadJob = lifecycleScope.launch {
+            if (!loadMonthIntoMap(requestedMonth, generation)) return@launch
+            if (generation != loadGeneration) return@launch
+            cal.timeInMillis = requestedMonth.timeInMillis
+            val monthStart = (requestedMonth.clone() as Calendar).apply {
                 set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
                 set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }.timeInMillis
@@ -217,6 +312,13 @@ class StatsActivity : AppCompatActivity() {
     private fun renderCalendar() {
         binding.tvMonthTitle.text = monthTitleFormat.format(cal.time)
         binding.calendarGrid.removeAllViews()
+        val activeDays = sessionsByDay.keys.count { day ->
+            val c = Calendar.getInstance().apply { timeInMillis = day }
+            c.get(Calendar.YEAR) == cal.get(Calendar.YEAR) &&
+                c.get(Calendar.MONTH) == cal.get(Calendar.MONTH)
+        }
+        binding.calendarGrid.contentDescription =
+            "${monthTitleFormat.format(cal.time)}日历，共 $activeDays 个有直播的日期"
 
         // 星期表头（日一...六）
         for (d in listOf("日", "一", "二", "三", "四", "五", "六")) {
@@ -254,7 +356,7 @@ class StatsActivity : AppCompatActivity() {
         val tv = TextView(this)
         tv.layoutParams = GridLayout.LayoutParams().apply {
             width = 0
-            height = if (header) dp(28) else dp(44)
+            height = if (header) dp(28) else dp(48)
             columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
         }
         tv.gravity = Gravity.CENTER
@@ -305,6 +407,14 @@ class StatsActivity : AppCompatActivity() {
             }
         )
         tv.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        val stateParts = buildList {
+            if (hasSession) add("有直播")
+            if (hasMagic) add("魔法期")
+            if (isToday) add("今天")
+            if (selected) add("已选中")
+        }
+        tv.contentDescription = "${dayLabelFormat.format(Date(dayStart))}" +
+            if (stateParts.isEmpty()) "，无记录" else "，${stateParts.joinToString("，")}"
         if (hasSession && !selected) {
             tv.setCompoundDrawablesWithIntrinsicBounds(
                 null, null, null, ContextCompat.getDrawable(this, R.drawable.dot_live)
@@ -336,27 +446,38 @@ class StatsActivity : AppCompatActivity() {
         loadMoodEvents()
     }
 
-    // 手账搜索弹窗：场次标题 + 心情内容，子串匹配（SessionSearch 纯函数）
+    // 手账搜索弹窗：DAO 直接查全历史；点击结果跳到对应月/日。
     private fun showSearchDialog() {
         lifecycleScope.launch {
             try {
-            val allMoods = AppDatabase.get(this@StatsActivity).moodEventDao().all()
             val view = LayoutInflater.from(this@StatsActivity)
                 .inflate(R.layout.dialog_record_search, null)
             val etQuery = view.findViewById<EditText>(R.id.etSearchQuery)
             val rv = view.findViewById<RecyclerView>(R.id.rvSearchResults)
             val tvEmpty = view.findViewById<TextView>(R.id.tvSearchEmpty)
             val dateFmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            val adapter = SearchHitsAdapter(dateFmt)
+            lateinit var dialog: AlertDialog
+            val adapter = SearchHitsAdapter(dateFmt) { hit ->
+                dialog.dismiss()
+                navigateToTimestamp(hit.ts)
+            }
             rv.layoutManager = LinearLayoutManager(this@StatsActivity)
             rv.adapter = adapter
             fun refresh() {
-                val hits = com.bilibili.livemonitor.domain.SessionSearch.search(
-                    loadedSessions, allMoods, etQuery.text.toString()
-                )
-                adapter.update(hits)
-                tvEmpty.visibility = if (hits.isEmpty()) View.VISIBLE else View.GONE
-                tvEmpty.text = if (etQuery.text.isNullOrBlank()) "输入关键词开始搜索" else "没有匹配的记录"
+                val query = etQuery.text.toString().trim()
+                searchJob?.cancel()
+                if (query.isEmpty()) {
+                    adapter.update(emptyList())
+                    tvEmpty.visibility = View.VISIBLE
+                    tvEmpty.text = "输入关键词开始搜索"
+                    return
+                }
+                searchJob = lifecycleScope.launch {
+                    val hits = statsRepository.search(query)
+                    adapter.update(hits)
+                    tvEmpty.visibility = if (hits.isEmpty()) View.VISIBLE else View.GONE
+                    tvEmpty.text = "没有匹配的记录"
+                }
             }
             etQuery.addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -364,7 +485,7 @@ class StatsActivity : AppCompatActivity() {
                 override fun afterTextChanged(s: android.text.Editable?) = refresh()
             })
             refresh()
-            AlertDialog.Builder(this@StatsActivity)
+            dialog = AlertDialog.Builder(this@StatsActivity)
                 .setTitle("搜索手账")
                 .setView(view)
                 .setPositiveButton("关闭", null)
@@ -380,7 +501,8 @@ class StatsActivity : AppCompatActivity() {
     }
 
     private class SearchHitsAdapter(
-        private val dateFmt: SimpleDateFormat
+        private val dateFmt: SimpleDateFormat,
+        private val onClick: (com.bilibili.livemonitor.domain.SessionSearch.Hit) -> Unit
     ) : RecyclerView.Adapter<SearchHitsAdapter.Holder>() {
 
         private var hits = listOf<com.bilibili.livemonitor.domain.SessionSearch.Hit>()
@@ -398,6 +520,7 @@ class StatsActivity : AppCompatActivity() {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
                 )
                 setPadding(0, 14, 0, 14)
+                minimumHeight = (48 * resources.displayMetrics.density).toInt()
                 textSize = 13f
             }
             return Holder(tv)
@@ -413,27 +536,67 @@ class StatsActivity : AppCompatActivity() {
                 "心情"
             }
             holder.text.text = "${dateFmt.format(Date(hit.ts))} · $kindLabel · ${hit.text}"
+            holder.text.contentDescription = "打开${dateFmt.format(Date(hit.ts))}的$kindLabel"
+            holder.text.setOnClickListener { onClick(hit) }
         }
     }
 
-    // 手动补记场次（她播了但 App 没监控到的空档）：日期默认选中日可改，结束必须晚于开始
-    private fun showManualSessionDialog() {
+    private fun navigateToTimestamp(ts: Long) {
+        selectedDayStart = dayStart(ts)
+        cal.timeInMillis = selectedDayStart
+        hasInitialSelection = true
+        loadMonthAndRender()
+    }
+
+    private fun showManualSessionDialog() = showSessionDialog(null)
+
+    // 新增/编辑场次共用；结束时间可明确落到次日，校验失败不会关闭弹窗。
+    private fun showSessionDialog(existing: StreamSessionEntity?) {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_manual_session, null)
         val btnDate = view.findViewById<TextView>(R.id.btnManualSessionDate)
         val btnStart = view.findViewById<TextView>(R.id.btnManualSessionStart)
         val btnEnd = view.findViewById<TextView>(R.id.btnManualSessionEnd)
         val etTitle = view.findViewById<EditText>(R.id.etManualSessionTitle)
+        val nextDay = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
+            R.id.switchManualSessionNextDay
+        )
+        val ongoing = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
+            R.id.switchManualSessionOngoing
+        )
+        val error = view.findViewById<TextView>(R.id.tvManualSessionError)
+        val popularity = view.findViewById<View>(R.id.btnManualSessionPopularity)
         val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
-        var dayStart = selectedDayStart
-        var startMinutes = 20 * 60
-        var endMinutes = 22 * 60
+        var dayStart = dayStart(existing?.startTs ?: selectedDayStart)
+        var startMinutes = existing?.startTs?.let { minutesOfDay(it) } ?: 20 * 60
+        var endMinutes = existing?.endTs?.let { minutesOfDay(it) } ?: 22 * 60
+        var endDayOffset = existing?.endTs?.let {
+            ((this@StatsActivity.dayStart(it) - dayStart) / DAY_MS).toInt().coerceAtLeast(0)
+        } ?: 0
+        nextDay.isChecked = endDayOffset > 0
+        ongoing.isChecked = existing?.endTs == null && existing != null
+        ongoing.visibility = if (existing == null) View.GONE else View.VISIBLE
+        etTitle.setText(existing?.title.orEmpty())
         fun refresh() {
             btnDate.text = "日期：${dateFmt.format(Date(dayStart))}"
             btnStart.text = "开始：%02d:%02d".format(startMinutes / 60, startMinutes % 60)
-            btnEnd.text = "结束：%02d:%02d".format(endMinutes / 60, endMinutes % 60)
+            val endPrefix = when {
+                endDayOffset > 1 -> "${endDayOffset}天后结束："
+                nextDay.isChecked -> "次日结束："
+                else -> "结束："
+            }
+            btnEnd.text = endPrefix +
+                "%02d:%02d".format(endMinutes / 60, endMinutes % 60)
+            btnEnd.isEnabled = !ongoing.isChecked
+            nextDay.isEnabled = !ongoing.isChecked
+            error.visibility = View.GONE
         }
         refresh()
+        nextDay.setOnCheckedChangeListener { _, checked ->
+            endDayOffset = if (checked) 1 else 0
+            refresh()
+        }
+        ongoing.setOnCheckedChangeListener { _, _ -> refresh() }
 
         btnDate.setOnClickListener {
             val c = Calendar.getInstance().apply { timeInMillis = dayStart }
@@ -462,21 +625,93 @@ class StatsActivity : AppCompatActivity() {
         btnStart.setOnClickListener { pickTime(true) }
         btnEnd.setOnClickListener { pickTime(false) }
 
-        AlertDialog.Builder(this)
-            .setTitle("手动补记场次")
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "手动补记场次" else "编辑场次")
             .setView(view)
-            .setPositiveButton("保存") { _, _ ->
-                val startTs = dayStart + startMinutes * 60_000L
-                val endTs = dayStart + endMinutes * 60_000L
-                if (endTs <= startTs) {
-                    Toast.makeText(this, "结束时间必须晚于开始时间", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+            .setPositiveButton("保存", null)
+            .setNegativeButton("取消", null)
+            .apply { if (existing != null) setNeutralButton("删除", null) }
+            .show()
+
+        if (existing != null) {
+            popularity.visibility = View.VISIBLE
+            popularity.setOnClickListener {
+                dialog.dismiss()
+                showPopularityDialog(existing)
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                dialog.dismiss()
+                confirmDeleteSession(existing)
+            }
+            if (existing.endTs == null && PreferenceManager(this).isServiceRunning()) {
+                error.text = "监控中的开放场次需先停止监控再修改或删除"
+                error.visibility = View.VISIBLE
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isEnabled = false
+            }
+        }
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val startTs = dayStart + startMinutes * 60_000L
+            val endTs = if (ongoing.isChecked) null else {
+                dayStart + endMinutes * 60_000L + endDayOffset * DAY_MS
+            }
+            if (endTs != null && endTs <= startTs) {
+                error.text = "结束时间必须晚于开始时间；跨午夜请开启“结束时间在次日”"
+                error.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+            val title = etTitle.text.toString().trim().ifBlank { null }
+            lifecycleScope.launch {
+                val dao = AppDatabase.get(this@StatsActivity).streamSessionDao()
+                val serviceRunning = PreferenceManager(this@StatsActivity).isServiceRunning()
+                if (serviceRunning && ((existing != null && existing.endTs == null) || endTs == null)) {
+                    error.text = "监控运行时不能创建、修改或删除开放场次"
+                    error.visibility = View.VISIBLE
+                    return@launch
                 }
-                val title = etTitle.text.toString().trim().ifBlank { null }
-                lifecycleScope.launch {
-                    AppDatabase.get(this@StatsActivity).streamSessionDao().insertSession(
-                        StreamSessionEntity(startTs = startTs, endTs = endTs, title = title)
+                val currentOpen = dao.findOpenSession()
+                if (endTs == null && currentOpen != null && currentOpen.id != existing?.id) {
+                    error.text = "已有开放场次，请先将其闭合"
+                    error.visibility = View.VISIBLE
+                    return@launch
+                }
+                if (existing == null) {
+                    dao.insertSession(StreamSessionEntity(startTs = startTs, endTs = endTs, title = title))
+                } else {
+                    val updated = dao.updateDetailsIfEndUnchanged(
+                        existing.id, existing.endTs, startTs, endTs, title
                     )
+                    if (updated == 0) {
+                        error.text = "场次已被后台更新，请关闭后重试"
+                        error.visibility = View.VISIBLE
+                        return@launch
+                    }
+                }
+                selectedDayStart = this@StatsActivity.dayStart(startTs)
+                cal.timeInMillis = selectedDayStart
+                refreshData()
+                dialog.dismiss()
+            }
+        }
+    }
+
+    private fun minutesOfDay(ts: Long): Int = Calendar.getInstance().apply {
+        timeInMillis = ts
+    }.let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
+
+    private fun confirmDeleteSession(session: StreamSessionEntity) {
+        AlertDialog.Builder(this)
+            .setTitle("删除这场直播")
+            .setMessage("将同时删除本场主题变化与人气采样，此操作不可恢复。")
+            .setPositiveButton("删除") { _, _ ->
+                lifecycleScope.launch {
+                    val dao = AppDatabase.get(this@StatsActivity).streamSessionDao()
+                    val current = dao.findById(session.id) ?: return@launch
+                    if (current.endTs == null && PreferenceManager(this@StatsActivity).isServiceRunning()) {
+                        Toast.makeText(this@StatsActivity, "请先停止监控再删除开放场次", Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    dao.deleteSession(current)
                     refreshData()
                 }
             }
@@ -484,7 +719,62 @@ class StatsActivity : AppCompatActivity() {
             .show()
     }
 
-    // 手账批量管理：按日期区间删除 / 清空全部（场次级联主题变化与人气点，封面保留）
+    private fun showMoreMenu(anchor: View) {
+        PopupMenu(this, anchor).apply {
+            menu.add(0, MENU_EXPORT_BACKUP, 0, "导出全量备份")
+            menu.add(0, MENU_IMPORT_BACKUP, 1, "导入并合并备份")
+            menu.add(0, MENU_MANAGE_RECORDS, 2, "批量管理记录")
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    MENU_EXPORT_BACKUP -> exportSessions()
+                    MENU_IMPORT_BACKUP -> importLauncher.launch("*/*")
+                    MENU_MANAGE_RECORDS -> showManageDialog()
+                    else -> return@setOnMenuItemClickListener false
+                }
+                true
+            }
+            show()
+        }
+    }
+
+    private fun latestPosterFile(): java.io.File? =
+        java.io.File(filesDir, "posters").listFiles { file ->
+            file.isFile && file.name.matches(Regex("monthly_\\d{4}-\\d{2}\\.png"))
+        }?.maxByOrNull { it.name }
+
+    private fun updateRecentPosterEntry() {
+        val file = latestPosterFile()
+        binding.btnRecentPoster.visibility = if (file == null) View.GONE else View.VISIBLE
+        binding.btnRecentPoster.text = file?.name?.substringAfter("monthly_")
+            ?.substringBefore(".png")?.let { key ->
+                val parts = key.split('-')
+                "最近月报 · ${parts[0]}年${parts[1].toInt()}月（预览/分享）"
+            } ?: "最近月报"
+    }
+
+    private fun sharePoster(file: java.io.File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val share = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "牢白播了吗 绮迹手账月报")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(share, "预览或分享月报"))
+    }
+
+    private fun parseMonthKey(key: String): Long? {
+        val match = Regex("^(\\d{4})-(\\d{2})$").matchEntire(key) ?: return null
+        val year = match.groupValues[1].toInt()
+        val month = match.groupValues[2].toInt()
+        if (month !in 1..12) return null
+        return Calendar.getInstance().apply {
+            clear()
+            set(year, month - 1, 1)
+        }.timeInMillis
+    }
+
+    // 手账批量管理：只删除已闭合场次，开放场次始终保留。
     private fun showManageDialog() {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_manage_records, null)
         val dialog = AlertDialog.Builder(this)
@@ -535,26 +825,25 @@ class StatsActivity : AppCompatActivity() {
     }
 
     internal suspend fun deleteBefore(before: Long) {
-        val db = AppDatabase.get(this)
-        // 先删子表（主题变化/人气点挂在场次上）再删主表
-        db.streamSessionDao().deleteTitleChangesBefore(before)
-        db.streamSessionDao().deletePopularityBefore(before)
-        db.streamSessionDao().deleteSessionsBefore(before)
-        db.moodEventDao().deleteBefore(before)
+        val db = AppDatabase.get(this@StatsActivity)
+        db.withTransaction {
+            db.streamSessionDao().deleteSessionsBefore(before)
+            db.moodEventDao().deleteBefore(before)
+        }
         refreshData()
     }
 
     private fun confirmClearAll() {
         AlertDialog.Builder(this)
             .setTitle("清空全部记录")
-            .setMessage("将删除全部场次与心情事件，此操作不可恢复。已收藏的直播封面会保留。")
+            .setMessage("将删除全部已闭合场次与心情事件；开放场次和已收藏封面会保留。")
             .setPositiveButton("清空") { _, _ ->
                 lifecycleScope.launch {
                     val db = AppDatabase.get(this@StatsActivity)
-                    db.streamSessionDao().deleteAllTitleChanges()
-                    db.streamSessionDao().deleteAllPopularityPoints()
-                    db.streamSessionDao().deleteAll()
-                    db.moodEventDao().deleteAll()
+                    db.withTransaction {
+                        db.streamSessionDao().deleteAllClosedSessions()
+                        db.moodEventDao().deleteAll()
+                    }
                     refreshData()
                 }
             }
@@ -567,9 +856,18 @@ class StatsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
             val now = System.currentTimeMillis()
-            val sessions = AppDatabase.get(this@StatsActivity).streamSessionDao()
-                .closedSessionsSince(now - 200L * DAY_MS) // 覆盖 6 个自然月的余量窗口
-            val monthCounts = StreamStats.monthlyCounts(sessions, now, 6)
+            val monthStart = Calendar.getInstance().apply {
+                timeInMillis = selectedDayStart
+                set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }
+            val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+            val trend = statsRepository.trendData(
+                now - 200L * DAY_MS,
+                monthStart.timeInMillis,
+                monthEnd.timeInMillis
+            )
+            val monthCounts = StreamStats.monthlyCounts(trend.sessions, now, 6)
             val monthLabels = (5 downTo 0).map { back ->
                 val c = Calendar.getInstance().apply {
                     timeInMillis = now
@@ -578,7 +876,7 @@ class StatsActivity : AppCompatActivity() {
                 "${c.get(Calendar.MONTH) + 1}月"
             }
             val localOffset = java.util.TimeZone.getDefault().getOffset(now).toLong()
-            val heat = StreamStats.weekdayHourHeatmap(sessions, localOffset)
+            val heat = StreamStats.weekdayHourHeatmap(trend.sessions, localOffset)
             val view = LayoutInflater.from(this@StatsActivity)
                 .inflate(R.layout.dialog_stats_trend, null)
             view.findViewById<com.bilibili.livemonitor.views.WeekStreamBarsView>(R.id.monthBars)
@@ -586,26 +884,16 @@ class StatsActivity : AppCompatActivity() {
             view.findViewById<com.bilibili.livemonitor.views.WeekdayHourHeatmapView>(R.id.weekdayHourHeatmap)
                 .setData(heat)
             // 粉丝数变化（每日快照，快照 <2 个时隐藏该区域）
-            val followers = AppDatabase.get(this@StatsActivity).streamSessionDao()
-                .followerSnapshots()
-            if (followers.size >= 2) {
+            if (trend.followers.size >= 2) {
                 view.findViewById<com.bilibili.livemonitor.views.PopularityChartView>(R.id.followerChart)
-                    .setData(followers.map { it.ts to it.followerNum.toInt() })
+                    .setData(trend.followers.map { it.ts to it.followerNum.toInt() })
             } else {
                 view.findViewById<View>(R.id.tvFollowerTitle).visibility = View.GONE
                 view.findViewById<View>(R.id.followerChart).visibility = View.GONE
             }
             // 本月人气峰值（逐日聚合，<2 个有效日隐藏）
-            val monthStart = Calendar.getInstance().apply {
-                timeInMillis = selectedDayStart
-                set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            }
-            val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
             val dailyPop = StreamStats.dailyPeakOnline(
-                AppDatabase.get(this@StatsActivity).streamSessionDao()
-                    .popularityBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
-                    .map { it.ts to it.online },
+                trend.popularity.map { it.ts to it.online },
                 monthStart.timeInMillis, monthStart.getActualMaximum(Calendar.DAY_OF_MONTH)
             )
             if (dailyPop.size >= 2) {
@@ -621,9 +909,7 @@ class StatsActivity : AppCompatActivity() {
                 view.findViewById<View>(R.id.dailyPopularityChart).visibility = View.GONE
             }
             // 标题高频词云（场次标题 + 主题变化新标题；为空隐藏该区域）
-            val titles = AppDatabase.get(this@StatsActivity).streamSessionDao().allSessionTitles() +
-                AppDatabase.get(this@StatsActivity).streamSessionDao().allChangeTitles()
-            val topWords = com.bilibili.livemonitor.domain.TitleWordCloud.topWords(titles)
+            val topWords = com.bilibili.livemonitor.domain.TitleWordCloud.topWords(trend.titles)
             if (topWords.isNotEmpty()) {
                 view.findViewById<com.bilibili.livemonitor.views.WordCloudView>(R.id.wordCloud)
                     .setData(topWords)
@@ -754,7 +1040,13 @@ class StatsActivity : AppCompatActivity() {
                     refreshEndText()
                 },
                 c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
-            ).show()
+            ).also { picker ->
+                moodDatePickerDialog = picker
+                picker.setOnDismissListener {
+                    if (moodDatePickerDialog === picker) moodDatePickerDialog = null
+                }
+                picker.show()
+            }
         }
 
         btnTime.setOnClickListener {
@@ -806,6 +1098,10 @@ class StatsActivity : AppCompatActivity() {
             .setPositiveButton("保存", null) // 校验失败时不关闭，下面手动接管
             .setNegativeButton("取消", null)
             .show()
+        moodEditDialog = dialog
+        dialog.setOnDismissListener {
+            if (moodEditDialog === dialog) moodEditDialog = null
+        }
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val title = etTitle.text.toString().trim()
             val checkedId = chipGroup.checkedChipId
@@ -845,7 +1141,7 @@ class StatsActivity : AppCompatActivity() {
     }
 
     private fun confirmDeleteMoodEvent(event: MoodEventEntity) {
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("删除心情事件")
             .setMessage("确定删除「${event.title}」吗？")
             .setPositiveButton("删除") { _, _ ->
@@ -856,6 +1152,10 @@ class StatsActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+        moodDeleteDialog = dialog
+        dialog.setOnDismissListener {
+            if (moodDeleteDialog === dialog) moodDeleteDialog = null
+        }
     }
 
     // 本日主题变化时间线（stream_title_changes 已记录，这里补 UI）
@@ -886,11 +1186,12 @@ class StatsActivity : AppCompatActivity() {
     internal fun exportSessions() {
         lifecycleScope.launch {
             try {
-                val zipBytes = com.bilibili.livemonitor.util.FullBackupBuilder
-                    .build(this@StatsActivity)
                 val dir = java.io.File(cacheDir, "shared").apply { mkdirs() }
                 val file = java.io.File(dir, "vivhite_backup.zip")
-                file.writeBytes(zipBytes)
+                file.outputStream().use { output ->
+                    com.bilibili.livemonitor.util.FullBackupBuilder
+                        .write(this@StatsActivity, output)
+                }
                 val uri = androidx.core.content.FileProvider.getUriForFile(
                     this@StatsActivity, "$packageName.fileprovider", file
                 )
@@ -916,221 +1217,257 @@ class StatsActivity : AppCompatActivity() {
 
     private fun importFromUri(uri: android.net.Uri) {
         lifecycleScope.launch {
-            val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val loaded = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching {
-                    contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                }.getOrNull()
+                    contentResolver.openInputStream(uri)?.use { raw ->
+                        val input = java.io.BufferedInputStream(raw)
+                        input.mark(4)
+                        val first = input.read()
+                        val second = input.read()
+                        input.reset()
+                        if (first == 'P'.code && second == 'K'.code) {
+                            val tempDir = java.io.File(
+                                cacheDir,
+                                "import_covers_${java.util.UUID.randomUUID()}"
+                            )
+                            try {
+                                ImportPayload.Zip(
+                                    com.bilibili.livemonitor.domain.FullBackup.unpack(input, tempDir),
+                                    tempDir
+                                )
+                            } catch (e: Exception) {
+                                tempDir.deleteRecursively()
+                                throw e
+                            }
+                        } else {
+                            ImportPayload.Csv(readLegacyCsv(input))
+                        }
+                    } ?: throw java.io.IOException("openInputStream returned null")
+                }
             }
-            if (bytes == null) {
-                Toast.makeText(this@StatsActivity, "无法读取文件", Toast.LENGTH_SHORT).show()
+            val payload = loaded.getOrElse { error ->
+                val message = when (error) {
+                    is com.bilibili.livemonitor.domain.FullBackup.IncompatibleBackupException -> error.message
+                    is com.bilibili.livemonitor.domain.FullBackup.DamagedBackupException -> error.message
+                    else -> "无法读取文件"
+                }
+                Toast.makeText(this@StatsActivity, message, Toast.LENGTH_LONG).show()
                 return@launch
             }
-            // ZIP（PK 头）→ 全量恢复；否则按老混合 CSV 兼容导入
-            if (bytes.size >= 2 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) {
-                importZipBytes(bytes)
-            } else {
-                val result = importCsvText(String(bytes, Charsets.UTF_8))
-                AlertDialog.Builder(this@StatsActivity)
-                    .setTitle("导入完成")
-                    .setMessage(
-                        "场次：新增 ${result.sessionsAdded} · 跳过重复 ${result.sessionsSkipped}\n" +
-                            "心情：新增 ${result.moodsAdded} · 跳过重复 ${result.moodsSkipped}\n" +
-                            "无法解析/进行中被跳过：${result.badLines} 行"
-                    )
-                    .setPositiveButton("好", null)
-                    .show()
-                refreshData()
+            when (payload) {
+                is ImportPayload.Zip -> {
+                    pendingImportDirs += payload.tempDir
+                    confirmZipImport(payload)
+                }
+                is ImportPayload.Csv -> {
+                    val result = importCsvText(payload.text)
+                    AlertDialog.Builder(this@StatsActivity)
+                        .setTitle("导入完成")
+                        .setMessage(
+                            "场次：新增 ${result.sessionsAdded} · 补全 ${result.sessionsMerged} · " +
+                                "跳过 ${result.sessionsSkipped}\n" +
+                                "心情：新增 ${result.moodsAdded} · 补全 ${result.moodsMerged} · " +
+                                "跳过 ${result.moodsSkipped}\n" +
+                                "无法解析：${result.badLines} 行"
+                        )
+                        .setPositiveButton("好", null)
+                        .show()
+                    refreshData()
+                }
             }
         }
     }
 
-    /** ZIP 全量导入：先弹确认（设置将被覆盖），用户点头才动手 */
-    private fun importZipBytes(bytes: ByteArray) {
-        val data = com.bilibili.livemonitor.domain.FullBackup.unpack(bytes)
+    private sealed interface ImportPayload {
+        data class Zip(
+            val data: com.bilibili.livemonitor.domain.FullBackup.Data,
+            val tempDir: java.io.File
+        ) : ImportPayload
+        data class Csv(val text: String) : ImportPayload
+    }
+
+    private fun readLegacyCsv(input: InputStream): String {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_LEGACY_CSV_BYTES) throw java.io.IOException("CSV 备份文件过大")
+            output.write(buffer, 0, read)
+        }
+        return output.toString(Charsets.UTF_8.name())
+    }
+
+    private fun cleanupImportDir(dir: java.io.File) {
+        pendingImportDirs -= dir
+        dir.deleteRecursively()
+    }
+
+    /** ZIP 全量导入：先弹确认（设置将被覆盖），用户点头才动手。 */
+    private fun confirmZipImport(payload: ImportPayload.Zip) {
+        val data = payload.data
         AlertDialog.Builder(this)
             .setTitle("恢复全量备份")
             .setMessage(
                 "包含：场次 ${data.sessions.size} · 心情 ${data.moods.size} · " +
                     "主题变化 ${data.titleChanges.size} · 人气点 ${data.popularity.size} · " +
-                    "粉丝快照 ${data.followers.size} · 封面 ${data.covers.size} 张\n\n" +
+                    "粉丝快照 ${data.followers.size} · 封面 ${data.coverNames.size} 张\n\n" +
                     "设置项（含魔法期、勿扰、检测频率等）将被覆盖。继续？"
             )
             .setPositiveButton("恢复") { _, _ ->
-                lifecycleScope.launch { doImportZip(data) }
+                lifecycleScope.launch {
+                    try {
+                        doImportZip(data)
+                    } catch (e: Exception) {
+                        Toast.makeText(
+                            this@StatsActivity, "恢复失败，数据库未更改：${e.message}", Toast.LENGTH_LONG
+                        ).show()
+                    } finally {
+                        cleanupImportDir(payload.tempDir)
+                    }
+                }
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton("取消") { _, _ -> cleanupImportDir(payload.tempDir) }
+            .setOnCancelListener { cleanupImportDir(payload.tempDir) }
             .show()
     }
-    private fun coversDirOf(): java.io.File = java.io.File(filesDir, "covers").apply { mkdirs() }
-
-    internal suspend fun doImportZip(data: com.bilibili.livemonitor.domain.FullBackup.Data) {
-        val db = AppDatabase.get(this)
-        val sdao = db.streamSessionDao()
-        val mdao = db.moodEventDao()
-        var sAdded = 0
-        var mAdded = 0
-        // 1) 场次（合并去重，起止时间为键；coverPath 由 hash 名拼回 covers/）
-        data.sessions.forEach { r ->
-            if (sdao.countByStartEnd(r.startTs, r.endTs) == 0) {
-                val restoredCover = r.coverPath?.takeIf { name ->
-                    name.isNotBlank() && data.covers.containsKey(name)
-                }?.let { name -> java.io.File(coversDirOf(), name).absolutePath }
-                sdao.insertSession(
-                    StreamSessionEntity(
-                        startTs = r.startTs, endTs = r.endTs,
-                        title = r.title, coverPath = restoredCover
-                    )
-                )
-                sAdded++
-            }
-        }
-        // 2) 心情（时间+心情+标题去重）
-        data.moods.forEach { r ->
-            if (mdao.countByKey(r.eventTs, r.mood, r.title) == 0) {
-                mdao.insert(
-                    MoodEventEntity(
-                        eventTs = r.eventTs, durationMin = r.durationMin, mood = r.mood,
-                        title = r.title, reason = r.reason, note = r.note,
-                        createdAt = r.createdAt
-                    )
-                )
-                mAdded++
-            }
-        }
-        // 3) 主题变化 + 人气点：先按 (start,end) 把旧 id 映射到新 id
-        var tcAdded = 0
-        var popAdded = 0
-        data.titleChanges.forEach { r ->
-            val session = sdao.findByStartEnd(r.sessionStart, r.sessionEnd) ?: return@forEach
-            if (sdao.countTitleChange(session.id, r.changedAt) == 0) {
-                sdao.insertTitleChange(
-                    com.bilibili.livemonitor.db.StreamTitleChangeEntity(
-                        sessionId = session.id, changedAt = r.changedAt,
-                        oldTitle = r.oldTitle, newTitle = r.newTitle
-                    )
-                )
-                tcAdded++
-            }
-        }
-        data.popularity.forEach { r ->
-            val session = sdao.findByStartEnd(r.sessionStart, r.sessionEnd) ?: return@forEach
-            if (sdao.countPopularity(session.id, r.ts) == 0) {
-                sdao.insertPopularityPoint(
-                    com.bilibili.livemonitor.db.PopularityPointEntity(
-                        sessionId = session.id, ts = r.ts, online = r.online
-                    )
-                )
-                popAdded++
-            }
-        }
-        // 4) 粉丝快照（ts 去重）
-        var fAdded = 0
-        data.followers.forEach { r ->
-            if (sdao.countFollowerSnapshot(r.ts) == 0) {
-                sdao.insertFollowerSnapshot(r)
-                fAdded++
-            }
-        }
-        // 5) 封面原图（hash 文件名天然幂等，存在即跳过）
-        var coverAdded = 0
-        val coversDir = coversDirOf()
-        data.covers.forEach { (name, bytes) ->
-            val f = java.io.File(coversDir, name)
-            if (!f.exists()) {
-                f.writeBytes(bytes)
-                coverAdded++
-            }
-        }
-        // 6) prefs 快照（魔法期合并 + 设置覆盖）
-        data.prefsJson?.let { json ->
-            com.bilibili.livemonitor.util.PreferenceManager(this).importSnapshot(json)
-        }
+    internal suspend fun doImportZip(
+        data: com.bilibili.livemonitor.domain.FullBackup.Data
+    ): com.bilibili.livemonitor.domain.FullBackup.RestoreReport {
+        val report = backupRestoreCoordinator.restore(data)
 
         AlertDialog.Builder(this)
-            .setTitle("恢复完成")
+            .setTitle(if (data.prefsJson != null && !report.preferencesRestored) "数据已恢复，设置恢复失败" else "恢复完成")
             .setMessage(
-                "场次 +$sAdded · 心情 +$mAdded · 主题变化 +$tcAdded · " +
-                    "人气点 +$popAdded · 粉丝快照 +$fAdded · 封面 +$coverAdded"
+                "场次 +${report.sessions.added} / 补全 ${report.sessions.merged} · " +
+                    "心情 +${report.moods.added} / 补全 ${report.moods.merged}\n" +
+                    "主题变化 +${report.titleChanges.added} / 补全 ${report.titleChanges.merged} · " +
+                    "人气点 +${report.popularity.added} · 粉丝快照 +${report.followers.added} · " +
+                    "封面 +${report.covers.added}" +
+                    if (data.prefsJson != null && !report.preferencesRestored) "\n设置快照无效，未覆盖现有设置。" else ""
             )
             .setPositiveButton("好", null)
             .show()
         refreshData()
+        return report
     }
 
     data class ImportResult(
         val sessionsAdded: Int,
+        val sessionsMerged: Int,
         val sessionsSkipped: Int,
         val moodsAdded: Int,
+        val moodsMerged: Int,
         val moodsSkipped: Int,
         val badLines: Int
     )
 
     /** 合并式导入：按关键字段去重（场次=起止时间，心情=时间+心情+标题），重复的跳过 */
-    internal suspend fun importCsvText(text: String): ImportResult {
+    internal suspend fun importCsvText(text: String): ImportResult = withContext(Dispatchers.IO) {
         val parsed = SessionBackup.parse(text)
-        val db = AppDatabase.get(this)
+        val db = AppDatabase.get(this@StatsActivity)
         val sdao = db.streamSessionDao()
         val mdao = db.moodEventDao()
         var sAdded = 0
+        var sMerged = 0
         var sSkipped = 0
         var mAdded = 0
+        var mMerged = 0
         var mSkipped = 0
-        parsed.sessions.forEach { r ->
-            if (sdao.countByStartEnd(r.startTs, r.endTs) > 0) {
-                sSkipped++
-            } else {
-                sdao.insertSession(
-                    StreamSessionEntity(startTs = r.startTs, endTs = r.endTs, title = r.title)
-                )
-                sAdded++
+        db.withTransaction {
+            sdao.findOpenSession()?.let { newest ->
+                sdao.closeOtherOpenSessions(newest.id, newest.startTs)
             }
-        }
-        parsed.moods.forEach { r ->
-            if (mdao.countByKey(r.eventTs, r.mood, r.title) > 0) {
-                mSkipped++
-            } else {
-                mdao.insert(
-                    MoodEventEntity(
-                        eventTs = r.eventTs, durationMin = r.durationMin, mood = r.mood,
-                        title = r.title, reason = r.reason, note = r.note,
-                        createdAt = System.currentTimeMillis()
+            parsed.sessions.sortedBy { it.startTs }.forEach { r ->
+                val storedEnd = if (r.endTs == null) {
+                    val currentOpen = sdao.findOpenSession()
+                    when {
+                        currentOpen == null || currentOpen.startTs == r.startTs -> null
+                        currentOpen.startTs < r.startTs -> {
+                            sdao.closeOpenSessions(r.startTs)
+                            null
+                        }
+                        else -> currentOpen.startTs
+                    }
+                } else {
+                    r.endTs
+                }
+                val existing = sdao.findByStartEnd(r.startTs, storedEnd)
+                if (existing == null) {
+                    sdao.insertSession(
+                        StreamSessionEntity(startTs = r.startTs, endTs = storedEnd, title = r.title)
                     )
-                )
-                mAdded++
+                    sAdded++
+                } else if (existing.title.isNullOrBlank() && !r.title.isNullOrBlank()) {
+                    sdao.updateSession(existing.copy(title = r.title))
+                    sMerged++
+                } else sSkipped++
+            }
+            parsed.moods.forEach { r ->
+                val existing = mdao.findByKey(r.eventTs, r.mood, r.title)
+                if (existing == null) {
+                    mdao.insert(
+                        MoodEventEntity(
+                            eventTs = r.eventTs, durationMin = r.durationMin, mood = r.mood,
+                            title = r.title, reason = r.reason, note = r.note,
+                            createdAt = r.createdAt
+                        )
+                    )
+                    mAdded++
+                } else {
+                    val merged = existing.copy(
+                        durationMin = if (existing.durationMin == 0) r.durationMin else existing.durationMin,
+                        reason = existing.reason?.takeIf { it.isNotBlank() } ?: r.reason,
+                        note = existing.note?.takeIf { it.isNotBlank() } ?: r.note,
+                        createdAt = if (existing.createdAt <= 0) r.createdAt else existing.createdAt
+                    )
+                    if (merged != existing) {
+                        mdao.update(merged)
+                        mMerged++
+                    } else mSkipped++
+                }
             }
         }
-        return ImportResult(sAdded, sSkipped, mAdded, mSkipped, parsed.skippedLines)
+        ImportResult(sAdded, sMerged, sSkipped, mAdded, mMerged, mSkipped, parsed.skippedLines)
     }
 
     // 导出图片：当月完整数据海报（摘要+柱图+日历热力+心情/魔法期+全记录），渲染后走分享面板
     private fun exportStatsImage() {
         Toast.makeText(this, "正在生成图片…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
-            val data = buildStatsImageData()
-            // 主播头像（海报左上角）：走磁盘缓存 loader，失败 null → 渲染器画占位圆，不阻断出图
-            val avatar = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                kotlinx.coroutines.withTimeoutOrNull(4000) { avatarLoader.load(this@StatsActivity) }
+            try {
+                val data = buildStatsImageData()
+                val avatar = withContext(Dispatchers.IO) {
+                    kotlinx.coroutines.withTimeoutOrNull(4000) { avatarLoader.load(this@StatsActivity) }
+                }
+                // Renderer measures and draws Android Views, so it must stay on the main thread.
+                val bmp = com.bilibili.livemonitor.util.StatsImageRenderer.render(
+                    this@StatsActivity, data, avatar
+                )
+                val loader = com.bilibili.livemonitor.util.ShareImageLoader()
+                val file = withContext(Dispatchers.IO) {
+                    loader.save(this@StatsActivity, bmp, "绮迹手账.png")
+                        .also { bmp.recycle() }
+                }
+                if (file == null) {
+                    Toast.makeText(this@StatsActivity, "图片生成失败", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val uri = loader.shareableUri(this@StatsActivity, file)
+                val intent = com.bilibili.livemonitor.util.ShareImageFactory.buildImageShareIntent(
+                    uri, contentResolver, "绮迹手账", "image/png",
+                    extraText = "白绮 ${data.monthTitle} 绮迹手账",
+                    extraSubject = "牢白播了吗 绮迹手账海报"
+                )
+                startActivity(Intent.createChooser(intent, "分享绮迹手账"))
+            } catch (e: Exception) {
+                Toast.makeText(this@StatsActivity, "图片生成失败：${e.message}", Toast.LENGTH_SHORT).show()
             }
-            val bmp = com.bilibili.livemonitor.util.StatsImageRenderer.render(
-                this@StatsActivity, data, avatar
-            )
-            val loader = com.bilibili.livemonitor.util.ShareImageLoader()
-            val file = loader.save(this@StatsActivity, bmp, "绮迹手账.png")
-            if (file == null) {
-                Toast.makeText(this@StatsActivity, "图片生成失败", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val uri = loader.shareableUri(this@StatsActivity, file)
-            val intent = com.bilibili.livemonitor.util.ShareImageFactory.buildImageShareIntent(
-                uri, contentResolver, "绮迹手账", "image/png",
-                extraText = "白绮 ${data.monthTitle} 绮迹手账",
-                extraSubject = "牢白播了吗 绮迹手账海报"
-            )
-            startActivity(Intent.createChooser(intent, "分享绮迹手账"))
         }
     }
 
-    /** 组装海报数据：纯按月维度（以当前日历所在月为准，用户可翻月） */
     /** 组装海报数据：纯按月维度（以当前日历所在月为准，用户可翻月）。
      *  组装逻辑在 util/StatsImageDataFactory（与月初自动生成共用） */
     private suspend fun buildStatsImageData(): com.bilibili.livemonitor.util.StatsImageRenderer.StatsImageData =
@@ -1147,6 +1484,16 @@ class StatsActivity : AppCompatActivity() {
         // 0=周日..6=周六
         private val WEEKDAY_NAMES = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
         private const val DAY_MS = 86_400_000L
+        private const val MAX_LEGACY_CSV_BYTES = 16L * 1024 * 1024
+        private const val STATE_MONTH = "stats_month"
+        private const val STATE_DAY = "stats_day"
+        private const val MENU_EXPORT_BACKUP = 1
+        private const val MENU_IMPORT_BACKUP = 2
+        private const val MENU_MANAGE_RECORDS = 3
+
+        const val EXTRA_MONTH_KEY = "stats_month_key"
+        const val EXTRA_PREVIEW_POSTER = "stats_preview_poster"
+        const val EXTRA_POSTER_PATH = "stats_poster_path"
     }
 
     private class MoodEventAdapter(
@@ -1242,6 +1589,8 @@ class StatsActivity : AppCompatActivity() {
                 "进行中…"
             }
             holder.tvTitle.text = s.title ?: "（无标题）"
+            holder.itemView.contentDescription =
+                "${holder.tvTime.text}，${holder.tvDuration.text}，${holder.tvTitle.text}，点按编辑场次"
             // 当场封面缩略图（原图按控件尺寸采样解码，不改动存储）
             if (!s.coverPath.isNullOrBlank()) {
                 val bmp = decodeSampled(s.coverPath, 96, 54)

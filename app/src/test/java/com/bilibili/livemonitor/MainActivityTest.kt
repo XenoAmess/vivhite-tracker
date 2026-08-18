@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.os.Looper
 import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.service.LiveCheckService
@@ -179,6 +180,108 @@ class MainActivityTest {
     }
 
     @Test
+    fun `监控运行但最近检测失败时 不显示绿色健康状态`() {
+        val now = System.currentTimeMillis()
+        prefs.setServiceRunning(true)
+        prefs.setLastCheck(now, isLive = false, success = false)
+        LiveCheckService.isRunning = true
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.updateUI(now)
+
+        val status = activity.findViewById<android.widget.TextView>(R.id.tvStatus)
+        assertTrue(status.text.toString().contains("最近检测失败"))
+        assertEquals(
+            androidx.core.content.ContextCompat.getColor(activity, android.R.color.holo_red_dark),
+            status.currentTextColor
+        )
+    }
+
+    @Test
+    fun `监控运行但检测记录过期时 显示过期而非绿色健康`() {
+        val now = System.currentTimeMillis()
+        prefs.setCheckIntervalSeconds(PreferenceManager.CHECK_INTERVAL_STANDARD_SECONDS)
+        prefs.setServiceRunning(true)
+        prefs.setLastCheck(now - 4 * 60_000L, isLive = false, success = true)
+        LiveCheckService.isRunning = true
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        activity.updateUI(now)
+
+        val status = activity.findViewById<android.widget.TextView>(R.id.tvStatus)
+        assertTrue(status.text.toString().contains("检测已过期"))
+        assertEquals(
+            androidx.core.content.ContextCompat.getColor(activity, R.color.orange_500),
+            status.currentTextColor
+        )
+        assertTrue(activity.findViewById<android.widget.TextView>(R.id.tvLastCheck)
+            .text.toString().contains("已过期"))
+    }
+
+    @Test
+    fun `主页在前台轮询刷新最近检测结果`() {
+        prefs.setServiceRunning(true)
+        prefs.setLastCheck(System.currentTimeMillis(), isLive = false, success = true)
+        LiveCheckService.isRunning = true
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        prefs.setLastCheck(System.currentTimeMillis(), isLive = false, success = false)
+
+        shadowOf(Looper.getMainLooper()).idleFor(16, java.util.concurrent.TimeUnit.SECONDS)
+
+        assertTrue(activity.findViewById<android.widget.TextView>(R.id.tvStatus)
+            .text.toString().contains("最近检测失败"))
+    }
+
+    @Test
+    fun `主页说明动态反映实时检测间隔`() {
+        prefs.setCheckIntervalSeconds(PreferenceManager.CHECK_INTERVAL_REALTIME_SECONDS)
+
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+
+        assertTrue(activity.findViewById<android.widget.TextView>(R.id.tvDescription)
+            .text.toString().contains("每 15 秒检查"))
+    }
+
+    @Test
+    fun `监控准备区集中展示四类能力`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.exactAlarmGranted = { false }
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnReadiness)
+            .performClick()
+
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog
+        assertNotNull(sheet.findViewById<android.widget.TextView>(R.id.tvNotificationReadiness))
+        assertNotNull(sheet.findViewById<android.widget.TextView>(R.id.tvExactAlarmReadiness))
+        assertNotNull(sheet.findViewById<android.widget.TextView>(R.id.tvBackgroundReadiness))
+        assertNotNull(sheet.findViewById<android.widget.TextView>(R.id.tvFullScreenReadiness))
+        assertTrue(sheet.findViewById<android.widget.TextView>(R.id.tvExactAlarmReadiness)!!
+            .text.toString().contains("可能被延迟"))
+    }
+
+    @Test
+    fun `通知拒绝后准备区提供应用设置恢复入口`() {
+        shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.notificationRationaleChecker = { true }
+        activity.showReadinessDialog()
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog
+
+        sheet.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnNotificationSettings)!!
+            .performClick()
+        val rationale = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as androidx.appcompat.app.AlertDialog
+        rationale.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val started = shadowOf(context).nextStartedActivity
+        assertEquals(Settings.ACTION_APP_NOTIFICATION_SETTINGS, started?.action)
+        assertEquals(activity.packageName, started?.getStringExtra(Settings.EXTRA_APP_PACKAGE))
+    }
+
+    @Test
     fun `点击查看运行日志 打开LogActivity`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
 
@@ -349,6 +452,25 @@ class MainActivityTest {
     }
 
     @Test
+    fun `通知观看直播action会静音并打开直播间`() {
+        makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
+        prefs.setServiceRunning(true)
+        LiveCheckService.isRunning = true
+        LiveCheckService.lastLiveStatus = true
+        val launch = Intent(context, MainActivity::class.java)
+            .setAction(MainActivity.ACTION_OPEN_WATCH_LIVE)
+
+        Robolectric.buildActivity(MainActivity::class.java, launch).setup()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        assertEquals(
+            LiveCheckService.ACTION_WATCH_LIVE,
+            shadowOf(context).peekNextStartedService()?.action
+        )
+        assertEquals(Intent.ACTION_CHOOSER, shadowOf(context).nextStartedActivity?.action)
+    }
+
+    @Test
     fun `监控中点打开直播间 观播静音绑定当前场次live_start_time`() {
         // B 方案：置静音时绑定本场 live_start_time，新一场开播时服务据此自动解除
         makeBilibiliInstalled("tv.danmaku.bili" to "哔哩哔哩")
@@ -435,23 +557,22 @@ class MainActivityTest {
     }
 
     @Test
-    fun `国产ROM厂商引导只弹一次 之后启动不再重复弹`() {
-        // 用户反馈：明明设置过了启动还弹。厂商设置状态无 API 可读，
-        // 只能持久化"已引导"标志，主界面按钮作为再入口
+    fun `国产ROM冷启动不弹权限引导且准备区显示厂商步骤`() {
         setManufacturer("Xiaomi")
 
-        // 首次启动：应弹厂商引导
-        Robolectric.buildActivity(MainActivity::class.java).setup()
-        val firstDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-        assertTrue("首启应弹厂商引导", collectDialogTexts(firstDialog).any { it.contains("后台保活设置") })
-
-        // 二次启动（新 Activity 实例，模拟冷启动）：不应再弹
-        Robolectric.buildActivity(MainActivity::class.java).setup()
-        val secondDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val startupDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
         assertTrue(
-            "已引导过不应重复弹: ${collectDialogTexts(secondDialog)}",
-            collectDialogTexts(secondDialog).none { it.contains("后台保活设置") }
+            "冷启动不应弹权限引导",
+            collectDialogTexts(startupDialog).none {
+                it.contains("后台保活设置") || it.contains("精确闹钟权限") || it.contains("电池优化提醒")
+            }
         )
+
+        activity.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnReadiness)
+            .performClick()
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        assertTrue(collectDialogTexts(sheet).any { it.contains("小米") && it.contains("自启动") })
     }
 
     private fun collectDialogTexts(dialog: android.app.Dialog?): List<String> {
@@ -2193,6 +2314,48 @@ class MainActivityTest {
 
         assertEquals(true, prefs.isMonitorVideos())
         assertEquals(true, prefs.isMonitorDynamics())
+    }
+
+    @Test
+    fun `活动监控编辑后设置副标题立即刷新`() {
+        prefs.setMonitorVideos(false)
+        prefs.setMonitorPinned(false)
+        prefs.setMonitorDynamics(false)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val sectionView = openActivitySection(activity)
+
+        sectionView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
+            R.id.switchMonitorVideos
+        )!!.isChecked = true
+
+        val items = (org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog)
+            .findViewById<android.widget.LinearLayout>(R.id.itemsContainer)!!
+        assertTrue(items.getChildAt(2).findViewById<android.widget.TextView>(R.id.tvSubtitle)
+            .text.toString().contains("1/3"))
+    }
+
+    @Test
+    fun `自动备份无目录时打开目录选择器并保持关闭`() {
+        prefs.setBackupTreeUri("")
+        prefs.setAutoBackupEnabled(false)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 5)
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog
+        val switch = sheet.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(
+            R.id.switchAutoBackup
+        )!!
+
+        switch.isChecked = true
+
+        assertFalse("选定目录前开关必须回退", switch.isChecked)
+        assertFalse("选定目录前不得启用自动备份", prefs.isAutoBackupEnabled())
+        assertEquals(Intent.ACTION_OPEN_DOCUMENT_TREE, shadowOf(context).nextStartedActivity?.action)
+        val items = sheet.findViewById<android.widget.LinearLayout>(R.id.itemsContainer)!!
+        assertTrue(items.getChildAt(5).findViewById<android.widget.TextView>(R.id.tvSubtitle)
+            .text.toString().contains("关"))
     }
 
     private fun expandSectionAt(activity: MainActivity, position: Int) {

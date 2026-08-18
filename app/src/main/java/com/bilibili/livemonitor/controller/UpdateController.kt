@@ -12,11 +12,16 @@ import com.bilibili.livemonitor.domain.UpdateDecider
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.AppUpdater
 import com.bilibili.livemonitor.util.PreferenceManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -35,20 +40,28 @@ class UpdateController(
         get() = activity.updateChecker
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var downloadJob: Job? = null
 
     fun cancel() {
+        downloadJob?.cancel()
         scope.cancel()
     }
 
-    // 前台每日一次静默自动检测：到点先落时间戳（失败也节流，避免每次进 App 都打 API）
+    // 成功检查按日节流；失败跨进程仅退避一小时，避免重启后反复请求，也不阻塞整天。
     fun autoCheckUpdateIfDue(now: Long = System.currentTimeMillis()) {
         if (!prefs.isAutoCheckUpdate()) return
         if (now - prefs.getLastUpdateCheckTime() < UPDATE_CHECK_INTERVAL_MS) return
-        prefs.setLastUpdateCheckTime(now)
-        checkForUpdate(manual = false)
+        val lastAttempt = prefs.getLastUpdateAttemptTime()
+        if (lastAttempt != 0L &&
+            now - lastAttempt < UPDATE_RETRY_INTERVAL_MS
+        ) return
+        prefs.setLastUpdateAttemptTime(now)
+        checkForUpdate(manual = false, successfulCheckTime = now)
     }
 
-    fun checkForUpdate(manual: Boolean) {
+    fun checkForUpdate(manual: Boolean) = checkForUpdate(manual, successfulCheckTime = null)
+
+    private fun checkForUpdate(manual: Boolean, successfulCheckTime: Long?) {
         if (manual) {
             Toast.makeText(activity, "正在检查更新…", Toast.LENGTH_SHORT).show()
         }
@@ -57,6 +70,7 @@ class UpdateController(
                 BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME
             )) {
                 is UpdateDecider.UpdateState.UpdateAvailable -> {
+                    successfulCheckTime?.let(prefs::setLastUpdateCheckTime)
                     val info = state.info
                     val dismissed = !manual && info.versionCode == prefs.getDismissedVersionCode()
                     if (dismissed) return@launch
@@ -67,6 +81,7 @@ class UpdateController(
                     }
                 }
                 UpdateDecider.UpdateState.UpToDate -> {
+                    successfulCheckTime?.let(prefs::setLastUpdateCheckTime)
                     if (manual) Toast.makeText(activity, "已是最新版本", Toast.LENGTH_SHORT).show()
                 }
                 is UpdateDecider.UpdateState.Error -> {
@@ -140,6 +155,10 @@ class UpdateController(
     }
 
     fun startUpdateDownload(info: UpdateDecider.ReleaseInfo) {
+        if (downloadJob?.isActive == true) {
+            Toast.makeText(activity, "更新包正在下载", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (!AppUpdater.canRequestInstalls(activity)) {
             AlertDialog.Builder(activity)
                 .setTitle("需要安装权限")
@@ -162,74 +181,111 @@ class UpdateController(
         val dialog = AlertDialog.Builder(activity)
             .setTitle("正在下载更新 v${info.versionName}")
             .setView(dialogView)
-            .setCancelable(false)
-            .show()
+            .setNegativeButton("取消", null)
+            .create()
         val dest = AppUpdater.apkFile(activity, info.versionName)
-        scope.launch {
-            // 增量优先：有链且底包 sha256 匹配且比全量小才走补丁，任一失败回退全量
-            val localApkSha = withContext(Dispatchers.IO) {
-                com.bilibili.livemonitor.util.ApkPatcher.installedApkFile(activity)
-                    ?.let { com.bilibili.livemonitor.util.ApkPatcher.sha256(it) }
-            }
-            val plan = com.bilibili.livemonitor.domain.ChainPlanner.choosePlan(
-                info.chain, localApkSha, info.apkSize
-            )
-            var installed = false
-            if (plan is com.bilibili.livemonitor.domain.ChainPlanner.UpdatePlan.Incremental) {
-                AppLogger.d("UpdateController", "incremental update: ${plan.chain.hops.size} hop(s), total ${plan.chain.totalSize} bytes")
-                val updater = com.bilibili.livemonitor.util.IncrementalUpdater(activity)
-                updater.downloader = { url, d, cb -> checker.downloadApk(url, d, cb) }
-                val result = updater.executeChain(plan.chain, info.versionName) { percent ->
-                    bar.post {
-                        bar.progress = percent
-                        label.text = "增量更新 $percent%"
-                    }
+        dialog.show()
+        label.text = "正在准备下载…"
+
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            processDownloadMutex.withLock {
+            AppUpdater.cleanupOldDownloads(activity, keepApk = dest, apkMaxAgeMs = 0L)
+            try {
+                // 增量优先：有链且底包 sha256 匹配且比全量小才走补丁，任一失败回退全量
+                val localApkSha = withContext(Dispatchers.IO) {
+                    com.bilibili.livemonitor.util.ApkPatcher.installedApkFile(activity)
+                        ?.let { com.bilibili.livemonitor.util.ApkPatcher.sha256(it) }
                 }
-                if (result != null) {
-                    installed = true
-                    dialog.dismiss()
-                    try {
-                        activity.startActivity(AppUpdater.buildInstallIntent(activity, result))
-                    } catch (e: Exception) {
-                        AppLogger.e("UpdateController", "launch apk installer failed", e)
-                        Toast.makeText(activity, "无法打开安装器", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    AppLogger.w("UpdateController", "incremental update failed, fallback to full apk")
-                    label.text = "增量更新失败，转全量下载…"
-                }
-            }
-            if (!installed) {
-                val ok = checker.downloadApk(info.apkUrl, dest) { percent ->
-                    bar.post {
-                        bar.progress = percent
-                        label.text = "$percent%"
-                    }
-                }
-                // 全量包完整性校验（version.json 带 apkSha256 时）
-                val verified = ok && info.apkSha256?.let { expect ->
-                    withContext(Dispatchers.IO) {
-                        com.bilibili.livemonitor.util.ApkPatcher.sha256(dest)
-                    }.equals(expect, ignoreCase = true).also { match ->
-                        if (!match) {
-                            AppLogger.w("UpdateController", "full apk sha256 mismatch, deleted")
-                            dest.delete()
+                val plan = com.bilibili.livemonitor.domain.ChainPlanner.choosePlan(
+                    info.chain, localApkSha, info.apkSize
+                )
+                var readyApk: java.io.File? = null
+                if (plan is com.bilibili.livemonitor.domain.ChainPlanner.UpdatePlan.Incremental) {
+                    AppLogger.d("UpdateController", "incremental update: ${plan.chain.hops.size} hop(s), total ${plan.chain.totalSize} bytes")
+                    val updater = com.bilibili.livemonitor.util.IncrementalUpdater(activity)
+                    updater.downloader = { url, d, cb -> checker.downloadApk(url, d, cb) }
+                    readyApk = updater.executeChain(plan.chain, info.versionName) { percent ->
+                        bar.post {
+                            bar.progress = percent
+                            label.text = "正在下载增量包：$percent%"
                         }
                     }
-                } ?: ok
+                    if (readyApk == null) {
+                        AppLogger.w("UpdateController", "incremental update failed, fallback to full apk")
+                        label.text = "增量更新不可用，正在重试完整包…"
+                    }
+                }
+
+                if (readyApk == null) {
+                    label.text = "正在连接下载源…"
+                    val ok = checker.downloadApk(info.apkUrl, dest) { percent ->
+                        bar.post {
+                            bar.progress = percent
+                            label.text = "正在下载完整包：$percent%"
+                        }
+                    }
+                    label.text = "正在校验更新包…"
+                    // 全量包完整性校验（version.json 带 apkSha256 时）
+                    val verified = ok && info.apkSha256?.let { expect ->
+                        withContext(Dispatchers.IO) {
+                            com.bilibili.livemonitor.util.ApkPatcher.sha256(dest)
+                        }.equals(expect, ignoreCase = true).also { match ->
+                            if (!match) {
+                                AppLogger.w("UpdateController", "full apk sha256 mismatch, deleted")
+                                dest.delete()
+                            }
+                        }
+                    } ?: ok
+                    if (verified) readyApk = dest
+                }
+
                 dialog.dismiss()
-                if (verified) {
+                if (readyApk != null) {
                     try {
-                        activity.startActivity(AppUpdater.buildInstallIntent(activity, dest))
+                        activity.startActivity(AppUpdater.buildInstallIntent(activity, readyApk!!))
                     } catch (e: Exception) {
                         AppLogger.e("UpdateController", "launch apk installer failed", e)
                         Toast.makeText(activity, "无法打开安装器", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     Toast.makeText(activity, "更新包下载失败，请稍后再试", Toast.LENGTH_SHORT).show()
+                    showDownloadFailure(info)
+                }
+            } catch (_: CancellationException) {
+                dest.delete()
+                AppUpdater.cleanupOldDownloads(activity, apkMaxAgeMs = 0L)
+                dialog.dismiss()
+                Toast.makeText(activity, "已取消更新下载", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                AppLogger.e("UpdateController", "update download failed", e)
+                dest.delete()
+                dialog.dismiss()
+                Toast.makeText(activity, "更新包下载失败，请稍后再试", Toast.LENGTH_SHORT).show()
+                showDownloadFailure(info)
+            } finally {
+                if (downloadJob === coroutineContext[Job]) {
+                    downloadJob = null
                 }
             }
+            }
         }
+        downloadJob = job
+        dialog.setOnCancelListener { job.cancel() }
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+            label.text = "正在取消并清理临时文件…"
+            it.isEnabled = false
+            job.cancel()
+        }
+        job.start()
+    }
+
+    private fun showDownloadFailure(info: UpdateDecider.ReleaseInfo) {
+        AlertDialog.Builder(activity)
+            .setTitle("更新下载失败")
+            .setMessage("临时文件已清理。请检查网络后重试。")
+            .setPositiveButton("重试") { _, _ -> startUpdateDownload(info) }
+            .setNegativeButton("稍后再说", null)
+            .show()
     }
 
     fun showUpdateSettingsDialog() {
@@ -260,6 +316,8 @@ class UpdateController(
     companion object {
         // 自动检查更新的最小间隔：24 小时
         internal const val UPDATE_CHECK_INTERVAL_MS = 24 * 3600 * 1000L
+        internal const val UPDATE_RETRY_INTERVAL_MS = 60 * 60 * 1000L
         private const val GITHUB_URL = "https://github.com/XenoAmess/vivhite-tracker"
+        private val processDownloadMutex = Mutex()
     }
 }

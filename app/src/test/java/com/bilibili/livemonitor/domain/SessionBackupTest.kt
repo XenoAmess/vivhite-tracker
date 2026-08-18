@@ -35,11 +35,11 @@ class SessionBackupTest {
         assertTrue(csv.startsWith(SessionBackup.HEADER))
 
         val parsed = SessionBackup.parse(csv)
-        // 进行中场次导入时跳过（skipped 计数），闭合场次回来
-        assertEquals(1, parsed.sessions.size)
+        assertEquals(2, parsed.sessions.size)
         assertEquals(ts("2026-08-09 20:27"), parsed.sessions[0].startTs)
         assertEquals(ts("2026-08-09 23:01"), parsed.sessions[0].endTs)
         assertEquals("sad, \"emo\"\n换行", parsed.sessions[0].title)
+        assertEquals(null, parsed.sessions[1].endTs)
 
         assertEquals(2, parsed.moods.size)
         val m0 = parsed.moods[0]
@@ -49,9 +49,13 @@ class SessionBackupTest {
         assertEquals("看了场直播，很开心", m0.title)
         assertEquals("她唱了我点的歌", m0.reason)
         assertEquals("下次\"还点\"", m0.note)
+        assertEquals(0L, m0.createdAt)
         assertEquals(0, parsed.moods[1].durationMin)
         assertEquals("calm", parsed.moods[1].mood)
-        assertEquals(1, parsed.skippedLines) // 进行中场次
+        assertEquals(0, parsed.skippedLines)
+
+        val records = SessionBackup.parseRecords(csv)
+        assertTrue(records.drop(1).all { it.size == records.first().size })
     }
 
     @Test
@@ -68,11 +72,12 @@ class SessionBackupTest {
             "2026-08-09 20:27,2026-08-09 23:01,154,\"sad\"\n" +
             "2026-08-10 12:00,进行中,,\"直播中\"\n"
         val parsed = SessionBackup.parse(old)
-        assertEquals(1, parsed.sessions.size)
+        assertEquals(2, parsed.sessions.size)
         assertEquals(0, parsed.moods.size)
         assertEquals(ts("2026-08-09 20:27"), parsed.sessions[0].startTs)
         assertEquals("sad", parsed.sessions[0].title)
-        assertEquals(1, parsed.skippedLines) // 进行中
+        assertEquals(null, parsed.sessions[1].endTs)
+        assertEquals(0, parsed.skippedLines)
     }
 
     @Test

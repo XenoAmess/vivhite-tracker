@@ -12,14 +12,15 @@
 
 ## 功能特性
 
-1. **打开即监控**
-   - 应用启动后自动开始监控，无需手动操作
+1. **手动启停与自动恢复**
+   - 新安装默认不启动监控，用户点击开始后以该开关为准
+   - 已开启监控但服务被系统回收时，重新打开应用会自动恢复
    - 使用前台服务（Foreground Service）保持应用在后台存活
    - 通过通知栏显示当前监控状态
    - 支持开机自启动
 
 2. **定期检测**
-   - 每分钟查询一次直播间状态
+   - 默认每分钟查询一次直播间状态，可选 15 秒实时或 5 分钟省电档
    - 使用B站官方API获取实时数据
    - 固定监控直播间：**11258892（白绮）**
 
@@ -34,6 +35,10 @@
 5. **电池优化提示**
    - 智能检测电池优化设置
    - 引导用户关闭电源管理以保证应用正常运行
+
+6. **绮迹手账**
+   - 自动记录直播场次、标题变化、人气采样和粉丝快照
+   - 支持心情事件、统计、导入导出、海报和备份
 
 ## 项目结构
 
@@ -70,11 +75,13 @@ BilibiliLiveMonitor/
 
 - **语言**: Kotlin
 - **最低SDK**: API 26 (Android 8.0)
-- **目标SDK**: API 34 (Android 14)
+- **编译/目标SDK**: API 36
+- **构建工具**: JDK 17、Gradle Wrapper 9.7.0、AGP 9.3.1（内置 Kotlin）
 - **主要依赖**:
   - AndroidX Core & AppCompat
   - Material Design Components
   - Kotlin Coroutines
+  - Room
   - Jsoup (网页解析)
 
 ## 权限说明
@@ -102,8 +109,9 @@ BilibiliLiveMonitor/
 ### 方式二: 命令行构建
 
 ```bash
-# 需要有 Android SDK 和 Gradle 环境
-./gradlew assembleDebug
+# 需要 Android SDK 和 JDK 17；完整本地验证与 CI build job 一致
+python3 -m unittest discover -s .github/workflows/tests -v
+./gradlew lintDebug testDebugUnitTest jacocoUnitTestReport assembleDebug
 
 # APK 输出路径
 app/build/outputs/apk/debug/app-debug.apk
@@ -116,7 +124,7 @@ app/build/outputs/apk/debug/app-debug.apk
    - 根据提示关闭电池优化
 
 2. **自动监控**
-   - 应用打开后自动开始监控直播间 11258892
+   - 首次使用时点击"开始监控"，之后应用和系统重启会按已保存开关恢复
    - 界面显示当前监控状态
    - 应用会在通知栏显示监控状态
 
@@ -147,14 +155,16 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## 自定义配置
 
-修改 `LiveCheckService.kt` 中的以下常量可调整行为：
+固定监控目标的单一来源是 `util/BiliTargets.kt`：
 
 ```kotlin
-companion object {
-    private const val DEFAULT_ROOM_ID = 11258892L  // 默认直播间（白绮）
-    private const val CHECK_INTERVAL = 60_000L      // 检测间隔（毫秒）
+object BiliTargets {
+    const val ROOM_ID = 11258892L
+    const val MONITOR_MID = 251990176L
 }
 ```
+
+检测间隔通过应用设置选择：实时 15 秒、标准 60 秒（默认）、省电 300 秒。活动监控中的新视频、置顶变化、动态及活动响铃默认开启；勿扰和直播标题变化提醒默认关闭，下播提醒默认开启。
 
 ## 图标说明
 
