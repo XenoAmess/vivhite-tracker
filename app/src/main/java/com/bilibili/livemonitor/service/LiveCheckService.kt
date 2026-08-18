@@ -275,22 +275,26 @@ class LiveCheckService : Service() {
         val epoch = checkEpoch.incrementAndGet()
         if (recoverStale) previous?.cancel()
         activeCheckJob = serviceScope.launch {
-            if (recoverStale) previous?.join()
-            if (!isCurrentCheck(generation, epoch)) return@launch
-            if (!isChecking.compareAndSet(false, true)) return@launch
+            var ownsCheckingFlag = false
             try {
-                checkLiveStatusWithRetry(generation, epoch)
-            } catch (_: CancellationException) {
-                AppLogger.d(TAG, "live check cancelled for generation $generation")
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "checkLiveStatus error", e)
+                if (recoverStale) previous?.join()
+                if (!isCurrentCheck(generation, epoch)) return@launch
+                if (!isChecking.compareAndSet(false, true)) return@launch
+                ownsCheckingFlag = true
+                try {
+                    checkLiveStatusWithRetry(generation, epoch)
+                } catch (_: CancellationException) {
+                    AppLogger.d(TAG, "live check cancelled for generation $generation")
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "checkLiveStatus error", e)
+                }
+                if (!isCurrentCheck(generation, epoch)) return@launch
+                preferenceManager.setMonitoringHeartbeat(System.currentTimeMillis(), generation)
+                scheduleNextCheckAlarm(generation)
+                ensureDynamicAlarmScheduled()
             } finally {
-                isChecking.set(false)
+                if (ownsCheckingFlag) isChecking.set(false)
             }
-            if (!isCurrentCheck(generation, epoch)) return@launch
-            preferenceManager.setMonitoringHeartbeat(System.currentTimeMillis(), generation)
-            scheduleNextCheckAlarm(generation)
-            ensureDynamicAlarmScheduled()
         }
     }
 
