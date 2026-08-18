@@ -110,8 +110,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
                     android:layout_marginTop="6dp"
-                    android:contentDescription="预览或分享最近生成的月报海报"
-                    android:text="最近月报"
+                    android:contentDescription="预览或分享最近生成的月报"
+                    android:text="月报预览/分享"
                     android:visibility="gone" />
             </LinearLayout>
         </LinearLayout>

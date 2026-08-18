@@ -9,6 +9,7 @@ import com.bilibili.livemonitor.db.StreamSessionEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -32,6 +33,7 @@ class StatsActivityTest {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
         }
+        java.io.File(context.filesDir, "posters").deleteRecursively()
     }
 
     private fun waitFor(what: String, cond: () -> Boolean) {
@@ -70,6 +72,30 @@ class StatsActivityTest {
         val iv = activity.findViewById<android.widget.ImageView>(R.id.ivAnchorAvatar)
         assertNotNull(iv)
         waitFor("avatar placeholder set") { iv.drawable != null }
+    }
+
+    @Test
+    fun `最近月报展示月份与实际分享文件保持一致`() {
+        val directory = java.io.File(context.filesDir, "posters").apply { mkdirs() }
+        val july = java.io.File(directory, "monthly_2026-07.png").apply { writeBytes(pngBytes()) }
+        val august = java.io.File(directory, "monthly_2026-08.png").apply { writeBytes(pngBytes()) }
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        val button = activity.findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btnRecentPoster
+        )
+        waitFor("recent poster entry") { button.visibility == android.view.View.VISIBLE }
+
+        assertEquals("2026年8月月报 · 预览/分享", button.text.toString())
+        assertTrue(august.delete())
+        button.performClick()
+
+        assertNull("文件变化后不得静默改为分享另一月份", shadowOf(activity).peekNextStartedActivity())
+        assertEquals("2026年7月月报 · 预览/分享", button.text.toString())
+        button.performClick()
+        val chooser = shadowOf(activity).nextStartedActivity
+        val send = chooser?.getParcelableExtra<android.content.Intent>(android.content.Intent.EXTRA_INTENT)
+        val uri = send?.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)
+        assertTrue("实际分享文件应与按钮月份一致: $uri", uri.toString().contains(july.name))
     }
 
     @Test

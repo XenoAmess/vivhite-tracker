@@ -73,7 +73,9 @@ class StatsActivity : AppCompatActivity() {
     private var searchJob: Job? = null
     private var dataLoadJob: Job? = null
     private var monthLoadJob: Job? = null
+    private var pendingMonth: Calendar? = null
     private var loadGeneration = 0L
+    private var displayedPosterFile: java.io.File? = null
     private val pendingImportDirs = mutableSetOf<java.io.File>()
     private val database by lazy { AppDatabase.get(this) }
     private val statsRepository by lazy { StatsRepository(database) }
@@ -134,14 +136,20 @@ class StatsActivity : AppCompatActivity() {
         binding.btnAddMoodEvent.setOnClickListener { showMoodEventDialog(null) }
         binding.btnAddManualSession.setOnClickListener { showManualSessionDialog() }
 
-        binding.btnPrevMonth.setOnClickListener { cal.add(Calendar.MONTH, -1); loadMonthAndRender() }
-        binding.btnNextMonth.setOnClickListener { cal.add(Calendar.MONTH, 1); loadMonthAndRender() }
+        binding.btnPrevMonth.setOnClickListener { navigateMonth(-1) }
+        binding.btnNextMonth.setOnClickListener { navigateMonth(1) }
         binding.btnExportImage.setOnClickListener { exportStatsImage() }
         binding.btnStatsTrend.setOnClickListener { showStatsTrendDialog() }
         binding.btnSearchRecords.setOnClickListener { showSearchDialog() }
         binding.btnStatsMore.setOnClickListener { showMoreMenu(it) }
         binding.btnRecentPoster.setOnClickListener {
-            latestPosterFile()?.let { file -> sharePoster(file) }
+            val file = displayedPosterFile
+            if (file?.isFile == true) {
+                sharePoster(file)
+            } else {
+                updateRecentPosterEntry()
+                Toast.makeText(this, "月报文件已变化，请按更新后的月份重试", Toast.LENGTH_SHORT).show()
+            }
         }
         binding.btnStatsRetry.setOnClickListener { refreshData() }
 
@@ -262,33 +270,45 @@ class StatsActivity : AppCompatActivity() {
         return true
     }
 
-    // 翻月：异步装该月数据再渲染；选中日落进当前显示月
-    private fun loadMonthAndRender() {
+    private fun navigateMonth(delta: Int) {
+        val requestedMonth = ((pendingMonth ?: cal).clone() as Calendar).apply {
+            add(Calendar.MONTH, delta)
+        }
+        pendingMonth = requestedMonth
+        loadMonthAndRender(requestedMonth)
+    }
+
+    // 翻月：数据加载完成后才提交 cal，确保标题、日历和导出月份始终一致。
+    private fun loadMonthAndRender(targetMonth: Calendar) {
         dataLoadJob?.cancel()
         monthLoadJob?.cancel()
         val generation = ++loadGeneration
-        val requestedMonth = cal.clone() as Calendar
+        val requestedMonth = targetMonth.clone() as Calendar
         monthLoadJob = lifecycleScope.launch {
-            if (!loadMonthIntoMap(requestedMonth, generation)) return@launch
-            if (generation != loadGeneration) return@launch
-            cal.timeInMillis = requestedMonth.timeInMillis
-            val monthStart = (requestedMonth.clone() as Calendar).apply {
-                set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            val monthEnd = (Calendar.getInstance().apply {
-                timeInMillis = monthStart; add(Calendar.MONTH, 1)
-            }).timeInMillis
-            if (selectedDayStart < monthStart || selectedDayStart >= monthEnd) {
-                val today = dayStart(System.currentTimeMillis())
-                selectedDayStart = when {
-                    today in monthStart until monthEnd -> today
-                    // 只在本月范围内挑最近一场（全表 maxOrNull 会跳出当前月）
-                    else -> sessionsByDay.keys.filter { it >= monthStart && it < monthEnd }
-                        .maxOrNull() ?: monthStart
+            try {
+                if (!loadMonthIntoMap(requestedMonth, generation)) return@launch
+                if (generation != loadGeneration) return@launch
+                cal.timeInMillis = requestedMonth.timeInMillis
+                val monthStart = (requestedMonth.clone() as Calendar).apply {
+                    set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                val monthEnd = (Calendar.getInstance().apply {
+                    timeInMillis = monthStart; add(Calendar.MONTH, 1)
+                }).timeInMillis
+                if (selectedDayStart < monthStart || selectedDayStart >= monthEnd) {
+                    val today = dayStart(System.currentTimeMillis())
+                    selectedDayStart = when {
+                        today in monthStart until monthEnd -> today
+                        // 只在本月范围内挑最近一场（全表 maxOrNull 会跳出当前月）
+                        else -> sessionsByDay.keys.filter { it >= monthStart && it < monthEnd }
+                            .maxOrNull() ?: monthStart
+                    }
                 }
+                renderCalendar()
+            } finally {
+                if (generation == loadGeneration) pendingMonth = null
             }
-            renderCalendar()
         }
     }
 
@@ -543,9 +563,10 @@ class StatsActivity : AppCompatActivity() {
 
     private fun navigateToTimestamp(ts: Long) {
         selectedDayStart = dayStart(ts)
-        cal.timeInMillis = selectedDayStart
         hasInitialSelection = true
-        loadMonthAndRender()
+        val targetMonth = Calendar.getInstance().apply { timeInMillis = selectedDayStart }
+        pendingMonth = targetMonth
+        loadMonthAndRender(targetMonth)
     }
 
     private fun showManualSessionDialog() = showSessionDialog(null)
@@ -744,12 +765,18 @@ class StatsActivity : AppCompatActivity() {
 
     private fun updateRecentPosterEntry() {
         val file = latestPosterFile()
+        displayedPosterFile = file
         binding.btnRecentPoster.visibility = if (file == null) View.GONE else View.VISIBLE
-        binding.btnRecentPoster.text = file?.name?.substringAfter("monthly_")
+        val monthText = file?.name?.substringAfter("monthly_")
             ?.substringBefore(".png")?.let { key ->
                 val parts = key.split('-')
-                "最近月报 · ${parts[0]}年${parts[1].toInt()}月（预览/分享）"
-            } ?: "最近月报"
+                "${parts[0]}年${parts[1].toInt()}月"
+            }
+        binding.btnRecentPoster.text = monthText?.let { "${it}月报 · 预览/分享" }
+            ?: "月报预览/分享"
+        binding.btnRecentPoster.contentDescription = monthText?.let {
+            "最近生成的月报：$it，预览或分享"
+        } ?: "预览或分享最近生成的月报"
     }
 
     private fun sharePoster(file: java.io.File) {
@@ -1435,10 +1462,11 @@ class StatsActivity : AppCompatActivity() {
 
     // 导出图片：当月完整数据海报（摘要+柱图+日历热力+心情/魔法期+全记录），渲染后走分享面板
     private fun exportStatsImage() {
+        val exportMonth = cal.clone() as Calendar
         Toast.makeText(this, "正在生成图片…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             try {
-                val data = buildStatsImageData()
+                val data = buildStatsImageData(exportMonth)
                 val avatar = withContext(Dispatchers.IO) {
                     kotlinx.coroutines.withTimeoutOrNull(4000) { avatarLoader.load(this@StatsActivity) }
                 }
@@ -1470,8 +1498,10 @@ class StatsActivity : AppCompatActivity() {
 
     /** 组装海报数据：纯按月维度（以当前日历所在月为准，用户可翻月）。
      *  组装逻辑在 util/StatsImageDataFactory（与月初自动生成共用） */
-    private suspend fun buildStatsImageData(): com.bilibili.livemonitor.util.StatsImageRenderer.StatsImageData =
-        com.bilibili.livemonitor.util.StatsImageDataFactory.build(this, cal)
+    private suspend fun buildStatsImageData(
+        month: Calendar
+    ): com.bilibili.livemonitor.util.StatsImageRenderer.StatsImageData =
+        com.bilibili.livemonitor.util.StatsImageDataFactory.build(this, month)
 
     private fun formatDuration(ms: Long): String {
         if (ms <= 0) return "--"
