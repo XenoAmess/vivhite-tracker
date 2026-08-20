@@ -32,8 +32,12 @@ class StatsActivityTest {
             AppDatabase.get(context).streamSessionDao().deleteAllFollowerSnapshots()
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
+            AppDatabase.get(context).mediaSnapshotDao().deleteAll()
         }
         java.io.File(context.filesDir, "posters").deleteRecursively()
+        java.io.File(context.filesDir, "avatars").deleteRecursively()
+        java.io.File(context.filesDir, "anchor_avatar.jpg").writeBytes(pngBytes())
+        com.bilibili.livemonitor.util.PreferenceManager(context).setLegacyMediaImported(true)
     }
 
     private fun waitFor(what: String, cond: () -> Boolean) {
@@ -66,12 +70,21 @@ class StatsActivityTest {
     }
 
     @Test
-    fun `左上角头像 无网络时显示占位图`() {
-        // AnchorAvatarLoader 无缓存无网络（Robolectric 沙箱内 B站不可达或返回空）→ 占位圆
+    fun `左上角头像从磁盘缓存加载`() {
         val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
         val iv = activity.findViewById<android.widget.ImageView>(R.id.ivAnchorAvatar)
         assertNotNull(iv)
         waitFor("avatar placeholder set") { iv.drawable != null }
+    }
+
+    @Test
+    fun `绮迹影集按钮打开影集页`() {
+        val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
+        activity.findViewById<android.view.View>(R.id.btnMediaGallery).performClick()
+        assertEquals(
+            MediaGalleryActivity::class.java.name,
+            shadowOf(activity).nextStartedActivity.component?.className
+        )
     }
 
     @Test

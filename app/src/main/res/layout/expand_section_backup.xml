@@ -11,7 +11,7 @@
         android:id="@+id/switchAutoBackup"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="每天自动备份（全量 ZIP：场次+心情+主题变化+人气+粉丝+魔法期+设置+封面）" />
+        android:text="每天自动备份（全量 ZIP：场次+心情+主题变化+人气+粉丝+魔法期+设置+封面+头像）" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnPickBackupDir"

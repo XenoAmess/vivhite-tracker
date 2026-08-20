@@ -373,7 +373,7 @@ class MainActivity : AppCompatActivity() {
             ),
             SettingsEntry(
                 title = "直播提醒",
-                subtitle = { "下播 / 标题变化" },
+                subtitle = { "下播 / 标题变化 / 头像更新" },
                 iconRes = android.R.drawable.ic_lock_idle_lock,
                 expandLayoutRes = R.layout.expand_section_live_alerts,
                 onExpand = { view -> bindLiveAlertsSection(view) }
@@ -755,6 +755,13 @@ class MainActivity : AppCompatActivity() {
             isChecked = preferenceManager.isNotifyTitleChange()
             setOnCheckedChangeListener { _, c ->
                 preferenceManager.setNotifyTitleChange(c)
+                refreshSettingsSubtitles()
+            }
+        }
+        view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNotifyAvatarChange).apply {
+            isChecked = preferenceManager.isNotifyAvatarChange()
+            setOnCheckedChangeListener { _, checked ->
+                preferenceManager.setNotifyAvatarChange(checked)
                 refreshSettingsSubtitles()
             }
         }

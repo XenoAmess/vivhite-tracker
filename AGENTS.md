@@ -61,12 +61,12 @@ AlarmManager(60s exact) → AlarmReceiver → startForegroundService
 - 服务状态靠 `LiveCheckService` companion 的 `@Volatile` 静态变量（`isRunning`/`lastLiveStatus`/`isUserStopped`）+ `PreferenceManager` 共享；Worker/Receiver/Activity 都读这两处。
 - 重启链：`onDestroy`（非用户停止时）广播 `RESTART_SERVICE` → `ServiceRestartReceiver`；`onTaskRemoved` 排 Alarm + 一次性 Worker；`BootReceiver` 开机拉起；`PackageReplacedReceiver`（MY_PACKAGE_REPLACED）覆盖安装后拉起。四个 Receiver 捕获 `ForegroundServiceStartNotAllowedException` 后降级到一次性 WorkManager。
 - `AppLogger` 写 `filesDir/logs/monitor.log`（1MB 截断），排查后台问题先让用户导出这个（应用内「查看运行日志」页）。
-- 房间号/UID 单一来源在 `util/BiliTargets`（`ROOM_ID=11258892` / `MONITOR_MID=251990176`）；头像源用 `live_user/v1/Master/info`（未登录可用），`x/space/acc/info` 已被风控（-799）仅作兜底；`AnchorAvatarLoader` 带 24h 磁盘缓存。改房间号/UID 只改 BiliTargets，但通知/页面文案里的展示文本仍需全局搜。
+- 房间号/UID 单一来源在 `util/BiliTargets`（`ROOM_ID=11258892` / `MONITOR_MID=251990176`）；头像源用 `live_user/v1/Master/info`（未登录可用），`x/space/acc/info` 已被风控（-799）仅作兜底；`AnchorProfileTracker` 每小时按 BFS 内容 SHA-1 检查变化，`AnchorAvatarLoader` 按月份读取历史头像。改房间号/UID 只改 BiliTargets，但通知/页面文案里的展示文本仍需全局搜。
 - **场次记录进程死亡约束**（2026-08 修复后）：`recordStreamStart` 对同一场（liveStartTime 一致）幂等复用开放行；NotLive 且无跳变时静默 reconcile 残留开放行，闭合到 `last_live_observed_time`（每次 Live 检测刷新；`lastCheckTime` 每次检测含 NotLive 都覆盖，**不能**当存活证据）。这两条破了升级场景会造出 0 分钟幽灵行/数天长假场次。
 
 ## 绮迹手账（StatsActivity，原「场次记录」页）
 
-- Room DB 当前 v6，共 5 表：`stream_sessions`、`stream_title_changes`、`mood_events`、`popularity_points`、`follower_snapshots`。现有迁移为 1→2（心情）、2→3（心情时长）、3→4（人气采样）、4→5（场次封面）、5→6（粉丝快照）；加表/字段必须继续写 Migration，禁止删库重建。
+- Room DB 当前 v8，共 6 表：`stream_sessions`、`stream_title_changes`、`mood_events`、`popularity_points`、`follower_snapshots`、`media_snapshots`。现有迁移为 1→2（心情）、2→3（心情时长）、3→4（人气采样）、4→5（场次封面）、5→6（粉丝快照）、6→7（索引/外键）、7→8（头像与直播封面事件）；加表/字段必须继续写 Migration，禁止删库重建。
 - 心情目录在 `domain/MoodCatalog`（22 种，key→emoji+中文文案+分组），**DB 只存 key 不存 emoji**；CSV 里存「😄开心」display，导入用 `keyOf` 反查（裸 key 也认）。
 - 备份编解码在 `domain/SessionBackup`（混合 CSV：类型列区分场次/心情，兼容旧 5 列格式；引号/逗号/换行转义）。导入合并去重（场次=起止时间，心情=时间+心情+标题）。
 - 导出海报 `util/StatsImageRenderer`：**纯按月维度**（摘要/逐周柱状/月历热力/心情统计/魔法期/全记录），可变高度；柱状离屏复用 `WeekStreamBarsView`（柱数随数据）；纯绘制无 IO 好测试。

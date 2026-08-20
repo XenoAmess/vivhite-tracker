@@ -1,6 +1,7 @@
 package com.bilibili.livemonitor
 
 import android.app.Application
+import android.app.NotificationManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.WorkInfo
@@ -8,6 +9,7 @@ import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.bilibili.livemonitor.util.PreferenceManager
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,5 +57,13 @@ class LiveMonitorAppTest {
         val periodic = WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork("live_check_periodic").get()
         assertTrue(periodic.isEmpty())
+    }
+
+    @Test
+    fun `头像更新通道使用高重要性以播放通知音`() {
+        (context as LiveMonitorApp).onCreate()
+        val channel = context.getSystemService(NotificationManager::class.java)
+            .getNotificationChannel(LiveMonitorApp.CHANNEL_AVATAR_ALERT_ID)
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, channel.importance)
     }
 }

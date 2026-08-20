@@ -3,6 +3,9 @@
     <files-path name="logs" path="logs/" />
     <files-path name="updates" path="updates/" />
     <files-path name="posters" path="posters/" />
+    <!-- 原始媒体只开放两个精确根目录；影集不复制或扩大 filesDir 授权范围。 -->
+    <files-path name="gallery_covers" path="covers/" />
+    <files-path name="gallery_avatars" path="avatars/" />
     <!-- 分享配图（封面/长宣传图），供 ACTION_SEND EXTRA_STREAM 授权读取 -->
     <cache-path name="shared" path="shared/" />
 </paths>

@@ -158,6 +158,25 @@ class PreferenceManager(context: Context) {
 
     fun getLastPosterMonth(): String = prefs.getString(KEY_LAST_POSTER_MONTH, "") ?: ""
 
+    fun setLastAvatarCheckTime(time: Long) {
+        prefs.edit().putLong(KEY_LAST_AVATAR_CHECK_TIME, time).apply()
+    }
+
+    fun getLastAvatarCheckTime(): Long = prefs.getLong(KEY_LAST_AVATAR_CHECK_TIME, 0L)
+
+    fun setAvatarBaselineInitialized(initialized: Boolean) {
+        prefs.edit().putBoolean(KEY_AVATAR_BASELINE_INITIALIZED, initialized).apply()
+    }
+
+    fun isAvatarBaselineInitialized(): Boolean =
+        prefs.getBoolean(KEY_AVATAR_BASELINE_INITIALIZED, false)
+
+    fun setLegacyMediaImported(imported: Boolean) {
+        prefs.edit().putBoolean(KEY_LEGACY_MEDIA_IMPORTED, imported).apply()
+    }
+
+    fun isLegacyMediaImported(): Boolean = prefs.getBoolean(KEY_LEGACY_MEDIA_IMPORTED, false)
+
     // ============ 全量备份快照（FullBackup prefs.json） ============
 
     /** 魔法期 + 全部设置项 → JSON 字符串（备份用） */
@@ -176,6 +195,7 @@ class PreferenceManager(context: Context) {
         o.put("alert_ring_on_activity", isAlertRingOnActivity())
         o.put("notify_stream_end", isNotifyStreamEnd())
         o.put("notify_title_change", isNotifyTitleChange())
+        o.put("notify_avatar_change", isNotifyAvatarChange())
         o.put("auto_check_update", isAutoCheckUpdate())
         o.put("auto_download_update", isAutoDownloadUpdate())
         o.put("alert_sound_uri", getAlertSoundUri())
@@ -236,6 +256,7 @@ class PreferenceManager(context: Context) {
             o.optBooleanOrNull("alert_ring_on_activity")?.let { editor.putBoolean(KEY_ALERT_RING_ON_ACTIVITY, it) }
             o.optBooleanOrNull("notify_stream_end")?.let { editor.putBoolean(KEY_NOTIFY_STREAM_END, it) }
             o.optBooleanOrNull("notify_title_change")?.let { editor.putBoolean(KEY_NOTIFY_TITLE_CHANGE, it) }
+            o.optBooleanOrNull("notify_avatar_change")?.let { editor.putBoolean(KEY_NOTIFY_AVATAR_CHANGE, it) }
             o.optBooleanOrNull("auto_check_update")?.let { editor.putBoolean(KEY_AUTO_CHECK_UPDATE, it) }
             o.optBooleanOrNull("auto_download_update")?.let { editor.putBoolean(KEY_AUTO_DOWNLOAD_UPDATE, it) }
             o.optStringOrNull("alert_sound_uri")?.let { editor.putString(KEY_ALERT_SOUND_URI, it) }
@@ -487,6 +508,12 @@ class PreferenceManager(context: Context) {
         return prefs.getBoolean(KEY_NOTIFY_TITLE_CHANGE, false)
     }
 
+    fun setNotifyAvatarChange(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFY_AVATAR_CHANGE, enabled).apply()
+    }
+
+    fun isNotifyAvatarChange(): Boolean = prefs.getBoolean(KEY_NOTIFY_AVATAR_CHANGE, true)
+
     // 上次见到的直播标题（变化判定基线）
     fun setLastLiveTitle(title: String) {
         prefs.edit().putString(KEY_LAST_LIVE_TITLE, title).apply()
@@ -620,6 +647,9 @@ class PreferenceManager(context: Context) {
         private const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
         private const val KEY_LAST_BACKUP_TIME = "last_backup_time"
         private const val KEY_LAST_POSTER_MONTH = "last_poster_month"
+        private const val KEY_LAST_AVATAR_CHECK_TIME = "last_avatar_check_time"
+        private const val KEY_AVATAR_BASELINE_INITIALIZED = "avatar_baseline_initialized"
+        private const val KEY_LEGACY_MEDIA_IMPORTED = "legacy_media_imported"
         private const val KEY_OEM_BACKGROUND_CONFIRMED = "oem_background_confirmed"
         private const val KEY_CHECK_RECORDS = "check_records"
         // 15 秒档一天最多 5760 个周期，留出手动检查与时间漂移余量。
@@ -657,6 +687,7 @@ class PreferenceManager(context: Context) {
 
         // ===== 直播主题变化提醒 =====
         private const val KEY_NOTIFY_TITLE_CHANGE = "notify_title_change"
+        private const val KEY_NOTIFY_AVATAR_CHANGE = "notify_avatar_change"
         private const val KEY_LAST_LIVE_TITLE = "last_live_title"
 
         // ===== 外观 =====

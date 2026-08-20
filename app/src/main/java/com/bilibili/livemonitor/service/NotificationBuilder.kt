@@ -5,10 +5,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import androidx.core.app.NotificationCompat
 import com.bilibili.livemonitor.AlertActivity
 import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.MainActivity
+import com.bilibili.livemonitor.MediaGalleryActivity
 import com.bilibili.livemonitor.R
 import com.bilibili.livemonitor.api.BilibiliActivityApi
 
@@ -111,6 +113,26 @@ class NotificationBuilder(
             LiveMonitorApp.NOTIFICATION_ID_DYNAMIC,
             builder.build()
         )
+    }
+
+    fun sendAvatarChanged(avatar: Bitmap, silent: Boolean = false) {
+        val builder = NotificationCompat.Builder(context, LiveMonitorApp.CHANNEL_AVATAR_ALERT_ID)
+            .setSmallIcon(R.drawable.img_on)
+            .setLargeIcon(avatar)
+            .setContentTitle("白绮换头像啦")
+            .setContentText("新头像已同步到绮迹影集")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(
+                pendingIntent(
+                    Intent(context, MediaGalleryActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    },
+                    LiveMonitorApp.NOTIFICATION_ID_AVATAR_CHANGE
+                )
+            )
+        if (silent) builder.setSilent(true)
+        notify(LiveMonitorApp.NOTIFICATION_ID_AVATAR_CHANGE, builder.build())
     }
 
     // 勿扰时段内的静音开播通知：无 fullScreenIntent、setSilent 覆盖通道 HIGH 的默认声音

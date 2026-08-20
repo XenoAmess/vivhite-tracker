@@ -110,6 +110,10 @@
             android:name=".StatsActivity"
             android:exported="false"
             android:label="绮迹手账" />
+        <activity
+            android:name=".MediaGalleryActivity"
+            android:exported="false"
+            android:label="绮迹影集" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

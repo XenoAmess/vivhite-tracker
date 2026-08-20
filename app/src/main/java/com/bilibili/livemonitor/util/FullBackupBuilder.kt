@@ -20,6 +20,7 @@ object FullBackupBuilder {
     }
 
     suspend fun write(context: Context, output: OutputStream) = withContext(Dispatchers.IO) {
+        MediaHistoryImporter.ensureImported(context)
         val db = AppDatabase.get(context)
         val snapshot = db.withTransaction {
             val sessions = db.streamSessionDao().allSessions()
@@ -40,19 +41,43 @@ object FullBackupBuilder {
                     )
                 },
                 followers = db.streamSessionDao().followerSnapshots(),
-                prefsJson = null
+                prefsJson = null,
+                mediaSnapshots = db.mediaSnapshotDao().allSnapshots()
             )
         }
 
         val coverFiles = File(context.filesDir, "covers").listFiles().orEmpty()
-            .filter { it.isFile && it.length() > 0 }
+            .filter(::isValidImage)
             .associateBy { it.name }
+        val avatarFiles = File(context.filesDir, "avatars").listFiles().orEmpty()
+            .filter(::isValidImage)
+            .associateBy { it.name }
+        val mediaStore = MediaStore()
+        snapshot.mediaSnapshots.forEach { row ->
+            val file = if (row.kind == com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_AVATAR) {
+                avatarFiles[row.fileName]
+            } else {
+                coverFiles[row.fileName]
+            }
+            if (file == null || mediaStore.sha1Hex(file) != row.contentKey) {
+                throw java.io.IOException("媒体索引与原图不一致：${row.fileName}")
+            }
+        }
         FullBackup.pack(
             snapshot.copy(
                 prefsJson = PreferenceManager(context).exportSnapshot(),
-                coverFiles = coverFiles
+                coverFiles = coverFiles,
+                avatarFiles = avatarFiles,
+                mediaSnapshots = snapshot.mediaSnapshots
             ),
             output
         )
+    }
+
+    private fun isValidImage(file: File): Boolean {
+        if (!file.isFile || file.length() <= 0L) return false
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
+        return options.outWidth > 0 && options.outHeight > 0
     }
 }

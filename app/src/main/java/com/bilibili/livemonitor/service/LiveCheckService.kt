@@ -70,6 +70,12 @@ class LiveCheckService : Service() {
         )
     }
 
+    private val anchorProfileTracker: AnchorProfileTracker by lazy {
+        AnchorProfileTracker(this, preferenceManager, serviceScope) { bitmap ->
+            notificationBuilder.sendAvatarChanged(bitmap, silent = isInQuietHours())
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         AppLogger.d(TAG, "onCreate")
@@ -334,6 +340,11 @@ class LiveCheckService : Service() {
                 }
             }
             recordCheckOutcome(generation, epoch, finalResult)
+            if (isCurrentCheck(generation, epoch)) {
+                anchorProfileTracker.maybeCheck {
+                    isCurrentGeneration(generation)
+                }
+            }
         } finally {
             if (checkWakeLock.isHeld) {
                 checkWakeLock.release()
@@ -360,7 +371,13 @@ class LiveCheckService : Service() {
                     streamSessionTracker.recordPopularity(status.online)
                 }
                 runSideEffect(generation, "collect stream cover", epoch) {
-                    streamSessionTracker.collectStreamCover(roomId)
+                    streamSessionTracker.collectStreamCover(
+                        status.coverUrl,
+                        status.liveStartTime,
+                        status.title
+                    ) {
+                        isCurrentGeneration(generation)
+                    }
                 }
                 runSideEffect(generation, "snapshot follower", epoch) {
                     streamSessionTracker.maybeSnapshotFollower()

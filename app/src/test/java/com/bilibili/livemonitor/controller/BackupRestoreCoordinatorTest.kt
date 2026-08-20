@@ -9,6 +9,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.bilibili.livemonitor.db.AppDatabase
+import com.bilibili.livemonitor.db.MediaSnapshotEntity
 import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import com.bilibili.livemonitor.domain.FullBackup
@@ -42,7 +43,9 @@ class BackupRestoreCoordinatorTest {
             database.streamSessionDao().deleteAllFollowerSnapshots()
             database.streamSessionDao().deleteAll()
             database.moodEventDao().deleteAll()
+            database.mediaSnapshotDao().deleteAll()
             File(context.filesDir, "covers").deleteRecursively()
+            File(context.filesDir, "avatars").deleteRecursively()
             PreferenceManager(context).apply {
                 setQuietHoursEnabled(false)
                 setAutoBackupEnabled(false)
@@ -131,6 +134,76 @@ class BackupRestoreCoordinatorTest {
         assertEquals(200L, imported.endTs)
         assertEquals(1, dao.titleChanges(imported.id).size)
         assertEquals(1, report.titleChanges.added)
+    }
+
+    @Test
+    fun `restores avatar atomically and skips duplicate media snapshot on merge`() = runBlocking {
+        val observedAt = 1_900_000_654_321L
+        val avatarBytes = imageBytes()
+        val contentKey = java.security.MessageDigest.getInstance("SHA-1").digest(avatarBytes)
+            .joinToString("") { "%02x".format(it) }
+        val snapshot = MediaSnapshotEntity(
+            id = 0,
+            kind = "avatar",
+            observedAt = observedAt,
+            contentKey = contentKey,
+            sourceUrl = "https://example.com/avatar.png",
+            fileName = "history-avatar.png",
+            sessionStartTs = 100,
+            title = "历史头像"
+        )
+        val data = FullBackup.Data(
+            sessions = emptyList(),
+            moods = emptyList(),
+            titleChanges = emptyList(),
+            popularity = emptyList(),
+            followers = emptyList(),
+            prefsJson = null,
+            mediaSnapshots = listOf(snapshot),
+            avatars = mapOf(snapshot.fileName to avatarBytes)
+        )
+
+        val first = coordinator.restore(data)
+        val second = coordinator.restore(data)
+
+        assertEquals(1, first.mediaSnapshots.added)
+        assertEquals(1, first.avatars.added)
+        assertEquals(1, second.mediaSnapshots.skipped)
+        assertEquals(1, second.avatars.skipped)
+        assertEquals(
+            1,
+            database.mediaSnapshotDao().countSnapshot(
+                snapshot.kind,
+                snapshot.observedAt,
+                snapshot.contentKey,
+                snapshot.sessionStartTs
+            )
+        )
+        assertTrue(File(context.filesDir, "avatars/${snapshot.fileName}").isFile)
+    }
+
+    @Test
+    fun `rejects media whose content does not match sha1 key`() = runBlocking {
+        val bytes = imageBytes()
+        val snapshot = MediaSnapshotEntity(
+            kind = MediaSnapshotEntity.KIND_AVATAR,
+            observedAt = 1234,
+            contentKey = "0".repeat(40),
+            fileName = "mismatch.png"
+        )
+        val error = runCatching {
+            coordinator.restore(
+                FullBackup.Data(
+                    sessions = emptyList(), moods = emptyList(), titleChanges = emptyList(),
+                    popularity = emptyList(), followers = emptyList(), prefsJson = null,
+                    mediaSnapshots = listOf(snapshot), avatars = mapOf(snapshot.fileName to bytes)
+                )
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is java.io.IOException)
+        assertTrue(database.mediaSnapshotDao().allSnapshots().isEmpty())
+        assertTrue(!File(context.filesDir, "avatars/${snapshot.fileName}").exists())
     }
 
     private fun imageBytes(): ByteArray {

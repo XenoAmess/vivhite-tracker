@@ -45,7 +45,9 @@ class StreamSessionTrackerTest {
         runBlocking {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).streamSessionDao().deleteAllPopularityPoints()
+            AppDatabase.get(context).mediaSnapshotDao().deleteAll()
         }
+        java.io.File(context.filesDir, "covers").deleteRecursively()
     }
 
     @After
@@ -340,6 +342,51 @@ class StreamSessionTrackerTest {
         Thread.sleep(300)
         assertEquals("已有封面幂等跳过", 1, fetchCount)
         java.io.File(context.filesDir, "covers/fake.jpg").delete()
+    }
+
+    @Test
+    fun `直播中封面每次内容变化都记入影集 相同内容不重复`() {
+        val dao = AppDatabase.get(context).streamSessionDao()
+        val start = 1_700_000_000_000L
+        runBlocking { dao.insertSession(StreamSessionEntity(startTs = start, title = "开场")) }
+        val first = imageBytes(0xFF6750A4.toInt())
+        val second = imageBytes(0xFFFF6699.toInt())
+        val firstUrl = bfsUrl(first)
+        val secondUrl = bfsUrl(second)
+        val bytes = mapOf(firstUrl to first, secondUrl to second)
+        tracker.mediaStore = com.bilibili.livemonitor.util.MediaStore().apply {
+            fetcher = { bytes[it] }
+        }
+
+        tracker.collectStreamCover(firstUrl, start.toString(), "开场")
+        waitFor("first media snapshot") {
+            runBlocking { AppDatabase.get(context).mediaSnapshotDao().allSnapshots().size == 1 }
+        }
+        tracker.collectStreamCover(firstUrl, start.toString(), "开场")
+        Thread.sleep(200)
+        assertEquals(1, runBlocking { AppDatabase.get(context).mediaSnapshotDao().allSnapshots().size })
+
+        tracker.collectStreamCover(secondUrl, start.toString(), "换封面")
+        waitFor("second media snapshot") {
+            runBlocking { AppDatabase.get(context).mediaSnapshotDao().allSnapshots().size == 2 }
+        }
+        assertNotNull(runBlocking { dao.findOpenSession()!!.coverPath })
+    }
+
+    private fun imageBytes(color: Int): ByteArray {
+        val bitmap = android.graphics.Bitmap.createBitmap(32, 18, android.graphics.Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(color)
+        return java.io.ByteArrayOutputStream().use { output ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
+            bitmap.recycle()
+            output.toByteArray()
+        }
+    }
+
+    private fun bfsUrl(bytes: ByteArray): String {
+        val hash = java.security.MessageDigest.getInstance("SHA-1").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        return "https://i0.hdslb.com/bfs/live/$hash.png"
     }
 
     @Test

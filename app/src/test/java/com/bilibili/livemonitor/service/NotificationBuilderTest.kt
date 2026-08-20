@@ -3,6 +3,7 @@ package com.bilibili.livemonitor.service
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
 import com.bilibili.livemonitor.LiveMonitorApp
 import com.bilibili.livemonitor.util.BiliTargets
@@ -49,6 +50,22 @@ class NotificationBuilderTest {
             LiveCheckService.ACTION_STOP_ALERT,
             shadowOf(actions.getValue("停止声音").actionIntent).savedIntent.action
         )
+    }
+
+    @Test
+    fun `avatar change notification shows new avatar and opens gallery`() {
+        val avatar = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        builder.sendAvatarChanged(avatar)
+
+        val notification = notificationManager()
+            .getNotification(LiveMonitorApp.NOTIFICATION_ID_AVATAR_CHANGE)!!
+        assertEquals("白绮换头像啦", notification.extras.getString("android.title"))
+        assertTrue(notification.getLargeIcon() != null)
+        assertEquals(
+            com.bilibili.livemonitor.MediaGalleryActivity::class.java.name,
+            shadowOf(notification.contentIntent).savedIntent.component?.className
+        )
+        avatar.recycle()
     }
 
     private fun notificationManager() = shadowOf(

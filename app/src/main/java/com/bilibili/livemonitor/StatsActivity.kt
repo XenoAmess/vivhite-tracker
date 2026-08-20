@@ -73,6 +73,7 @@ class StatsActivity : AppCompatActivity() {
     private var searchJob: Job? = null
     private var dataLoadJob: Job? = null
     private var monthLoadJob: Job? = null
+    private var avatarLoadJob: Job? = null
     private var pendingMonth: Calendar? = null
     private var loadGeneration = 0L
     private var displayedPosterFile: java.io.File? = null
@@ -141,6 +142,9 @@ class StatsActivity : AppCompatActivity() {
         binding.btnExportImage.setOnClickListener { exportStatsImage() }
         binding.btnStatsTrend.setOnClickListener { showStatsTrendDialog() }
         binding.btnSearchRecords.setOnClickListener { showSearchDialog() }
+        binding.btnMediaGallery.setOnClickListener {
+            startActivity(Intent(this, MediaGalleryActivity::class.java))
+        }
         binding.btnStatsMore.setOnClickListener { showMoreMenu(it) }
         binding.btnRecentPoster.setOnClickListener {
             val file = displayedPosterFile
@@ -153,7 +157,6 @@ class StatsActivity : AppCompatActivity() {
         }
         binding.btnStatsRetry.setOnClickListener { refreshData() }
 
-        loadAnchorAvatar()
         refreshData()
     }
 
@@ -169,11 +172,18 @@ class StatsActivity : AppCompatActivity() {
     }
 
     // 左上角主播头像：磁盘缓存优先（AnchorAvatarLoader），全空显示占位圆
-    private fun loadAnchorAvatar() {
-        lifecycleScope.launch {
+    private fun loadAnchorAvatar(month: Calendar) {
+        avatarLoadJob?.cancel()
+        val requestedYear = month.get(Calendar.YEAR)
+        val requestedMonth = month.get(Calendar.MONTH)
+        val target = month.clone() as Calendar
+        avatarLoadJob = lifecycleScope.launch {
             val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                kotlinx.coroutines.withTimeoutOrNull(4000) { avatarLoader.load(this@StatsActivity) }
+                kotlinx.coroutines.withTimeoutOrNull(4000) {
+                    avatarLoader.loadForMonth(this@StatsActivity, target)
+                }
             }
+            if (cal.get(Calendar.YEAR) != requestedYear || cal.get(Calendar.MONTH) != requestedMonth) return@launch
             binding.ivAnchorAvatar.setImageBitmap(
                 bmp?.let { avatarLoader.cropCircle(it) } ?: avatarLoader.placeholder(96)
             )
@@ -232,6 +242,7 @@ class StatsActivity : AppCompatActivity() {
                     hasInitialSelection = true
                 }
                 renderCalendar()
+                loadAnchorAvatar(cal)
                 binding.statsLoadState.visibility = View.GONE
                 updateRecentPosterEntry()
                 if (intent.getBooleanExtra(EXTRA_PREVIEW_POSTER, false)) {
@@ -306,6 +317,7 @@ class StatsActivity : AppCompatActivity() {
                     }
                 }
                 renderCalendar()
+                loadAnchorAvatar(requestedMonth)
             } finally {
                 if (generation == loadGeneration) pendingMonth = null
             }
@@ -1208,7 +1220,7 @@ class StatsActivity : AppCompatActivity() {
         }
     }
 
-    // 备份导出：全量 ZIP（场次+心情+主题变化+人气点+粉丝快照+魔法期/设置+封面原图），
+    // 备份导出：全量 ZIP（场次+心情+主题变化+人气点+粉丝快照+媒体历史+设置+原图），
     // 走 FileProvider 分享；internal：instrumented 测试直接调
     internal fun exportSessions() {
         lifecycleScope.launch {
@@ -1340,7 +1352,8 @@ class StatsActivity : AppCompatActivity() {
             .setMessage(
                 "包含：场次 ${data.sessions.size} · 心情 ${data.moods.size} · " +
                     "主题变化 ${data.titleChanges.size} · 人气点 ${data.popularity.size} · " +
-                    "粉丝快照 ${data.followers.size} · 封面 ${data.coverNames.size} 张\n\n" +
+                    "粉丝快照 ${data.followers.size} · 媒体记录 ${data.mediaSnapshots.size}\n" +
+                    "头像 ${data.avatarNames.size} 张 · 封面 ${data.coverNames.size} 张\n\n" +
                     "设置项（含魔法期、勿扰、检测频率等）将被覆盖。继续？"
             )
             .setPositiveButton("恢复") { _, _ ->
@@ -1372,6 +1385,7 @@ class StatsActivity : AppCompatActivity() {
                     "心情 +${report.moods.added} / 补全 ${report.moods.merged}\n" +
                     "主题变化 +${report.titleChanges.added} / 补全 ${report.titleChanges.merged} · " +
                     "人气点 +${report.popularity.added} · 粉丝快照 +${report.followers.added} · " +
+                    "媒体记录 +${report.mediaSnapshots.added} · 头像 +${report.avatars.added} · " +
                     "封面 +${report.covers.added}" +
                     if (data.prefsJson != null && !report.preferencesRestored) "\n设置快照无效，未覆盖现有设置。" else ""
             )
@@ -1468,7 +1482,9 @@ class StatsActivity : AppCompatActivity() {
             try {
                 val data = buildStatsImageData(exportMonth)
                 val avatar = withContext(Dispatchers.IO) {
-                    kotlinx.coroutines.withTimeoutOrNull(4000) { avatarLoader.load(this@StatsActivity) }
+                    kotlinx.coroutines.withTimeoutOrNull(4000) {
+                        avatarLoader.loadForMonth(this@StatsActivity, exportMonth)
+                    }
                 }
                 // Renderer measures and draws Android Views, so it must stay on the main thread.
                 val bmp = com.bilibili.livemonitor.util.StatsImageRenderer.render(

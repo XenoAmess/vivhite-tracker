@@ -13,7 +13,8 @@ open class BilibiliApi : LiveStatusChecker {
         data class Live(
             val liveStartTime: String? = null,
             val title: String? = null,
-            val online: Int? = null
+            val online: Int? = null,
+            val coverUrl: String? = null
         ) : LiveStatus()
         object NotLive : LiveStatus()
         data class Error(val reason: String) : LiveStatus()
@@ -212,7 +213,8 @@ open class BilibiliApi : LiveStatusChecker {
                         LiveStatus.Live(
                             liveStartTime = data.optString("live_start_time").takeIf { it.isNotBlank() },
                             title = parseRoomTitle(response),
-                            online = if (data.has("online")) data.optInt("online") else null
+                            online = if (data.has("online")) data.optInt("online") else null,
+                            coverUrl = parseRoomCover(response)
                         )
                     }
                     0, 2 -> LiveStatus.NotLive

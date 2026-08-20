@@ -35,4 +35,27 @@ object ShareImageFactory {
         clipData = ClipData.newUri(contentResolver, clipLabel, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
+
+    /** Build a batch image share and grant every URI through ClipData. */
+    fun buildMultipleImageShareIntent(
+        uris: List<Uri>,
+        contentResolver: ContentResolver,
+        clipLabel: String,
+        mimeType: String = "image/*",
+        extraText: String? = null,
+        extraSubject: String? = null
+    ): Intent {
+        require(uris.isNotEmpty()) { "At least one image URI is required" }
+        val streams = ArrayList(uris)
+        return Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = mimeType
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, streams)
+            if (extraSubject != null) putExtra(Intent.EXTRA_SUBJECT, extraSubject)
+            if (extraText != null) putExtra(Intent.EXTRA_TEXT, extraText)
+            clipData = ClipData.newUri(contentResolver, clipLabel, uris.first()).apply {
+                uris.drop(1).forEach { addItem(ClipData.Item(it)) }
+            }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
 }

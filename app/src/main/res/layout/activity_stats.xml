@@ -96,6 +96,15 @@
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMediaGallery"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="6dp"
+                    android:text="绮迹影集 · 头像与封面"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnStatsMore"
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="match_parent"

@@ -90,6 +90,15 @@ class LiveMonitorApp : Application() {
                     enableLights(true)
                 },
                 NotificationChannel(
+                    CHANNEL_AVATAR_ALERT_ID,
+                    "头像更新提醒",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "白绮更换头像并同步到绮迹影集时提醒"
+                    enableVibration(true)
+                    enableLights(true)
+                },
+                NotificationChannel(
                     CHANNEL_MAGIC_ID,
                     "魔法期结束提醒",
                     NotificationManager.IMPORTANCE_HIGH
@@ -126,6 +135,7 @@ class LiveMonitorApp : Application() {
         // v2：channel 重要性被系统记忆，升 HIGH 必须换 id（旧 video_alert/dynamic_alert 已删除）
         const val CHANNEL_VIDEO_ALERT_ID = "video_alert_v2"
         const val CHANNEL_DYNAMIC_ALERT_ID = "dynamic_alert_v2"
+        const val CHANNEL_AVATAR_ALERT_ID = "avatar_alert"
         const val CHANNEL_MAGIC_ID = "magic_alert"
         const val CHANNEL_STREAM_LIFECYCLE_ID = "stream_lifecycle"
         const val CHANNEL_POSTER_ID = "monthly_poster"
@@ -137,5 +147,6 @@ class LiveMonitorApp : Application() {
         const val NOTIFICATION_ID_STREAM_END = 1006
         const val NOTIFICATION_ID_TITLE_CHANGE = 1007
         const val NOTIFICATION_ID_POSTER = 1008
+        const val NOTIFICATION_ID_AVATAR_CHANGE = 1009
     }
 }

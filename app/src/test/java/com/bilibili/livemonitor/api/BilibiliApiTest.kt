@@ -39,6 +39,15 @@ class BilibiliApiTest {
     }
 
     @Test
+    fun `parseApiResponse live 同次提取直播封面`() {
+        val url = "https://i0.hdslb.com/bfs/live/${"a".repeat(40)}.jpg"
+        val result = BilibiliApi.parseApiResponse(
+            """{"code":0,"data":{"live_status":1,"user_cover":"$url"}}"""
+        ) as BilibiliApi.LiveStatus.Live
+        assertEquals(url, result.coverUrl)
+    }
+
+    @Test
     fun `parseApiResponse live without live_start_time returns null field`() {
         // 兼容旧响应/异常响应：字段缺失或空白时 liveStartTime=null，不影响状态判定
         val noField = """{"code":0,"data":{"room_id":11258892,"live_status":1}}"""

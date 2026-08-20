@@ -1,6 +1,7 @@
 package com.bilibili.livemonitor.service
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.bilibili.livemonitor.db.AppDatabase
 import com.bilibili.livemonitor.db.PopularityPointEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
@@ -169,6 +170,8 @@ class StreamSessionTracker(
     }
     internal var coverStore: com.bilibili.livemonitor.util.CoverStore =
         com.bilibili.livemonitor.util.CoverStore()
+    internal var mediaStore: com.bilibili.livemonitor.util.MediaStore =
+        com.bilibili.livemonitor.util.MediaStore()
     // 粉丝数源（Master/info follower_num），单测注入假数据
     internal var followerNumFetcher: suspend (Long) -> Long? = { mid ->
         com.bilibili.livemonitor.api.BilibiliApi().fetchFollowerNum(mid)
@@ -206,9 +209,84 @@ class StreamSessionTracker(
                 if (!open.coverPath.isNullOrBlank()) return@launch
                 val url = coverUrlFetcher(roomId) ?: return@launch
                 val path = coverStore.acquire(context, url) ?: return@launch
-                dao.updateSession(open.copy(coverPath = path))
+                dao.setCoverIfMissing(open.id, path)
             } catch (e: Exception) {
                 AppLogger.w(tag, "collect stream cover failed", e)
+            }
+        }
+    }
+
+    /**
+     * 直播状态响应自带 user_cover：同场每次内容键变化都收藏，无额外 API 请求。
+     * 场次首图继续写 cover_path，后续变化只进媒体时间线。
+     */
+    fun collectStreamCover(
+        coverUrl: String?,
+        liveStartTime: String?,
+        liveTitle: String?,
+        isCurrent: () -> Boolean = { true }
+    ) {
+        if (coverUrl.isNullOrBlank()) return
+        enqueueSessionTask("collect stream cover history") {
+            if (!isCurrent()) return@enqueueSessionTask
+            val database = AppDatabase.get(context)
+            val sessionDao = database.streamSessionDao()
+            val open = sessionDao.findOpenSession() ?: return@enqueueSessionTask
+            val expectedStart = parseLiveStartTime(liveStartTime)
+            if (expectedStart != null && open.startTs != expectedStart) return@enqueueSessionTask
+
+            val mediaDao = database.mediaSnapshotDao()
+            val identity = mediaStore.identityForUrl(coverUrl)
+            val previous = mediaDao.latestForSession(
+                com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                open.startTs
+            )
+            if (identity != null && previous?.contentKey == identity.contentKey) {
+                val existing = java.io.File(context.filesDir, "covers/${previous.fileName}")
+                if (mediaStore.isValidImage(existing)) {
+                    val sessionFile = open.coverPath?.let { java.io.File(it) }
+                    if (sessionFile == null || !mediaStore.isValidImage(sessionFile)) {
+                        sessionDao.setCoverPath(open.id, existing.absolutePath)
+                    }
+                    return@enqueueSessionTask
+                }
+            }
+
+            val stored = mediaStore.acquire(
+                context,
+                com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                coverUrl,
+                isCurrent
+            ) ?: return@enqueueSessionTask
+            if (!isCurrent()) return@enqueueSessionTask
+            if (previous?.contentKey == stored.contentKey) {
+                database.withTransaction {
+                    mediaDao.updateFileName(
+                        com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                        stored.contentKey,
+                        stored.fileName
+                    )
+                    val sessionFile = open.coverPath?.let { java.io.File(it) }
+                    if (sessionFile == null || !mediaStore.isValidImage(sessionFile)) {
+                        sessionDao.setCoverPath(open.id, stored.file.absolutePath)
+                    }
+                }
+                return@enqueueSessionTask
+            }
+            database.withTransaction {
+                if (!isCurrent()) return@withTransaction
+                mediaDao.insertSnapshot(
+                    com.bilibili.livemonitor.db.MediaSnapshotEntity(
+                        kind = com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                        observedAt = System.currentTimeMillis(),
+                        contentKey = stored.contentKey,
+                        sourceUrl = coverUrl,
+                        fileName = stored.fileName,
+                        sessionStartTs = open.startTs,
+                        title = liveTitle?.takeIf { it.isNotBlank() } ?: open.title
+                    )
+                )
+                sessionDao.setCoverIfMissing(open.id, stored.file.absolutePath)
             }
         }
     }

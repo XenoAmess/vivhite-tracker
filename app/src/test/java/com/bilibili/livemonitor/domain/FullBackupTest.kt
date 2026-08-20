@@ -1,6 +1,7 @@
 package com.bilibili.livemonitor.domain
 
 import com.bilibili.livemonitor.db.FollowerSnapshotEntity
+import com.bilibili.livemonitor.db.MediaSnapshotEntity
 import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import org.junit.Assert.assertArrayEquals
@@ -40,7 +41,20 @@ class FullBackupTest {
         ),
         followers = listOf(FollowerSnapshotEntity(ts = 1_700_000_000_000, followerNum = 22420)),
         prefsJson = """{"magic_periods":"[{\"start\":1,\"end\":2}]","quiet_enabled":true}""",
-        covers = mapOf("ab12cd.jpg" to ByteArray(2048) { (it % 251).toByte() })
+        covers = mapOf("ab12cd.jpg" to ByteArray(2048) { (it % 251).toByte() }),
+        mediaSnapshots = listOf(
+            MediaSnapshotEntity(
+                id = 0,
+                kind = "avatar",
+                observedAt = 1_700_000_100_000,
+                contentKey = "face,hash",
+                sourceUrl = "https://example.com/avatar.jpg",
+                fileName = "avatar-01.jpg",
+                sessionStartTs = 1_700_000_000_000,
+                title = "头像,第一版"
+            )
+        ),
+        avatars = mapOf("avatar-01.jpg" to ByteArray(1024) { (it % 199).toByte() })
     )
 
     @Test
@@ -73,9 +87,17 @@ class FullBackupTest {
         assertEquals(22420L, d.followers[0].followerNum)
 
         assertTrue(d.prefsJson!!.contains("magic_periods"))
+        assertEquals(FullBackup.CURRENT_VERSION, d.formatVersion)
+        assertEquals(1, d.mediaSnapshots.size)
+        assertEquals("face,hash", d.mediaSnapshots.single().contentKey)
+        assertEquals("头像,第一版", d.mediaSnapshots.single().title)
         assertArrayEquals(
             ByteArray(2048) { (it % 251).toByte() },
             d.covers["ab12cd.jpg"]
+        )
+        assertArrayEquals(
+            ByteArray(1024) { (it % 199).toByte() },
+            d.avatars["avatar-01.jpg"]
         )
     }
 
@@ -122,6 +144,11 @@ class FullBackupTest {
             )
             assertTrue(data.covers.isEmpty())
             assertArrayEquals(sampleData().covers.getValue("ab12cd.jpg"), data.coverFiles.getValue("ab12cd.jpg").readBytes())
+            assertTrue(data.avatars.isEmpty())
+            assertArrayEquals(
+                sampleData().avatars.getValue("avatar-01.jpg"),
+                data.avatarFiles.getValue("avatar-01.jpg").readBytes()
+            )
         } finally {
             dir.deleteRecursively()
         }
@@ -159,5 +186,87 @@ class FullBackupTest {
             runCatching { FullBackup.unpack(out.toByteArray()) }.exceptionOrNull()
                 is FullBackup.DamagedBackupException
         )
+    }
+
+    @Test
+    fun `v2备份缺少媒体CSV和头像时仍可读取`() {
+        val bytes = zipOf(
+            FullBackup.ENTRY_MANIFEST to
+                """{"format":"vivhite-full-backup","version":2}""".toByteArray(),
+            FullBackup.ENTRY_SESSIONS to (SessionBackup.HEADER + "\n").toByteArray()
+        )
+
+        val data = FullBackup.unpack(bytes)
+
+        assertEquals(2, data.formatVersion)
+        assertTrue(data.mediaSnapshots.isEmpty())
+        assertTrue(data.avatars.isEmpty())
+    }
+
+    @Test
+    fun `头像子目录路径被识别为损坏备份`() {
+        val bytes = validV3Zip("avatars/nested/avatar.jpg" to byteArrayOf(1))
+
+        assertTrue(
+            runCatching { FullBackup.unpack(bytes) }.exceptionOrNull()
+                is FullBackup.DamagedBackupException
+        )
+    }
+
+    @Test
+    fun `头像路径穿越被识别为损坏备份`() {
+        val bytes = validV3Zip("avatars/../avatar.jpg" to byteArrayOf(1))
+
+        assertTrue(
+            runCatching { FullBackup.unpack(bytes) }.exceptionOrNull()
+                is FullBackup.DamagedBackupException
+        )
+    }
+
+    @Test
+    fun `重复头像条目被识别为损坏备份`() {
+        val original = validV3Zip(
+            "avatars/a.png" to byteArrayOf(1),
+            "avatars/b.png" to byteArrayOf(2)
+        )
+        val duplicate = original.copyOf().also { bytes ->
+            replaceAscii(bytes, "avatars/b.png", "avatars/a.png")
+        }
+
+        assertTrue(
+            runCatching { FullBackup.unpack(duplicate) }.exceptionOrNull()
+                is FullBackup.DamagedBackupException
+        )
+    }
+
+    private fun validV3Zip(vararg extra: Pair<String, ByteArray>): ByteArray = zipOf(
+        FullBackup.ENTRY_MANIFEST to
+            """{"format":"vivhite-full-backup","version":3}""".toByteArray(),
+        FullBackup.ENTRY_SESSIONS to (SessionBackup.HEADER + "\n").toByteArray(),
+        FullBackup.ENTRY_MEDIA_SNAPSHOTS to
+            "kind,observed_at,content_key,source_url,file_name,session_start_ts,title\n".toByteArray(),
+        *extra
+    )
+
+    private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray =
+        java.io.ByteArrayOutputStream().also { output ->
+            java.util.zip.ZipOutputStream(output).use { zip ->
+                entries.forEach { (name, bytes) ->
+                    zip.putNextEntry(java.util.zip.ZipEntry(name))
+                    zip.write(bytes)
+                    zip.closeEntry()
+                }
+            }
+        }.toByteArray()
+
+    private fun replaceAscii(bytes: ByteArray, old: String, new: String) {
+        require(old.length == new.length)
+        val oldBytes = old.toByteArray(Charsets.US_ASCII)
+        val newBytes = new.toByteArray(Charsets.US_ASCII)
+        for (index in 0..bytes.size - oldBytes.size) {
+            if (oldBytes.indices.all { offset -> bytes[index + offset] == oldBytes[offset] }) {
+                newBytes.copyInto(bytes, index)
+            }
+        }
     }
 }

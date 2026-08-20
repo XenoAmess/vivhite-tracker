@@ -13,9 +13,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         StreamTitleChangeEntity::class,
         MoodEventEntity::class,
         PopularityPointEntity::class,
-        FollowerSnapshotEntity::class
+        FollowerSnapshotEntity::class,
+        MediaSnapshotEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -23,6 +24,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun streamSessionDao(): StreamSessionDao
 
     abstract fun moodEventDao(): MoodEventDao
+
+    abstract fun mediaSnapshotDao(): MediaSnapshotDao
 
 
     companion object {
@@ -159,6 +162,38 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v7→v8：头像与直播封面发现事件，原图仍保存在 filesDir 下。 */
+        internal val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `media_snapshots` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `observed_at` INTEGER NOT NULL,
+                        `content_key` TEXT NOT NULL,
+                        `source_url` TEXT,
+                        `file_name` TEXT NOT NULL,
+                        `session_start_ts` INTEGER,
+                        `title` TEXT
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_media_snapshots_kind_observed_at` " +
+                        "ON `media_snapshots` (`kind`, `observed_at`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_media_snapshots_kind_content_key` " +
+                        "ON `media_snapshots` (`kind`, `content_key`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_media_snapshots_session_start_ts` " +
+                        "ON `media_snapshots` (`session_start_ts`)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -167,7 +202,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "vivhite.db"
                 ).addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
                 ).build().also { INSTANCE = it }
             }
         }

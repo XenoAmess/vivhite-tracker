@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * 自动备份：每天把全量数据（场次+心情+主题变化+人气点+粉丝快照+
- * 魔法期与设置快照+封面原图）打成 ZIP 写到用户选的 SAF 目录。
+ * 魔法期与设置快照+头像/封面原图）打成 ZIP 写到用户选的 SAF 目录。
  * 文件名 vivhite_backup_yyyyMMdd.zip。未开开关/未选目录 → 直接成功跳过；
  * 写失败 → retry（明天兜底）。
  */
@@ -61,9 +61,14 @@ class BackupWorker(
         val fileUri = android.provider.DocumentsContract.createDocument(
             resolver, parentDoc, "application/zip", fileName
         ) ?: throw java.io.IOException("createDocument returned null")
-        resolver.openOutputStream(fileUri, "wt")?.use {
-            writer(it)
-        } ?: throw java.io.IOException("openOutputStream returned null")
+        try {
+            resolver.openOutputStream(fileUri, "wt")?.use {
+                writer(it)
+            } ?: throw java.io.IOException("openOutputStream returned null")
+        } catch (e: Exception) {
+            runCatching { android.provider.DocumentsContract.deleteDocument(resolver, fileUri) }
+            throw e
+        }
     }
 
     companion object {

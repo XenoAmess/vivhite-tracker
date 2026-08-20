@@ -26,6 +26,13 @@ interface StreamSessionDao {
     @Query("SELECT * FROM stream_sessions WHERE id = :id LIMIT 1")
     suspend fun findById(id: Long): StreamSessionEntity?
 
+    /** 下载封面期间标题/结束状态可能变化，只定向补空封面，禁止旧实体整行覆盖。 */
+    @Query("UPDATE stream_sessions SET cover_path = :path WHERE id = :id AND cover_path IS NULL")
+    suspend fun setCoverIfMissing(id: Long, path: String): Int
+
+    @Query("UPDATE stream_sessions SET cover_path = :path WHERE id = :id")
+    suspend fun setCoverPath(id: Long, path: String): Int
+
     /** 新场次开始时闭合残留行；异常时钟不得制造 end_ts < start_ts。 */
     @Query("UPDATE stream_sessions SET end_ts = MAX(start_ts, :endTs) WHERE end_ts IS NULL")
     suspend fun closeOpenSessions(endTs: Long)

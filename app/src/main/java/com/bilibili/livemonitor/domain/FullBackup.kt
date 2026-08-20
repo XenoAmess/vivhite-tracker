@@ -1,6 +1,7 @@
 package com.bilibili.livemonitor.domain
 
 import com.bilibili.livemonitor.db.FollowerSnapshotEntity
+import com.bilibili.livemonitor.db.MediaSnapshotEntity
 import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import java.io.BufferedInputStream
@@ -18,20 +19,24 @@ import java.util.zip.ZipOutputStream
 /** 全量备份 ZIP 编解码。流式 API 用于生产路径，ByteArray API 仅保留给小数据和兼容调用。 */
 object FullBackup {
 
-    const val CURRENT_VERSION = 2
+    const val CURRENT_VERSION = 3
     const val ENTRY_MANIFEST = "manifest.json"
     const val ENTRY_SESSIONS = "backup.csv"
     const val ENTRY_TITLE_CHANGES = "title_changes.csv"
     const val ENTRY_POPULARITY = "popularity.csv"
     const val ENTRY_FOLLOWERS = "followers.csv"
+    const val ENTRY_MEDIA_SNAPSHOTS = "media_snapshots.csv"
     const val ENTRY_PREFS = "prefs.json"
     const val COVERS_PREFIX = "covers/"
+    const val AVATARS_PREFIX = "avatars/"
 
     private const val FORMAT_ID = "vivhite-full-backup"
-    private const val MAX_ENTRY_COUNT = 10_000
+    private const val MAX_ENTRY_COUNT = 15_010
     private const val MAX_COVER_COUNT = 5_000
+    private const val MAX_AVATAR_COUNT = 10_000
     private const val MAX_TEXT_ENTRY_BYTES = 16L * 1024 * 1024
     private const val MAX_COVER_BYTES = 32L * 1024 * 1024
+    private const val MAX_AVATAR_BYTES = 32L * 1024 * 1024
     private const val MAX_TOTAL_EXPANDED_BYTES = 512L * 1024 * 1024
 
     class DamagedBackupException(message: String, cause: Throwable? = null) :
@@ -65,9 +70,14 @@ object FullBackup {
         val covers: Map<String, ByteArray> = emptyMap(),
         /** Production imports spool covers here instead of retaining every image in memory. */
         val coverFiles: Map<String, File> = emptyMap(),
+        val mediaSnapshots: List<MediaSnapshotEntity> = emptyList(),
+        val avatars: Map<String, ByteArray> = emptyMap(),
+        /** Production imports spool avatars here instead of retaining every image in memory. */
+        val avatarFiles: Map<String, File> = emptyMap(),
         val formatVersion: Int = CURRENT_VERSION
     ) {
         val coverNames: Set<String> get() = covers.keys + coverFiles.keys
+        val avatarNames: Set<String> get() = avatars.keys + avatarFiles.keys
     }
 
     data class RestoreCount(val added: Int = 0, val merged: Int = 0, val skipped: Int = 0)
@@ -80,16 +90,21 @@ object FullBackup {
         val followers: RestoreCount,
         val covers: RestoreCount,
         val preferencesRestored: Boolean,
-        val magicPeriodsRestored: Boolean
+        val magicPeriodsRestored: Boolean,
+        val mediaSnapshots: RestoreCount = RestoreCount(),
+        val avatars: RestoreCount = RestoreCount()
     )
 
     fun pack(data: Data): ByteArray = ByteArrayOutputStream().also { pack(data, it) }.toByteArray()
 
     fun pack(data: Data, output: OutputStream) {
         ZipOutputStream(output).use { zip ->
+            val budget = WriteBudget()
             fun putText(name: String, text: String) {
+                val bytes = text.toByteArray(Charsets.UTF_8)
+                budget.claim(bytes.size.toLong(), MAX_TEXT_ENTRY_BYTES)
                 zip.putNextEntry(ZipEntry(name))
-                zip.writer(Charsets.UTF_8).apply { write(text); flush() }
+                zip.write(bytes)
                 zip.closeEntry()
             }
 
@@ -101,22 +116,62 @@ object FullBackup {
             putText(ENTRY_TITLE_CHANGES, titleChangesCsv(data.titleChanges))
             putText(ENTRY_POPULARITY, popularityCsv(data.popularity))
             putText(ENTRY_FOLLOWERS, followersCsv(data.followers))
+            putText(ENTRY_MEDIA_SNAPSHOTS, mediaSnapshotsCsv(data.mediaSnapshots))
             data.prefsJson?.let { putText(ENTRY_PREFS, it) }
 
-            val written = mutableSetOf<String>()
-            data.covers.forEach { (name, bytes) ->
-                validateCoverName(name)
-                zip.putNextEntry(ZipEntry(COVERS_PREFIX + name))
-                zip.write(bytes)
-                zip.closeEntry()
-                written += name
-            }
-            data.coverFiles.forEach { (name, file) ->
-                validateCoverName(name)
-                if (!written.add(name) || !file.isFile) return@forEach
-                zip.putNextEntry(ZipEntry(COVERS_PREFIX + name))
-                file.inputStream().use { it.copyTo(zip) }
-                zip.closeEntry()
+            writeImages(
+                zip, COVERS_PREFIX, data.covers, data.coverFiles, "封面",
+                MAX_COVER_COUNT, MAX_COVER_BYTES, budget
+            )
+            writeImages(
+                zip, AVATARS_PREFIX, data.avatars, data.avatarFiles, "头像",
+                MAX_AVATAR_COUNT, MAX_AVATAR_BYTES, budget
+            )
+        }
+    }
+
+    private fun writeImages(
+        zip: ZipOutputStream,
+        prefix: String,
+        inMemory: Map<String, ByteArray>,
+        files: Map<String, File>,
+        label: String,
+        maxCount: Int,
+        maxBytes: Long,
+        budget: WriteBudget
+    ) {
+        if ((inMemory.keys + files.keys).size > maxCount) {
+            throw DamagedBackupException("${label}数量过多")
+        }
+        val written = mutableSetOf<String>()
+        inMemory.forEach { (name, bytes) ->
+            validateImageName(name, label)
+            budget.claim(bytes.size.toLong(), maxBytes)
+            zip.putNextEntry(ZipEntry(prefix + name))
+            zip.write(bytes)
+            zip.closeEntry()
+            written += name
+        }
+        files.forEach { (name, file) ->
+            validateImageName(name, label)
+            if (!written.add(name) || !file.isFile) return@forEach
+            budget.claim(file.length(), maxBytes)
+            zip.putNextEntry(ZipEntry(prefix + name))
+            file.inputStream().use { it.copyTo(zip) }
+            zip.closeEntry()
+        }
+    }
+
+    private class WriteBudget {
+        private var entryCount = 0
+        private var totalBytes = 0L
+
+        fun claim(size: Long, entryLimit: Long) {
+            entryCount++
+            totalBytes += size
+            if (entryCount > MAX_ENTRY_COUNT) throw DamagedBackupException("备份条目过多")
+            if (size < 0 || size > entryLimit || totalBytes > MAX_TOTAL_EXPANDED_BYTES) {
+                throw DamagedBackupException("备份条目过大")
             }
         }
     }
@@ -144,6 +199,23 @@ object FullBackup {
         rows.forEach { append("${it.ts},${it.followerNum}\n") }
     }
 
+    private fun mediaSnapshotsCsv(rows: List<MediaSnapshotEntity>): String = buildString {
+        append("kind,observed_at,content_key,source_url,file_name,session_start_ts,title\n")
+        rows.forEach { row ->
+            append(
+                listOf(
+                    SessionBackup.field(row.kind),
+                    row.observedAt.toString(),
+                    SessionBackup.field(row.contentKey),
+                    SessionBackup.field(row.sourceUrl ?: ""),
+                    SessionBackup.field(row.fileName),
+                    row.sessionStartTs?.toString() ?: "",
+                    SessionBackup.field(row.title ?: "")
+                ).joinToString(",")
+            ).append('\n')
+        }
+    }
+
     fun unpack(bytes: ByteArray): Data = unpack(ByteArrayInputStream(bytes))
 
     /** If [coverDirectory] is supplied, cover entries are copied to files as they are read. */
@@ -162,17 +234,22 @@ object FullBackup {
         var titleChanges = listOf<TitleChangeRow>()
         var popularity = listOf<PopularityRow>()
         var followers = listOf<FollowerSnapshotEntity>()
+        var mediaSnapshots = listOf<MediaSnapshotEntity>()
         var prefsJson: String? = null
         val covers = mutableMapOf<String, ByteArray>()
         val coverFiles = mutableMapOf<String, File>()
+        val avatars = mutableMapOf<String, ByteArray>()
+        val avatarFiles = mutableMapOf<String, File>()
         var manifestVersion: Int? = null
         var sawSessions = false
         var sawTitleChanges = false
         var sawPopularity = false
         var sawFollowers = false
+        var sawMediaSnapshots = false
         var sawPrefs = false
         var entryCount = 0
         var coverCount = 0
+        var avatarCount = 0
         var totalExpandedBytes = 0L
 
         try {
@@ -227,6 +304,7 @@ object FullBackup {
                     val entry = zip.nextEntry ?: break
                     entryCount++
                     if (entryCount > MAX_ENTRY_COUNT) throw DamagedBackupException("备份条目过多")
+                    validateEntryPath(entry.name)
                     when (entry.name) {
                         ENTRY_MANIFEST -> {
                             if (manifestVersion != null) throw DamagedBackupException("备份清单重复")
@@ -270,6 +348,13 @@ object FullBackup {
                             followers = parseFollowers(readLimited(MAX_TEXT_ENTRY_BYTES).toString(Charsets.UTF_8))
                             sawFollowers = true
                         }
+                        ENTRY_MEDIA_SNAPSHOTS -> {
+                            if (sawMediaSnapshots) throw DamagedBackupException("媒体快照数据重复")
+                            mediaSnapshots = parseMediaSnapshots(
+                                readLimited(MAX_TEXT_ENTRY_BYTES).toString(Charsets.UTF_8)
+                            )
+                            sawMediaSnapshots = true
+                        }
                         ENTRY_PREFS -> {
                             if (sawPrefs) throw DamagedBackupException("设置数据重复")
                             prefsJson = readLimited(MAX_TEXT_ENTRY_BYTES).toString(Charsets.UTF_8)
@@ -280,7 +365,7 @@ object FullBackup {
                                 coverCount++
                                 if (coverCount > MAX_COVER_COUNT) throw DamagedBackupException("封面数量过多")
                                 val name = entry.name.removePrefix(COVERS_PREFIX)
-                                validateCoverName(name)
+                                validateImageName(name, "封面")
                                 if (name in covers || name in coverFiles) {
                                     throw DamagedBackupException("封面文件重复：$name")
                                 }
@@ -293,6 +378,25 @@ object FullBackup {
                                     val file = File(coverDirectory, name)
                                     file.outputStream().use { copyLimited(it, MAX_COVER_BYTES) }
                                     coverFiles[name] = file
+                                }
+                            } else if (entry.name.startsWith(AVATARS_PREFIX)) {
+                                avatarCount++
+                                if (avatarCount > MAX_AVATAR_COUNT) throw DamagedBackupException("头像数量过多")
+                                val name = entry.name.removePrefix(AVATARS_PREFIX)
+                                validateImageName(name, "头像")
+                                if (name in avatars || name in avatarFiles) {
+                                    throw DamagedBackupException("头像文件重复：$name")
+                                }
+                                if (coverDirectory == null) {
+                                    avatars[name] = readLimited(MAX_AVATAR_BYTES)
+                                } else {
+                                    val avatarDirectory = File(coverDirectory, "avatars")
+                                    if (!avatarDirectory.exists() && !avatarDirectory.mkdirs()) {
+                                        throw IOException("无法创建头像临时目录")
+                                    }
+                                    val file = File(avatarDirectory, name)
+                                    file.outputStream().use { copyLimited(it, MAX_AVATAR_BYTES) }
+                                    avatarFiles[name] = file
                                 }
                             } else {
                                 discardLimited(MAX_TEXT_ENTRY_BYTES)
@@ -315,9 +419,22 @@ object FullBackup {
         if (entryCount == 0 || !sawSessions) throw DamagedBackupException("备份 ZIP 缺少场次数据")
         val version = manifestVersion ?: 1
         if (version > CURRENT_VERSION || version < 1) throw IncompatibleBackupException(version)
+        if (version >= 3 && !sawMediaSnapshots) {
+            throw DamagedBackupException("备份 ZIP 缺少媒体快照数据")
+        }
         return Data(
-            sessions, moods, titleChanges, popularity, followers, prefsJson,
-            covers, coverFiles, version
+            sessions = sessions,
+            moods = moods,
+            titleChanges = titleChanges,
+            popularity = popularity,
+            followers = followers,
+            prefsJson = prefsJson,
+            covers = covers,
+            coverFiles = coverFiles,
+            mediaSnapshots = mediaSnapshots,
+            avatars = avatars,
+            avatarFiles = avatarFiles,
+            formatVersion = version
         )
     }
 
@@ -329,9 +446,20 @@ object FullBackup {
         return version
     }
 
-    private fun validateCoverName(name: String) {
-        if (name.isBlank() || name != File(name).name || '/' in name || '\\' in name) {
-            throw DamagedBackupException("封面文件名无效")
+    private fun validateEntryPath(name: String) {
+        if (name.isBlank() || name.startsWith('/') || name.startsWith('\\') || '\\' in name ||
+            name.any { it.code == 0 || it.isISOControl() } ||
+            name.split('/').any { it.isBlank() || it == "." || it == ".." }
+        ) {
+            throw DamagedBackupException("备份条目路径无效")
+        }
+    }
+
+    private fun validateImageName(name: String, label: String) {
+        if (name.isBlank() || name == "." || name == ".." || name != File(name).name ||
+            '/' in name || '\\' in name || name.any { it.code == 0 || it.isISOControl() }
+        ) {
+            throw DamagedBackupException("${label}文件名无效")
         }
     }
 
@@ -378,6 +506,49 @@ object FullBackup {
             val num = r.getOrNull(1)?.toLongOrNull()
                 ?: throw DamagedBackupException("粉丝第 ${index + 2} 行无效")
             FollowerSnapshotEntity(ts = ts, followerNum = num)
+        }
+    }
+
+    private fun parseMediaSnapshots(text: String): List<MediaSnapshotEntity> {
+        val records = validatedRecords(
+            text,
+            listOf(
+                "kind", "observed_at", "content_key", "source_url", "file_name",
+                "session_start_ts", "title"
+            ),
+            "媒体快照"
+        )
+        return records.mapIndexed { index, row ->
+            val line = index + 2
+            val kind = row.getOrNull(0).orEmpty()
+            val observedAt = row.getOrNull(1)?.toLongOrNull()
+                ?: throw DamagedBackupException("媒体快照第 $line 行无效")
+            val contentKey = row.getOrNull(2).orEmpty()
+            val fileName = row.getOrNull(4).orEmpty()
+            if (kind !in setOf(MediaSnapshotEntity.KIND_AVATAR, MediaSnapshotEntity.KIND_ROOM_COVER) ||
+                contentKey.isBlank() || observedAt < 0
+            ) {
+                throw DamagedBackupException("媒体快照第 $line 行无效")
+            }
+            validateImageName(
+                fileName,
+                if (kind == MediaSnapshotEntity.KIND_AVATAR) "头像" else "封面"
+            )
+            val sessionStartText = row.getOrNull(5).orEmpty()
+            val sessionStartTs = sessionStartText.toLongOrNull()
+            if (sessionStartText.isNotBlank() && sessionStartTs == null) {
+                throw DamagedBackupException("媒体快照第 $line 行无效")
+            }
+            MediaSnapshotEntity(
+                id = 0,
+                kind = kind,
+                observedAt = observedAt,
+                contentKey = contentKey,
+                sourceUrl = row.getOrNull(3)?.ifBlank { null },
+                fileName = fileName,
+                sessionStartTs = sessionStartTs,
+                title = row.getOrNull(6)?.ifBlank { null }
+            )
         }
     }
 

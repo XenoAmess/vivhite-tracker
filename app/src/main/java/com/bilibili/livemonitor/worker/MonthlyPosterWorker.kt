@@ -51,7 +51,9 @@ class MonthlyPosterWorker(
                 return Result.success()
             }
             val avatar = withContext(Dispatchers.IO) {
-                withTimeoutOrNull(4000) { AnchorAvatarLoader().load(applicationContext) }
+                withTimeoutOrNull(4000) {
+                    AnchorAvatarLoader().loadForMonth(applicationContext, lastMonth)
+                }
             }
             val bmp = withContext(Dispatchers.Main.immediate) {
                 StatsImageRenderer.render(applicationContext, data, avatar)

@@ -45,6 +45,7 @@ class LiveAlertInstrumentedTest {
     @Before
     fun setUp() {
         prefs = PreferenceManager(context)
+        notificationManager().cancel(LiveMonitorApp.NOTIFICATION_ID_ALERT)
         shell("pm grant com.bilibili.livemonitor android.permission.POST_NOTIFICATIONS")
         shell("appops set com.bilibili.livemonitor SCHEDULE_EXACT_ALARM allow")
         shell("appops set com.bilibili.livemonitor SYSTEM_ALERT_WINDOW allow")
@@ -73,12 +74,17 @@ class LiveAlertInstrumentedTest {
 
     @After
     fun tearDown() {
+        notificationManager().cancel(LiveMonitorApp.NOTIFICATION_ID_ALERT)
         LiveCheckService.apiOverride = null
         prefs.setAlertSoundUri("")
         prefs.setAlertSoundTitle("")
         prefs.setServiceRunning(false)  // 先落 false，挡住 onDestroy 重启广播复活
         context.stopService(Intent(context, LiveCheckService::class.java))
         waitFor("service stopped", 15_000) { !LiveCheckService.isRunning }
+        instrumentation.runOnMainSync {
+            LiveCheckService.lastAlertPlayer?.release()
+            LiveCheckService.lastAlertPlayer = null
+        }
     }
 
     @Test
@@ -156,6 +162,9 @@ class LiveAlertInstrumentedTest {
         val f = java.io.File(context.filesDir, "logs/monitor.log")
         return if (f.exists()) f.readText() else ""
     }
+
+    private fun notificationManager(): NotificationManager =
+        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     private fun shell(cmd: String) {
         instrumentation.uiAutomation.executeShellCommand(cmd).use { pfd ->

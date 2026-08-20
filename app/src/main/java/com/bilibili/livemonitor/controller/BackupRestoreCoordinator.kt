@@ -4,18 +4,21 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.room.withTransaction
 import com.bilibili.livemonitor.db.AppDatabase
+import com.bilibili.livemonitor.db.MediaSnapshotEntity
 import com.bilibili.livemonitor.db.PopularityPointEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import com.bilibili.livemonitor.db.StreamTitleChangeEntity
 import com.bilibili.livemonitor.domain.FullBackup
 import com.bilibili.livemonitor.util.AppUpdater
 import com.bilibili.livemonitor.util.PreferenceManager
+import com.bilibili.livemonitor.util.MediaHistoryImporter
 import com.bilibili.livemonitor.worker.BackupWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 
 class BackupRestoreCoordinator(
     private val context: Context,
@@ -26,34 +29,44 @@ class BackupRestoreCoordinator(
         val sessionDao = database.streamSessionDao()
         val moodDao = database.moodEventDao()
 
-        // Covers are staged first. A failed DB transaction can leave only harmless unreferenced files.
-        var coverAdded = 0
-        var coverSkipped = 0
-        val coversDir = File(context.filesDir, "covers").apply { mkdirs() }
-        data.coverNames.forEach { name ->
-            val destination = File(coversDir, name)
-            if (isValidImageFile(destination)) {
-                coverSkipped++
-            } else {
-                destination.delete()
-                val temp = File.createTempFile(".${name}.", ".part", coversDir)
-                try {
-                    temp.outputStream().use { output ->
-                        data.covers[name]?.let { output.write(it) }
-                            ?: data.coverFiles[name]?.inputStream()?.use { input -> input.copyTo(output) }
-                            ?: throw IOException("缺少封面数据：$name")
-                        output.flush()
-                        (output as? FileOutputStream)?.fd?.sync()
-                    }
-                    if (!isValidImageFile(temp) || !AppUpdater.publishAtomically(temp, destination)) {
-                        throw IOException("封面文件无效：$name")
-                    }
-                } finally {
-                    temp.delete()
+        val coverHashes = mutableMapOf<String, String>()
+        val avatarHashes = mutableMapOf<String, String>()
+        data.mediaSnapshots.forEach { snapshot ->
+            val names: Set<String>
+            val expected: MutableMap<String, String>
+            when (snapshot.kind) {
+                MediaSnapshotEntity.KIND_AVATAR -> {
+                    names = data.avatarNames
+                    expected = avatarHashes
                 }
-                coverAdded++
+                MediaSnapshotEntity.KIND_ROOM_COVER -> {
+                    names = data.coverNames
+                    expected = coverHashes
+                }
+                else -> throw IOException("媒体快照类型无效：${snapshot.kind}")
+            }
+            if (!snapshot.contentKey.matches(Regex("[0-9a-f]{40}")) || snapshot.fileName !in names) {
+                throw IOException("媒体快照缺少匹配原图：${snapshot.fileName}")
+            }
+            val previous = expected.putIfAbsent(snapshot.fileName, snapshot.contentKey)
+            if (previous != null && previous != snapshot.contentKey) {
+                throw IOException("同名媒体文件对应多个内容键：${snapshot.fileName}")
             }
         }
+
+        // Images are staged first. A failed DB transaction can leave only verified unreferenced files.
+        val coversDir = File(context.filesDir, "covers")
+        val (coverAdded, coverSkipped) = restoreImages(
+            data.coverNames, data.covers, data.coverFiles, coversDir, "封面", coverHashes
+        )
+        val (avatarAdded, avatarSkipped) = restoreImages(
+            data.avatarNames,
+            data.avatars,
+            data.avatarFiles,
+            File(context.filesDir, "avatars"),
+            "头像",
+            avatarHashes
+        )
 
         var sessionAdded = 0
         var sessionMerged = 0
@@ -68,6 +81,8 @@ class BackupRestoreCoordinator(
         var popularitySkipped = 0
         var followerAdded = 0
         var followerSkipped = 0
+        var mediaSnapshotAdded = 0
+        var mediaSnapshotSkipped = 0
         database.withTransaction {
             val restoredSessions = mutableMapOf<Pair<Long, Long?>, StreamSessionEntity>()
             sessionDao.findOpenSession()?.let { newest ->
@@ -199,6 +214,30 @@ class BackupRestoreCoordinator(
                     followerSkipped++
                 }
             }
+
+            val mediaSnapshotDao = database.mediaSnapshotDao()
+            data.mediaSnapshots.forEach { incoming ->
+                val imageDirectory = if (incoming.kind == com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_AVATAR) {
+                    File(context.filesDir, "avatars")
+                } else {
+                    coversDir
+                }
+                if (!isValidImageFile(File(imageDirectory, incoming.fileName))) {
+                    throw IOException("媒体快照缺少有效原图：${incoming.fileName}")
+                }
+                if (mediaSnapshotDao.countSnapshot(
+                        incoming.kind,
+                        incoming.observedAt,
+                        incoming.contentKey,
+                        incoming.sessionStartTs
+                    ) == 0
+                ) {
+                    mediaSnapshotDao.insertSnapshot(incoming.copy(id = 0))
+                    mediaSnapshotAdded++
+                } else {
+                    mediaSnapshotSkipped++
+                }
+            }
         }
 
         val preferences = PreferenceManager(context)
@@ -210,6 +249,8 @@ class BackupRestoreCoordinator(
         } else if (preferencesResult?.imported == true) {
             BackupWorker.cancel(context)
         }
+        preferences.setLegacyMediaImported(data.formatVersion >= 3)
+        if (data.formatVersion < 3) MediaHistoryImporter.ensureImported(context)
 
         FullBackup.RestoreReport(
             sessions = FullBackup.RestoreCount(sessionAdded, sessionMerged, sessionSkipped),
@@ -219,8 +260,64 @@ class BackupRestoreCoordinator(
             followers = FullBackup.RestoreCount(followerAdded, skipped = followerSkipped),
             covers = FullBackup.RestoreCount(coverAdded, skipped = coverSkipped),
             preferencesRestored = preferencesResult?.imported == true,
-            magicPeriodsRestored = preferencesResult?.magicPeriodsImported == true
+            magicPeriodsRestored = preferencesResult?.magicPeriodsImported == true,
+            mediaSnapshots = FullBackup.RestoreCount(
+                mediaSnapshotAdded,
+                skipped = mediaSnapshotSkipped
+            ),
+            avatars = FullBackup.RestoreCount(avatarAdded, skipped = avatarSkipped)
         )
+    }
+
+    private fun restoreImages(
+        names: Set<String>,
+        inMemory: Map<String, ByteArray>,
+        sourceFiles: Map<String, File>,
+        directory: File,
+        label: String,
+        expectedHashes: Map<String, String>
+    ): Pair<Int, Int> {
+        if (names.isEmpty()) return 0 to 0
+        if (!directory.exists() && !directory.mkdirs()) throw IOException("无法创建${label}目录")
+        var added = 0
+        var skipped = 0
+        names.forEach { name ->
+            if (name.isBlank() || name == "." || name == ".." || name != File(name).name ||
+                '/' in name || '\\' in name || name.any { it.code == 0 || it.isISOControl() }
+            ) {
+                throw IOException("${label}文件名无效")
+            }
+            val destination = File(directory, name)
+            if (isValidImageFile(destination)) {
+                expectedHashes[name]?.let { expected ->
+                    if (sha1Hex(destination) != expected) {
+                        throw IOException("${label}文件内容冲突：$name")
+                    }
+                }
+                skipped++
+                return@forEach
+            }
+
+            destination.delete()
+            val temp = File.createTempFile(".${name}.", ".part", directory)
+            try {
+                temp.outputStream().use { output ->
+                    inMemory[name]?.let { output.write(it) }
+                        ?: sourceFiles[name]?.inputStream()?.use { input -> input.copyTo(output) }
+                        ?: throw IOException("缺少${label}数据：$name")
+                    output.flush()
+                    (output as? FileOutputStream)?.fd?.sync()
+                }
+                val hashMatches = expectedHashes[name]?.let { sha1Hex(temp) == it } ?: true
+                if (!isValidImageFile(temp) || !hashMatches || !AppUpdater.publishAtomically(temp, destination)) {
+                    throw IOException("${label}文件无效：$name")
+                }
+            } finally {
+                temp.delete()
+            }
+            added++
+        }
+        return added to skipped
     }
 
     private fun isValidImageFile(file: File): Boolean {
@@ -228,5 +325,16 @@ class BackupRestoreCoordinator(
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, options)
         return options.outWidth > 0 && options.outHeight > 0
+    }
+
+    private fun sha1Hex(file: File): String = file.inputStream().use { input ->
+        val digest = MessageDigest.getInstance("SHA-1")
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+        digest.digest().joinToString("") { "%02x".format(it) }
     }
 }

@@ -37,14 +37,14 @@ class RoomMigrationTest {
         // 全链迁移 + 按 v4 schema 校验
         helper.runMigrationsAndValidate(
             dbName, 4, true,
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8
         ).close()
         // 校验过后用 Room 正常打开做 DAO 断言
         val db = androidx.room.Room.databaseBuilder(
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8
         ).build()
         val sessions = db.streamSessionDao().recentSessions(5)
         assertEquals(1, sessions.size)
@@ -84,7 +84,7 @@ class RoomMigrationTest {
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8
         ).build()
         // v2 心情数据迁移后 duration_min 补默认 0
         val moods = db.moodEventDao().eventsBetween(0, 10_000)
@@ -108,7 +108,7 @@ class RoomMigrationTest {
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
         ).addMigrations(
-            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8
         ).build()
 
         val moods = db.moodEventDao().eventsBetween(0, 10_000)
@@ -136,7 +136,7 @@ class RoomMigrationTest {
         val db = androidx.room.Room.databaseBuilder(
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
-        ).addMigrations(AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7).build()
+        ).addMigrations(AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8).build()
 
         val sessions = db.streamSessionDao().recentSessions(5)
         assertEquals(1, sessions.size)
@@ -164,7 +164,7 @@ class RoomMigrationTest {
         val db = androidx.room.Room.databaseBuilder(
             androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java, dbName
-        ).addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7).build()
+        ).addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8).build()
 
         val sessions = db.streamSessionDao().recentSessions(5)
         assertEquals(1, sessions.size)
@@ -218,6 +218,37 @@ class RoomMigrationTest {
         assertEquals(0, scalar(db, "SELECT COUNT(*) FROM stream_title_changes"))
         assertEquals(0, scalar(db, "SELECT COUNT(*) FROM popularity_points"))
         db.close()
+    }
+
+    @Test
+    fun migrate7To8AddsMediaHistory() = runBlocking {
+        helper.createDatabase(dbName, 7).apply {
+            execSQL("INSERT INTO stream_sessions (start_ts, end_ts, title, cover_path) VALUES (1000, 2000, 'v7场次', '/tmp/cover.jpg')")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(
+            dbName, 8, true, AppDatabase.MIGRATION_7_8
+        )
+        assertEquals(0, scalar(db, "SELECT COUNT(*) FROM media_snapshots"))
+        db.close()
+
+        val room = androidx.room.Room.databaseBuilder(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext(),
+            AppDatabase::class.java,
+            dbName
+        ).addMigrations(AppDatabase.MIGRATION_7_8).build()
+        room.mediaSnapshotDao().insertSnapshot(
+            MediaSnapshotEntity(
+                kind = MediaSnapshotEntity.KIND_AVATAR,
+                observedAt = 3000,
+                contentKey = "abc",
+                sourceUrl = "https://example.com/a.jpg",
+                fileName = "abc.jpg"
+            )
+        )
+        assertEquals(1, room.mediaSnapshotDao().allSnapshots().size)
+        assertEquals(1, room.streamSessionDao().allSessions().size)
+        room.close()
     }
 
     private fun scalar(db: androidx.sqlite.db.SupportSQLiteDatabase, sql: String): Int =

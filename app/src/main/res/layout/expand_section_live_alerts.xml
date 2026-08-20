@@ -22,4 +22,12 @@
         android:paddingBottom="10dp"
         android:text="直播中标题变化提醒" />
 
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchNotifyAvatarChange"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:text="头像更新响铃提醒" />
+
 </LinearLayout>

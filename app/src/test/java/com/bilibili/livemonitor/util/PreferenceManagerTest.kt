@@ -236,13 +236,16 @@ class PreferenceManagerTest {
     }
 
     @Test
-    fun `直播提醒与主题变化默认值`() {
+    fun `直播提醒主题变化与头像提醒默认值`() {
         assertTrue("下播提醒默认开", prefs.isNotifyStreamEnd())
         assertFalse("主题变化默认关", prefs.isNotifyTitleChange())
+        assertTrue("头像更新提醒默认开", prefs.isNotifyAvatarChange())
         prefs.setNotifyStreamEnd(false)
         prefs.setNotifyTitleChange(true)
+        prefs.setNotifyAvatarChange(false)
         assertFalse(prefs.isNotifyStreamEnd())
         assertTrue(prefs.isNotifyTitleChange())
+        assertFalse(prefs.isNotifyAvatarChange())
     }
 
     @Test
