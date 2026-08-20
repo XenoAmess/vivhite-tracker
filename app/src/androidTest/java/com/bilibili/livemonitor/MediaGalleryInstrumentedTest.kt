@@ -34,6 +34,7 @@ class MediaGalleryInstrumentedTest {
         }
         AppDatabase.get(context).mediaSnapshotDao().deleteAll()
         File(context.filesDir, "avatars").deleteRecursively()
+        File(context.filesDir, "covers").deleteRecursively()
         val file = File(context.filesDir, "avatars/test-avatar.png")
         file.parentFile!!.mkdirs()
         val bitmap = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
@@ -55,6 +56,7 @@ class MediaGalleryInstrumentedTest {
     fun tearDown() = runBlocking {
         AppDatabase.get(context).mediaSnapshotDao().deleteAll()
         File(context.filesDir, "avatars").deleteRecursively()
+        File(context.filesDir, "covers").deleteRecursively()
         Unit
     }
 

@@ -2,6 +2,7 @@ package com.bilibili.livemonitor.util
 
 import android.content.Context
 import com.bilibili.livemonitor.db.AppDatabase
+import com.bilibili.livemonitor.db.MediaSnapshotEntity
 import com.bilibili.livemonitor.domain.MoodCatalog
 import com.bilibili.livemonitor.domain.MoodTiming
 import com.bilibili.livemonitor.domain.StreamStats
@@ -37,14 +38,39 @@ object StatsImageDataFactory {
         val monthSessions = db.streamSessionDao()
             .sessionsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
         val monthMoods = db.moodEventDao().eventsBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+        val monthlyPopularityPoints = db.streamSessionDao()
+            .popularityBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+        val popularityBySession = db.streamSessionDao()
+            .popularityForSessionsStartingBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+            .groupBy { it.sessionId }
+        val coverSnapshots = db.mediaSnapshotDao().snapshotsForSessionsStartingBetween(
+            MediaSnapshotEntity.KIND_ROOM_COVER,
+            monthStart.timeInMillis,
+            monthEnd.timeInMillis
+        ).groupBy { it.sessionStartTs }
+        val followerPoints = db.streamSessionDao().followerSnapshots()
+            .filter { it.ts >= monthStart.timeInMillis && it.ts < monthEnd.timeInMillis }
+            .map { it.ts to it.followerNum.toInt() }
 
         val (monthCount, monthAvg, monthMax) = StreamStats.monthSummary(monthSessions)
+        val validSessions = monthSessions.filter { it.endTs != null && it.endTs > it.startTs }
+        val totalDuration = validSessions.sumOf { it.endTs!! - it.startTs }
+        val activeDays = validSessions.map { session ->
+            Calendar.getInstance().apply { timeInMillis = session.startTs }.get(Calendar.DAY_OF_YEAR)
+        }.toSet().size
+        val totalDurationText = if (totalDuration > 0) formatDuration(totalDuration) else "0分钟"
         val summaryLines = mutableListOf(
-            "本月 $monthCount 场",
+            "本月 $monthCount 场 · 共 $totalDurationText · 活跃 $activeDays 天",
             "平均 ${formatDuration(monthAvg)} · 最长 ${formatDuration(monthMax)}"
         )
         StreamStats.favoriteWeekday(monthSessions, localOffset)?.let {
-            summaryLines += "常播：${WEEKDAY_NAMES[it.first]}"
+            summaryLines += "常播：${WEEKDAY_NAMES[it.first]} · ${it.second} 场"
+        }
+        if (followerPoints.size >= 2) {
+            val first = followerPoints.first().second
+            val last = followerPoints.last().second
+            val delta = last - first
+            summaryLines += "粉丝 $first → $last · ${if (delta >= 0) "+" else ""}$delta"
         }
 
         val barCounts = StreamStats.weeklyCounts(monthSessions, monthStart.timeInMillis, daysInMonth)
@@ -82,7 +108,7 @@ object StatsImageDataFactory {
         }
 
         val moodStats = monthMoods.groupingBy { MoodCatalog.display(it.mood) }
-            .eachCount().entries.sortedByDescending { it.value }.take(6).map { it.toPair() }
+            .eachCount().entries.sortedByDescending { it.value }.map { it.toPair() }
 
         val dayFmt = SimpleDateFormat("MM-dd", Locale.getDefault())
         val records = mutableListOf<Pair<Long, StatsImageRenderer.RecordLine>>()
@@ -92,7 +118,14 @@ object StatsImageDataFactory {
             val duration = s.endTs?.let { " · ${formatDuration(it - s.startTs)}" } ?: ""
             records += s.startTs to StatsImageRenderer.RecordLine(
                 kind = StatsImageRenderer.RecordKind.SESSION,
-                text = "${dayFmt.format(Date(s.startTs))} $time$duration · ${s.title ?: "（无标题）"}"
+                text = "${dayFmt.format(Date(s.startTs))} $time$duration · ${s.title ?: "（无标题）"}",
+                popularityPoints = popularityBySession[s.id].orEmpty().map { it.ts to it.online },
+                coverPaths = buildList {
+                    s.coverPath?.takeIf { it.isNotBlank() }?.let(::add)
+                    coverSnapshots[s.startTs].orEmpty().forEach { snapshot ->
+                        add(java.io.File(context.filesDir, "covers/${snapshot.fileName}").absolutePath)
+                    }
+                }.distinct()
             )
         }
         monthMoods.forEach { m ->
@@ -102,10 +135,14 @@ object StatsImageDataFactory {
                 } else {
                     ""
                 }
-            val reason = m.reason?.takeIf { it.isNotBlank() }?.let { "（原因：$it）" } ?: ""
+            val duration = m.durationMin.takeIf { it > 0 }?.let { " · $it 分钟" } ?: ""
             records += m.eventTs to StatsImageRenderer.RecordLine(
                 kind = StatsImageRenderer.RecordKind.MOOD,
-                text = "${dayFmt.format(Date(m.eventTs))} $time ${MoodCatalog.display(m.mood)} · ${m.title}$reason"
+                text = "${dayFmt.format(Date(m.eventTs))} $time$duration ${MoodCatalog.display(m.mood)} · ${m.title}",
+                detailLines = listOfNotNull(
+                    m.reason?.takeIf { it.isNotBlank() }?.let { "原因：$it" },
+                    m.note?.takeIf { it.isNotBlank() }?.let { "备注：$it" }
+                )
             )
         }
         magicSegments.forEach { (startDom, endDom) ->
@@ -136,13 +173,9 @@ object StatsImageDataFactory {
             moodStats = moodStats,
             magicSummary = magicSummary,
             weekdayHeat = StreamStats.weekdayHourHeatmap(monthSessions, localOffset),
-            followerPoints = db.streamSessionDao().followerSnapshots()
-                .filter { it.ts >= monthStart.timeInMillis && it.ts < monthEnd.timeInMillis }
-                .map { it.ts to it.followerNum.toInt() },
+            followerPoints = followerPoints,
             dailyPopularity = StreamStats.dailyPeakOnline(
-                db.streamSessionDao().popularityBetween(
-                    monthStart.timeInMillis, monthEnd.timeInMillis
-                ).map { it.ts to it.online },
+                monthlyPopularityPoints.map { it.ts to it.online },
                 monthStart.timeInMillis, daysInMonth
             ),
             wordCloudWords = com.bilibili.livemonitor.domain.TitleWordCloud.topWords(

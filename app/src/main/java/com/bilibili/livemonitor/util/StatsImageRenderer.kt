@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.view.View
 import com.bilibili.livemonitor.views.WeekStreamBarsView
@@ -12,9 +13,8 @@ import com.bilibili.livemonitor.views.WeekdayHourHeatmapView
 
 /**
  * 绮迹手账导出海报渲染（宽 1080，高度按内容计算，白底紫主题）。
- * 分区：标题（含主播头像）→ 摘要卡 → 7 天柱状图（离屏复用 WeekStreamBarsView）→
- * 当月日历热力（场次紫底 / 魔法期粉底 / 重叠紫底粉描边）→ 本月心情统计 →
- * 本月魔法期统计 → 本月完整记录（场次/心情/魔法期混排）→ 落款。
+ * 分区：标题（含主播头像）→ 摘要卡 → 当月日历热力 → 心情/魔法期统计 →
+ * 本月完整记录（场次含封面与人气曲线，心情含原因与备注）→ 月度统计图 → 落款。
  * 纯绘制无 IO，数据全部由调用方组装；avatar 为 null 时画占位圆。
  */
 object StatsImageRenderer {
@@ -36,7 +36,14 @@ object StatsImageRenderer {
     /** 记录行类型：场次（紫条）/ 心情（粉条）/ 魔法期段（灰条） */
     enum class RecordKind { SESSION, MOOD, MAGIC }
 
-    data class RecordLine(val kind: RecordKind, val text: String)
+    data class RecordLine(
+        val kind: RecordKind,
+        val text: String,
+        val detailLines: List<String> = emptyList(),
+        val popularityPoints: List<Pair<Long, Int>> = emptyList(),
+        val coverPaths: List<String> = emptyList(),
+        val coverBitmap: Bitmap? = null
+    )
 
     data class StatsImageData(
         val monthTitle: String,                    // "2026年8月"
@@ -70,6 +77,11 @@ object StatsImageRenderer {
     private const val CAL_CELL_H = 72
     private const val MOOD_LINE_H = 48
     private const val RECORD_ROW_H = 64
+    private const val RECORD_DETAIL_H = 38
+    private const val SESSION_RECORD_H = 300
+    private const val SESSION_MEDIA_H = 210
+    private const val SESSION_COVER_W = 320
+    private const val SESSION_MEDIA_GAP = 16
     private const val FOOTER_H = 120
     // 扩展统计区（离屏 View 绘制）：热力图/曲线/词云统一高度
     private const val EXTRA_SECTION_H = 300
@@ -91,12 +103,14 @@ object StatsImageRenderer {
         h += SECTION_LABEL_H + BARS_H + GAP_AFTER_BARS
         val calRows = (data.leading + data.daysInMonth + 6) / 7
         h += SECTION_LABEL_H + CAL_HEADER_H + calRows * CAL_CELL_H + GAP_AFTER_CALENDAR
-        if (data.moodStats.isNotEmpty()) h += SECTION_LABEL_H + MOOD_LINE_H + GAP_AFTER_STATS
+        if (data.moodStats.isNotEmpty()) {
+            h += SECTION_LABEL_H + moodStatsHeight(data) + GAP_AFTER_STATS
+        }
         if (data.magicSummary != null) h += MOOD_LINE_H + GAP_AFTER_STATS
         // 记录区（挪到扩展统计区之前）
         h += SECTION_LABEL_H
         val records = displayRecords(context, data)
-        h += if (records.isEmpty()) RECORD_ROW_H else records.size * RECORD_ROW_H
+        h += if (records.isEmpty()) RECORD_ROW_H else records.sumOf(::recordHeight)
         // 扩展统计区（记录之后、落款之前）
         if (data.weekdayHeat != null) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
         if (data.followerPoints.size >= 2) h += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
@@ -119,7 +133,9 @@ object StatsImageRenderer {
         fixed += SECTION_LABEL_H + BARS_H + GAP_AFTER_BARS
         val calRows = (data.leading + data.daysInMonth + 6) / 7
         fixed += SECTION_LABEL_H + CAL_HEADER_H + calRows * CAL_CELL_H + GAP_AFTER_CALENDAR
-        if (data.moodStats.isNotEmpty()) fixed += SECTION_LABEL_H + MOOD_LINE_H + GAP_AFTER_STATS
+        if (data.moodStats.isNotEmpty()) {
+            fixed += SECTION_LABEL_H + moodStatsHeight(data) + GAP_AFTER_STATS
+        }
         if (data.magicSummary != null) fixed += MOOD_LINE_H + GAP_AFTER_STATS
         fixed += SECTION_LABEL_H + FOOTER_H
         if (data.weekdayHeat != null) fixed += SECTION_LABEL_H + EXTRA_SECTION_H + GAP_AFTER_EXTRA
@@ -131,16 +147,33 @@ object StatsImageRenderer {
             }
             fixed += SECTION_LABEL_H + cloud.computeContentHeight(CONTENT_W.toInt()) + GAP_AFTER_EXTRA
         }
-        val maxRows = ((MAX_HEIGHT - fixed) / RECORD_ROW_H).coerceAtLeast(1)
-        if (data.records.size <= maxRows) return data.records
-        if (maxRows == 1) {
+        val available = (MAX_HEIGHT - fixed).coerceAtLeast(RECORD_ROW_H)
+        if (data.records.sumOf(::recordHeight) <= available) return data.records
+
+        val shown = mutableListOf<RecordLine>()
+        var used = 0
+        for (record in data.records) {
+            val height = recordHeight(record)
+            if (used + height + RECORD_ROW_H > available) break
+            shown += record
+            used += height
+        }
+        if (shown.isEmpty()) {
             return listOf(RecordLine(RecordKind.MAGIC, "记录过多，${data.records.size} 条请在手账中查看"))
         }
-        val shown = maxRows - 1
-        return data.records.take(shown) + RecordLine(
+        return shown + RecordLine(
             RecordKind.MAGIC,
-            "还有 ${data.records.size - shown} 条记录未展示，请在手账中查看"
+            "还有 ${data.records.size - shown.size} 条记录未展示，请在手账中查看"
         )
+    }
+
+    private fun moodStatsHeight(data: StatsImageData): Int =
+        ((data.moodStats.size + 2) / 3).coerceAtLeast(1) * MOOD_LINE_H
+
+    private fun recordHeight(record: RecordLine): Int = when (record.kind) {
+        RecordKind.SESSION -> SESSION_RECORD_H
+        RecordKind.MOOD -> RECORD_ROW_H + record.detailLines.take(2).size * RECORD_DETAIL_H
+        RecordKind.MAGIC -> RECORD_ROW_H
     }
 
     fun render(context: Context, data: StatsImageData, avatar: Bitmap? = null): Bitmap {
@@ -263,12 +296,15 @@ object StatsImageRenderer {
         if (data.moodStats.isNotEmpty()) {
             c.drawText("本月心情", PAD, y + 40f, helper.paintText(26f, TEXT_MAIN, bold = true))
             y += SECTION_LABEL_H
-            val statsText = data.moodStats.joinToString("    ") { "${it.first} ×${it.second}" }
-            helper.drawCenterClipped(
-                c, helper.paintText(28f, TEXT_MAIN),
-                statsText, WIDTH / 2f, y + 22f, CONTENT_W
-            )
-            y += MOOD_LINE_H + GAP_AFTER_STATS
+            data.moodStats.chunked(3).forEach { row ->
+                val statsText = row.joinToString("    ") { "${it.first} ×${it.second}" }
+                helper.drawCenterClipped(
+                    c, helper.paintText(28f, TEXT_MAIN),
+                    statsText, WIDTH / 2f, y + 30f, CONTENT_W
+                )
+                y += MOOD_LINE_H
+            }
+            y += GAP_AFTER_STATS
         }
         data.magicSummary?.let { magic ->
             helper.drawCenter(
@@ -291,20 +327,81 @@ object StatsImageRenderer {
         } else {
             val barPaint = Paint(Paint.ANTI_ALIAS_FLAG)
             val recordPaint = helper.paintText(25f, TEXT_MAIN)
+            val detailPaint = helper.paintText(22f, 0xFF666666.toInt())
             displayedRecords.forEach { record ->
+                val rowHeight = recordHeight(record)
                 barPaint.color = when (record.kind) {
                     RecordKind.SESSION -> ACCENT
                     RecordKind.MOOD -> MOOD_PINK
                     RecordKind.MAGIC -> MAGIC_BAR
                 }
-                c.drawRoundRect(RectF(PAD, y + 12f, PAD + 8f, y + RECORD_ROW_H - 12f), 4f, 4f, barPaint)
-                var text = record.text
-                while (recordPaint.measureText(text) > CONTENT_W - 32f && text.length > 1) {
-                    text = text.dropLast(1)
+                c.drawRoundRect(RectF(PAD, y + 12f, PAD + 8f, y + rowHeight - 12f), 4f, 4f, barPaint)
+                c.drawText(
+                    ellipsize(record.text, recordPaint, CONTENT_W - 32f),
+                    PAD + 24f,
+                    y + 42f,
+                    recordPaint
+                )
+                when (record.kind) {
+                    RecordKind.SESSION -> {
+                        val mediaTop = y + 70f
+                        val mediaBottom = mediaTop + SESSION_MEDIA_H
+                        val coverRect = RectF(
+                            PAD + 24f,
+                            mediaTop,
+                            PAD + 24f + SESSION_COVER_W,
+                            mediaBottom
+                        )
+                        drawCover(c, coverRect, record.coverBitmap, helper)
+
+                        val chartRect = RectF(
+                            coverRect.right + SESSION_MEDIA_GAP,
+                            mediaTop,
+                            WIDTH - PAD,
+                            mediaBottom
+                        )
+                        c.drawRoundRect(chartRect, 16f, 16f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color = ACCENT_SOFT
+                        })
+                        if (record.popularityPoints.size >= 2) {
+                            val chart = com.bilibili.livemonitor.views.PopularityChartView(context).apply {
+                                setData(record.popularityPoints)
+                            }
+                            val chartWidth = chartRect.width().toInt()
+                            val chartHeight = chartRect.height().toInt()
+                            chart.measure(
+                                View.MeasureSpec.makeMeasureSpec(chartWidth, View.MeasureSpec.EXACTLY),
+                                View.MeasureSpec.makeMeasureSpec(chartHeight, View.MeasureSpec.EXACTLY)
+                            )
+                            chart.layout(0, 0, chartWidth, chartHeight)
+                            c.save()
+                            c.translate(chartRect.left, chartRect.top)
+                            c.clipRect(0f, 0f, chartRect.width(), chartRect.height())
+                            chart.draw(c)
+                            c.restore()
+                        } else {
+                            helper.drawCenter(
+                                c,
+                                helper.paintText(22f, TEXT_GRAY),
+                                "人气采样不足",
+                                chartRect.centerX(),
+                                chartRect.centerY() + 8f
+                            )
+                        }
+                    }
+                    RecordKind.MOOD -> {
+                        record.detailLines.take(2).forEachIndexed { index, detail ->
+                            c.drawText(
+                                ellipsize(detail, detailPaint, CONTENT_W - 44f),
+                                PAD + 36f,
+                                y + RECORD_ROW_H + 22f + index * RECORD_DETAIL_H,
+                                detailPaint
+                            )
+                        }
+                    }
+                    RecordKind.MAGIC -> Unit
                 }
-                if (text != record.text) text = text.dropLast(1) + "…"
-                c.drawText(text, PAD + 24f, y + RECORD_ROW_H / 2 + 9f, recordPaint)
-                y += RECORD_ROW_H
+                y += rowHeight
             }
         }
 
@@ -400,5 +497,51 @@ object StatsImageRenderer {
             WHISPER_TEXT, WIDTH / 2f, y + 92f
         )
         return bmp
+    }
+
+    private fun ellipsize(text: String, paint: Paint, maxWidth: Float): String {
+        if (paint.measureText(text) <= maxWidth) return text
+        var end = text.length
+        while (end > 1 && paint.measureText(text.substring(0, end) + "…") > maxWidth) end--
+        return text.substring(0, end) + "…"
+    }
+
+    private fun drawCover(
+        canvas: Canvas,
+        destination: RectF,
+        bitmap: Bitmap?,
+        helper: PromoImageRenderer
+    ) {
+        canvas.drawRoundRect(destination, 16f, 16f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFF5F2FA.toInt()
+        })
+        if (bitmap == null || bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
+            helper.drawCenter(
+                canvas,
+                helper.paintText(22f, TEXT_GRAY),
+                "暂无直播封面",
+                destination.centerX(),
+                destination.centerY() + 8f
+            )
+            return
+        }
+
+        val targetRatio = destination.width() / destination.height()
+        val sourceRatio = bitmap.width.toFloat() / bitmap.height
+        val source = if (sourceRatio > targetRatio) {
+            val width = (bitmap.height * targetRatio).toInt().coerceAtMost(bitmap.width)
+            val left = (bitmap.width - width) / 2
+            Rect(left, 0, left + width, bitmap.height)
+        } else {
+            val height = (bitmap.width / targetRatio).toInt().coerceAtMost(bitmap.height)
+            val top = (bitmap.height - height) / 2
+            Rect(0, top, bitmap.width, top + height)
+        }
+        canvas.save()
+        canvas.clipPath(Path().apply {
+            addRoundRect(destination, 16f, 16f, Path.Direction.CW)
+        })
+        canvas.drawBitmap(bitmap, source, destination, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        canvas.restore()
     }
 }

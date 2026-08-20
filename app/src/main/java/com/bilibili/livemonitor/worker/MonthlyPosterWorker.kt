@@ -15,9 +15,12 @@ import com.bilibili.livemonitor.util.AnchorAvatarLoader
 import com.bilibili.livemonitor.util.AppLogger
 import com.bilibili.livemonitor.util.AppUpdater
 import com.bilibili.livemonitor.util.PreferenceManager
+import com.bilibili.livemonitor.util.StatsImageAssetLoader
 import com.bilibili.livemonitor.util.StatsImageDataFactory
 import com.bilibili.livemonitor.util.StatsImageRenderer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -55,8 +58,14 @@ class MonthlyPosterWorker(
                     AnchorAvatarLoader().loadForMonth(applicationContext, lastMonth)
                 }
             }
-            val bmp = withContext(Dispatchers.Main.immediate) {
-                StatsImageRenderer.render(applicationContext, data, avatar)
+            val posterData = StatsImageAssetLoader.load(applicationContext, data)
+            val bmp = try {
+                currentCoroutineContext().ensureActive()
+                withContext(Dispatchers.Main.immediate) {
+                    StatsImageRenderer.render(applicationContext, posterData, avatar)
+                }
+            } finally {
+                StatsImageAssetLoader.recycle(posterData)
             }
             val file = withContext(Dispatchers.IO) {
                 val directory = File(applicationContext.filesDir, "posters").apply { mkdirs() }

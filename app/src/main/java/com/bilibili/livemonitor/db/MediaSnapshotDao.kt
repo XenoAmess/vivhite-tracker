@@ -38,6 +38,17 @@ interface MediaSnapshotDao {
     @Query("SELECT * FROM media_snapshots WHERE kind = :kind ORDER BY observed_at ASC, id ASC")
     suspend fun snapshotsOldestFirst(kind: String): List<MediaSnapshotEntity>
 
+    @Query(
+        "SELECT * FROM media_snapshots WHERE kind = :kind " +
+            "AND session_start_ts >= :from AND session_start_ts < :to " +
+            "ORDER BY observed_at ASC, id ASC"
+    )
+    suspend fun snapshotsForSessionsStartingBetween(
+        kind: String,
+        from: Long,
+        to: Long
+    ): List<MediaSnapshotEntity>
+
     @Query("SELECT * FROM media_snapshots WHERE kind = :kind ORDER BY observed_at ASC, id ASC LIMIT 1")
     suspend fun firstSnapshot(kind: String): MediaSnapshotEntity?
 

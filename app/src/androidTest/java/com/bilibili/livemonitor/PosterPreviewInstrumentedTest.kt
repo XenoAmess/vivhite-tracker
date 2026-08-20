@@ -7,6 +7,7 @@ import com.bilibili.livemonitor.db.MoodEventEntity
 import com.bilibili.livemonitor.db.PopularityPointEntity
 import com.bilibili.livemonitor.db.StreamSessionEntity
 import com.bilibili.livemonitor.util.PreferenceManager
+import com.bilibili.livemonitor.util.StatsImageAssetLoader
 import com.bilibili.livemonitor.util.StatsImageDataFactory
 import com.bilibili.livemonitor.util.StatsImageRenderer
 import kotlinx.coroutines.runBlocking
@@ -35,6 +36,7 @@ class PosterPreviewInstrumentedTest {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
         }
+        File(context.filesDir, "covers/poster-preview.png").delete()
     }
 
     @After
@@ -43,6 +45,7 @@ class PosterPreviewInstrumentedTest {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
         }
+        File(context.filesDir, "covers/poster-preview.png").delete()
     }
 
     @Test
@@ -55,12 +58,29 @@ class PosterPreviewInstrumentedTest {
             set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }.timeInMillis
 
+        val cover = File(context.filesDir, "covers/poster-preview.png").apply {
+            parentFile!!.mkdirs()
+            val bitmap = android.graphics.Bitmap.createBitmap(960, 540, android.graphics.Bitmap.Config.ARGB_8888)
+            android.graphics.Canvas(bitmap).apply {
+                drawColor(0xFF6D4BA0.toInt())
+                drawCircle(480f, 270f, 150f, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = 0xFFF8C7D8.toInt()
+                })
+            }
+            outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
         // 9 场分布在月上旬，标题覆盖中英文
         val titles = listOf("happy", "sc2 肉鸽之心", "sad", "舟个痛快", "happy~", "瞧", "突变有手就行啊（", "吹水喵~", "我们的cndota")
         titles.forEachIndexed { i, title ->
             val start = monthStart + (2L + i) * 86_400_000L + 20 * 3_600_000L
             val sid = dao.insertSession(
-                StreamSessionEntity(startTs = start, endTs = start + 2.5.toLong() * 3_600_000.toLong(), title = title)
+                StreamSessionEntity(
+                    startTs = start,
+                    endTs = start + 150 * 60_000L,
+                    title = title,
+                    coverPath = cover.absolutePath
+                )
             )
             // 每场 3 个人气点（峰值 300~500）
             repeat(3) { j ->
@@ -78,7 +98,12 @@ class PosterPreviewInstrumentedTest {
             AppDatabase.get(context).moodEventDao().insert(
                 MoodEventEntity(
                     eventTs = monthStart + (3L + i * 2) * 86_400_000L + 22 * 3_600_000L,
-                    mood = mood, title = title, createdAt = now
+                    durationMin = 45 + i * 15,
+                    mood = mood,
+                    title = title,
+                    reason = "因为发生了值得记住的事情 $i",
+                    note = "这是月报里需要展示的备注 $i",
+                    createdAt = now
                 )
             )
         }
@@ -101,7 +126,12 @@ class PosterPreviewInstrumentedTest {
 
         val monthCal = Calendar.getInstance().apply { timeInMillis = monthStart }
         val data = StatsImageDataFactory.build(context, monthCal)
-        val bmp = StatsImageRenderer.render(context, data, avatar = null)
+        val posterData = StatsImageAssetLoader.load(context, data)
+        val bmp = try {
+            StatsImageRenderer.render(context, posterData, avatar = null)
+        } finally {
+            StatsImageAssetLoader.recycle(posterData)
+        }
         val out = File(context.getExternalFilesDir(null), "poster_preview.png")
         out.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         assertTrue(out.exists() && out.length() > 10_000)

@@ -108,4 +108,33 @@ class StatsImageRendererTest {
         val bitmap = StatsImageRenderer.render(context, data)
         assertTrue(bitmap.height <= StatsImageRenderer.MAX_HEIGHT)
     }
+
+    @Test
+    fun `心情原因备注增加记录高度且直播封面曲线可绘制`() {
+        val plainMood = StatsImageRenderer.RecordLine(
+            StatsImageRenderer.RecordKind.MOOD,
+            "08-09 21:00 😄开心 · 看直播"
+        )
+        val detailedMood = plainMood.copy(
+            detailLines = listOf("原因：唱了喜欢的歌", "备注：以后还想再听")
+        )
+        val cover = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(0xFF4A90E2.toInt())
+        }
+        val session = StatsImageRenderer.RecordLine(
+            kind = StatsImageRenderer.RecordKind.SESSION,
+            text = "08-09 20:00~22:00 · 2小时0分 · 月报测试直播",
+            popularityPoints = listOf(1_000L to 100, 2_000L to 240, 3_000L to 180),
+            coverBitmap = cover
+        )
+
+        val plainHeight = StatsImageRenderer.computeHeight(context, sampleData(listOf(plainMood)))
+        val richData = sampleData(listOf(detailedMood, session))
+        val richHeight = StatsImageRenderer.computeHeight(context, richData)
+        val bitmap = StatsImageRenderer.render(context, richData)
+
+        assertTrue(richHeight > plainHeight)
+        assertEquals(richHeight, bitmap.height)
+        cover.recycle()
+    }
 }

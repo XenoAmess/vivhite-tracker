@@ -36,6 +36,8 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -1486,10 +1488,19 @@ class StatsActivity : AppCompatActivity() {
                         avatarLoader.loadForMonth(this@StatsActivity, exportMonth)
                     }
                 }
-                // Renderer measures and draws Android Views, so it must stay on the main thread.
-                val bmp = com.bilibili.livemonitor.util.StatsImageRenderer.render(
-                    this@StatsActivity, data, avatar
+                val posterData = com.bilibili.livemonitor.util.StatsImageAssetLoader.load(
+                    this@StatsActivity,
+                    data
                 )
+                // Renderer measures and draws Android Views, so it must stay on the main thread.
+                val bmp = try {
+                    currentCoroutineContext().ensureActive()
+                    com.bilibili.livemonitor.util.StatsImageRenderer.render(
+                        this@StatsActivity, posterData, avatar
+                    )
+                } finally {
+                    com.bilibili.livemonitor.util.StatsImageAssetLoader.recycle(posterData)
+                }
                 val loader = com.bilibili.livemonitor.util.ShareImageLoader()
                 val file = withContext(Dispatchers.IO) {
                     loader.save(this@StatsActivity, bmp, "绮迹手账.png")
