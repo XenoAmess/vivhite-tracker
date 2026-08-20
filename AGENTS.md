@@ -19,7 +19,7 @@ python3 -m unittest discover -s .github/workflows/tests -v
 ## 工具链（2026-07-24 迁移后）
 
 - **AGP 9.3.1 + 内置 Kotlin**：没有也不得有外部 `org.jetbrains.kotlin.android` 插件——AGP 9 默认注册 `kotlin` 扩展，加外部 KGP 会直接冲突报 `Cannot add extension with name 'kotlin'`。Kotlin 版本随 AGP 走。
-- `compileSdk`/`targetSdk` = 36，`minSdk` = 26，JDK 17，Gradle Wrapper 9.7.0。
+- `compileSdk`/`targetSdk` = 36，`minSdk` = 26，JDK 17，Gradle Wrapper 9.7.1。
 - JaCoCo 的 classDirectories 必须指向内置 Kotlin 输出 `app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes`（旧外部 KGP 的 `tmp/kotlin-classes/debug` 已不存在），否则报告 0%。
 
 ## 环境坑（已验证）

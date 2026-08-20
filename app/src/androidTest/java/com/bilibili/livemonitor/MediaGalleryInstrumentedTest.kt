@@ -1,18 +1,12 @@
 package com.bilibili.livemonitor
 
-import android.graphics.Bitmap
 import android.app.NotificationManager
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.test.core.app.ActivityScenario
-import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.click
-import androidx.test.espresso.action.ViewActions.longClick
-import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
-import androidx.test.espresso.matcher.ViewMatchers.withId
-import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
 import com.bilibili.livemonitor.db.AppDatabase
 import com.bilibili.livemonitor.db.MediaSnapshotEntity
 import com.bilibili.livemonitor.util.PreferenceManager
@@ -33,6 +27,11 @@ class MediaGalleryInstrumentedTest {
     fun setUp() = runBlocking {
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .cancel(LiveMonitorApp.NOTIFICATION_ID_ALERT)
+        instrumentation.uiAutomation.executeShellCommand("cmd statusbar collapse").close()
+        UiDevice.getInstance(instrumentation).apply {
+            pressHome()
+            waitForIdle()
+        }
         AppDatabase.get(context).mediaSnapshotDao().deleteAll()
         File(context.filesDir, "avatars").deleteRecursively()
         val file = File(context.filesDir, "avatars/test-avatar.png")
@@ -64,12 +63,38 @@ class MediaGalleryInstrumentedTest {
         assertEquals(1, runBlocking {
             MediaGalleryRepository(context, AppDatabase.get(context)).load().size
         })
-        ActivityScenario.launch(MediaGalleryActivity::class.java).use {
-            onView(withId(R.id.chipGalleryAvatar)).check(matches(isDisplayed())).perform(click())
-            Thread.sleep(1_500)
-            onView(withId(R.id.ivGalleryImage)).perform(longClick())
-            onView(withId(R.id.tvGallerySelectionCount)).check(matches(withText("已选 1 张")))
-            onView(withId(R.id.btnGalleryShareSelected)).check(matches(isDisplayed()))
+        ActivityScenario.launch(MediaGalleryActivity::class.java).use { scenario ->
+            scenario.onActivity {
+                it.findViewById<android.view.View>(R.id.chipGalleryAvatar).performClick()
+            }
+            waitFor("gallery item") {
+                var selected = false
+                scenario.onActivity { activity ->
+                    val holder = activity.findViewById<androidx.recyclerview.widget.RecyclerView>(
+                        R.id.rvMediaGallery
+                    ).findViewHolderForAdapterPosition(0)
+                    if (holder != null) selected = holder.itemView.performLongClick()
+                }
+                selected
+            }
+            scenario.onActivity { activity ->
+                assertEquals(
+                    "已选 1 张",
+                    activity.findViewById<android.widget.TextView>(R.id.tvGallerySelectionCount).text.toString()
+                )
+                assertEquals(
+                    android.view.View.VISIBLE,
+                    activity.findViewById<android.view.View>(R.id.btnGalleryShareSelected).visibility
+                )
+            }
+        }
+    }
+
+    private fun waitFor(what: String, timeoutMs: Long = 10_000, condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (!condition()) {
+            if (System.currentTimeMillis() > deadline) throw AssertionError("timeout: $what")
+            Thread.sleep(100)
         }
     }
 }

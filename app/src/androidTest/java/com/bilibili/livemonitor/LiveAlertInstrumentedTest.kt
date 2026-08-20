@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
 import com.bilibili.livemonitor.api.BilibiliApi
 import com.bilibili.livemonitor.api.LiveStatusChecker
 import com.bilibili.livemonitor.service.LiveCheckService
@@ -84,6 +85,11 @@ class LiveAlertInstrumentedTest {
         instrumentation.runOnMainSync {
             LiveCheckService.lastAlertPlayer?.release()
             LiveCheckService.lastAlertPlayer = null
+        }
+        shell("cmd statusbar collapse")
+        UiDevice.getInstance(instrumentation).apply {
+            pressHome()
+            waitForIdle()
         }
     }
 

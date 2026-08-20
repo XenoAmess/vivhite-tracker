@@ -74,6 +74,7 @@ class StatsInstrumentedTest {
     }
 
     private fun clickMoodItem(scenario: ActivityScenario<StatsActivity>) {
+        scrollToMoodList(scenario)
         waitFor("mood item holder") {
             var clicked = false
             scenario.onActivity {
@@ -89,6 +90,7 @@ class StatsInstrumentedTest {
     }
 
     private fun clickMoodDelete(scenario: ActivityScenario<StatsActivity>) {
+        scrollToMoodList(scenario)
         waitFor("mood delete holder") {
             var clicked = false
             scenario.onActivity {
@@ -102,6 +104,16 @@ class StatsInstrumentedTest {
             }
             clicked
         }
+    }
+
+    private fun scrollToMoodList(scenario: ActivityScenario<StatsActivity>) {
+        scenario.onActivity {
+            val root = it.findViewById<android.widget.ScrollView>(R.id.statsRoot)
+            val moods = it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
+            root.scrollTo(0, moods.top)
+            moods.scrollToPosition(0)
+        }
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
     }
 
     @Test
