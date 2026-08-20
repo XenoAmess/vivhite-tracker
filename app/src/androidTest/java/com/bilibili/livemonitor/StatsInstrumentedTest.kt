@@ -74,46 +74,29 @@ class StatsInstrumentedTest {
     }
 
     private fun clickMoodItem(scenario: ActivityScenario<StatsActivity>) {
-        scrollToMoodList(scenario)
-        waitFor("mood item holder") {
-            var clicked = false
-            scenario.onActivity {
-                val holder = it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
-                    .findViewHolderForAdapterPosition(0)
-                if (holder != null) {
-                    holder.itemView.performClick()
-                    clicked = true
-                }
-            }
-            clicked
+        scenario.onActivity {
+            moodHolder(it).itemView.performClick()
         }
     }
 
     private fun clickMoodDelete(scenario: ActivityScenario<StatsActivity>) {
-        scrollToMoodList(scenario)
-        waitFor("mood delete holder") {
-            var clicked = false
-            scenario.onActivity {
-                val holder = it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
-                    .findViewHolderForAdapterPosition(0)
-                if (holder != null) {
-                    holder.itemView.findViewById<android.view.View>(R.id.btnMoodEventDelete)
-                        .performClick()
-                    clicked = true
-                }
-            }
-            clicked
+        scenario.onActivity {
+            moodHolder(it).itemView.findViewById<android.view.View>(R.id.btnMoodEventDelete)
+                .performClick()
         }
     }
 
-    private fun scrollToMoodList(scenario: ActivityScenario<StatsActivity>) {
-        scenario.onActivity {
-            val root = it.findViewById<android.widget.ScrollView>(R.id.statsRoot)
-            val moods = it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
-            root.scrollTo(0, moods.top)
-            moods.scrollToPosition(0)
+    @Suppress("UNCHECKED_CAST")
+    private fun moodHolder(activity: StatsActivity): androidx.recyclerview.widget.RecyclerView.ViewHolder {
+        val recycler = activity.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvMoodEvents)
+        recycler.findViewHolderForAdapterPosition(0)?.let { return it }
+        val adapter = recycler.adapter as androidx.recyclerview.widget.RecyclerView.Adapter<
+            androidx.recyclerview.widget.RecyclerView.ViewHolder
+        >
+        check(adapter.itemCount > 0) { "mood adapter is empty" }
+        return adapter.createViewHolder(recycler, adapter.getItemViewType(0)).also {
+            adapter.bindViewHolder(it, 0)
         }
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
     }
 
     @Test
