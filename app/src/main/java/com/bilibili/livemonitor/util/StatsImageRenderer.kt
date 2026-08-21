@@ -20,7 +20,9 @@ import com.bilibili.livemonitor.views.WeekdayHourHeatmapView
 object StatsImageRenderer {
 
     const val WIDTH = 1080
-    internal const val MAX_HEIGHT = 8_000
+    // 单 Bitmap 内存上限的折中：RGB_565 下 40000px ≈ 82MB，百余场富卡片也能全展示；
+    // 只有数百场的极端月份才会走 displayRecords 的显式截断摘要行。
+    internal const val MAX_HEIGHT = 40_000
     private const val PAD = 56f
     private const val CONTENT_W = WIDTH - PAD * 2
 
@@ -177,7 +179,7 @@ object StatsImageRenderer {
     }
 
     fun render(context: Context, data: StatsImageData, avatar: Bitmap? = null): Bitmap {
-        val bmp = Bitmap.createBitmap(WIDTH, computeHeight(context, data), Bitmap.Config.ARGB_8888)
+        val bmp = Bitmap.createBitmap(WIDTH, computeHeight(context, data), Bitmap.Config.RGB_565)
         val c = Canvas(bmp)
         val helper = PromoImageRenderer
         c.drawRect(0f, 0f, WIDTH.toFloat(), bmp.height.toFloat(), Paint().apply { color = 0xFFFFFFFF.toInt() })

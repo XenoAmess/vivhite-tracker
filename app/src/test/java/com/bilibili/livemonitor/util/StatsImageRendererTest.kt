@@ -137,4 +137,38 @@ class StatsImageRendererTest {
         assertEquals(richHeight, bitmap.height)
         cover.recycle()
     }
+
+    @Test
+    fun `几十条记录的月份完整展示不出现截断摘要`() {
+        // 2026-08 真实规模放大版：20 场直播卡片 + 带原因/备注的心情，旧 8000px 必截断
+        val records = buildList {
+            repeat(20) { i ->
+                add(
+                    StatsImageRenderer.RecordLine(
+                        StatsImageRenderer.RecordKind.SESSION,
+                        "08-${10 + i % 20} 20:00~22:00 · 2小时0分 · 直播 $i",
+                        popularityPoints = listOf(1_000L to 100, 2_000L to 200)
+                    )
+                )
+                if (i % 2 == 0) {
+                    add(
+                        StatsImageRenderer.RecordLine(
+                            StatsImageRenderer.RecordKind.MOOD,
+                            "08-${10 + i % 20} 22:30 😄开心 · 看直播",
+                            detailLines = listOf("原因：唱了喜欢的歌", "备注：以后还想再听")
+                        )
+                    )
+                }
+            }
+        }
+        val data = sampleData(records)
+
+        val height = StatsImageRenderer.computeHeight(context, data)
+        val bitmap = StatsImageRenderer.render(context, data)
+
+        assertTrue("应超过旧 8000px 上限", height > 8_000)
+        assertTrue(height <= StatsImageRenderer.MAX_HEIGHT)
+        assertEquals(height, bitmap.height)
+        bitmap.recycle()
+    }
 }
