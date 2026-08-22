@@ -197,6 +197,20 @@ class StatsActivityTest {
                 sessionId = sid, changedAt = now - 1_800_000, oldTitle = "开场标题", newTitle = "换了个主题"
             )
         )
+        // 同场两次封面快照 → 页面应显示封面变化
+        val mediaDao = AppDatabase.get(context).mediaSnapshotDao()
+        listOf("a".repeat(40) to start, "b".repeat(40) to now - 900_000).forEach { (key, at) ->
+            mediaDao.insertSnapshot(
+                com.bilibili.livemonitor.db.MediaSnapshotEntity(
+                    kind = com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                    observedAt = at,
+                    contentKey = key,
+                    fileName = "${key.take(8)}.jpg",
+                    sessionStartTs = start,
+                    title = "换了个主题"
+                )
+            )
+        }
         val activity = Robolectric.buildActivity(StatsActivity::class.java).setup().get()
         waitFor("summary") {
             activity.findViewById<TextView>(R.id.tvStatsSummary).text.toString().contains("本周 1 场")
@@ -210,6 +224,10 @@ class StatsActivityTest {
             true,
             activity.findViewById<TextView>(R.id.tvDayTitleChanges).text.toString().startsWith("本日主题变化")
         )
+        waitFor("cover change line") {
+            activity.findViewById<TextView>(R.id.tvDayTitleChanges).text.toString()
+                .contains("本日封面变化")
+        }
     }
 
     // ---------- 心情事件 ----------

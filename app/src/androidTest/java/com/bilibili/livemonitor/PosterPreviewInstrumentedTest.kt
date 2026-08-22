@@ -35,8 +35,10 @@ class PosterPreviewInstrumentedTest {
         runBlocking {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
+            AppDatabase.get(context).mediaSnapshotDao().deleteAll()
         }
         File(context.filesDir, "covers/poster-preview.png").delete()
+        File(context.filesDir, "covers/poster-preview-2.png").delete()
     }
 
     @After
@@ -44,8 +46,10 @@ class PosterPreviewInstrumentedTest {
         runBlocking {
             AppDatabase.get(context).streamSessionDao().deleteAll()
             AppDatabase.get(context).moodEventDao().deleteAll()
+            AppDatabase.get(context).mediaSnapshotDao().deleteAll()
         }
         File(context.filesDir, "covers/poster-preview.png").delete()
+        File(context.filesDir, "covers/poster-preview-2.png").delete()
     }
 
     @Test
@@ -92,6 +96,49 @@ class PosterPreviewInstrumentedTest {
                 )
             }
         }
+        // 第 3 场造"变化场"：主题变化 + 封面变化（第二张封面不同配色，并列展示）
+        val changedStart = monthStart + 4L * 86_400_000L + 20 * 3_600_000L
+        val changedCover = File(context.filesDir, "covers/poster-preview-2.png").apply {
+            val bitmap = android.graphics.Bitmap.createBitmap(960, 540, android.graphics.Bitmap.Config.ARGB_8888)
+            android.graphics.Canvas(bitmap).apply {
+                drawColor(0xFF2E7D6B.toInt())
+                drawCircle(480f, 270f, 150f, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = 0xFFFFF3B0.toInt()
+                })
+            }
+            outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        dao.insertTitleChange(
+            com.bilibili.livemonitor.db.StreamTitleChangeEntity(
+                sessionId = dao.sessionsBetween(monthStart, monthStart + 31L * 86_400_000L)
+                    .first { it.startTs == changedStart }.id,
+                changedAt = changedStart + 40 * 60_000L,
+                oldTitle = "sad",
+                newTitle = "换成开心主题"
+            )
+        )
+        val mediaDao = AppDatabase.get(context).mediaSnapshotDao()
+        mediaDao.insertSnapshot(
+            com.bilibili.livemonitor.db.MediaSnapshotEntity(
+                kind = com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                observedAt = changedStart,
+                contentKey = "c".repeat(40),
+                fileName = "poster-preview.png",
+                sessionStartTs = changedStart,
+                title = "sad"
+            )
+        )
+        mediaDao.insertSnapshot(
+            com.bilibili.livemonitor.db.MediaSnapshotEntity(
+                kind = com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                observedAt = changedStart + 40 * 60_000L,
+                contentKey = "d".repeat(40),
+                fileName = changedCover.name,
+                sessionStartTs = changedStart,
+                title = "换成开心主题"
+            )
+        )
         // 心情事件 4 条
         val moods = listOf("happy" to "看了场直播", "sad" to "失眠", "breakdown" to "睡眠剥夺", "happy" to "和女朋友玩游戏")
         moods.forEachIndexed { i, (mood, title) ->

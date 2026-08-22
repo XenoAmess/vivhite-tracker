@@ -30,14 +30,15 @@ object StatsImageAssetLoader {
                             return@map record
                         }
                         loadedCount++
-                        val cover = record.coverPaths.firstNotNullOfOrNull { path ->
-                            decoded[path]?.let { return@firstNotNullOfOrNull it }
-                            if (path in invalid) return@firstNotNullOfOrNull null
+                        // 每场最多两张：首张 + 首次变化后的封面（并列展示变化）
+                        val covers = record.coverPaths.mapNotNull { path ->
+                            decoded[path]?.let { return@mapNotNull it }
+                            if (path in invalid) return@mapNotNull null
                             val file = runCatching { File(path).canonicalFile }.getOrNull()
-                                ?: return@firstNotNullOfOrNull null
+                                ?: return@mapNotNull null
                             if (file.parentFile != coverRoot) {
                                 invalid += path
-                                return@firstNotNullOfOrNull null
+                                return@mapNotNull null
                             }
                             decodeSampled(file)?.also {
                                 decoded[path] = it
@@ -46,8 +47,8 @@ object StatsImageAssetLoader {
                                 invalid += path
                                 null
                             }
-                        }
-                        record.copy(coverBitmap = cover)
+                        }.take(MAX_COVERS_PER_SESSION)
+                        record.copy(coverBitmaps = covers)
                     }
                 )
             }
@@ -58,7 +59,7 @@ object StatsImageAssetLoader {
     }
 
     fun recycle(data: StatsImageRenderer.StatsImageData) {
-        recycleBitmaps(data.records.mapNotNull { it.coverBitmap })
+        recycleBitmaps(data.records.flatMap { it.coverBitmaps })
     }
 
     private fun recycleBitmaps(bitmaps: Iterable<Bitmap>) {
@@ -85,5 +86,6 @@ object StatsImageAssetLoader {
     }
 
     internal const val MAX_COVER_COUNT = 21
+    private const val MAX_COVERS_PER_SESSION = 2
     private const val MAX_COVER_DIMENSION = 640
 }

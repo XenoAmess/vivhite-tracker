@@ -476,7 +476,7 @@ class StatsActivity : AppCompatActivity() {
         if (magicIndex > 0) label += " · 魔法期第 ${magicIndex} 天"
         binding.tvSelectedDayHint.text = label
         sessionAdapter.update(sessions)
-        loadTitleChanges(sessions)
+        loadDayChanges(sessions)
         loadMoodEvents()
     }
 
@@ -1199,25 +1199,42 @@ class StatsActivity : AppCompatActivity() {
         }
     }
 
-    // 本日主题变化时间线（stream_title_changes 已记录，这里补 UI）
-    private fun loadTitleChanges(sessions: List<StreamSessionEntity>) {
+    // 本日主题/封面变化时间线（stream_title_changes + media_snapshots 已记录，这里补 UI）
+    private fun loadDayChanges(sessions: List<StreamSessionEntity>) {
         val day = selectedDayStart
         binding.tvDayTitleChanges.visibility = View.GONE
         lifecycleScope.launch {
-            val dao = AppDatabase.get(this@StatsActivity).streamSessionDao()
-            val changes = sessions.flatMap { s -> dao.titleChanges(s.id) }
+            val db = AppDatabase.get(this@StatsActivity)
+            val changes = sessions.flatMap { s -> db.streamSessionDao().titleChanges(s.id) }
                 .sortedBy { it.changedAt }
+            val coverChanges = sessions.mapNotNull { s ->
+                val snaps = db.mediaSnapshotDao().snapshotsForSession(
+                    com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER, s.startTs
+                )
+                if (snaps.size > 1) s to snaps else null
+            }
             if (day != selectedDayStart) return@launch
-            if (changes.isEmpty()) {
+            val lines = buildList {
+                if (changes.isNotEmpty()) {
+                    add("本日主题变化：" + changes.joinToString("；") {
+                        val time = timeFormat.format(Date(it.changedAt))
+                        val from = it.oldTitle?.takeIf { t -> t.isNotBlank() }?.let { "「$it」" } ?: "开播"
+                        val to = it.newTitle?.takeIf { t -> t.isNotBlank() }?.let { "「$it」" } ?: "（空）"
+                        "$time $from → $to"
+                    })
+                }
+                if (coverChanges.isNotEmpty()) {
+                    add("本日封面变化：" + coverChanges.joinToString("；") { (s, snaps) ->
+                        val times = snaps.drop(1).joinToString("、") { timeFormat.format(Date(it.observedAt)) }
+                        "「${s.title ?: "无标题"}」$times"
+                    })
+                }
+            }
+            if (lines.isEmpty()) {
                 binding.tvDayTitleChanges.visibility = View.GONE
             } else {
                 binding.tvDayTitleChanges.visibility = View.VISIBLE
-                binding.tvDayTitleChanges.text = "本日主题变化：" + changes.joinToString("；") {
-                    val time = timeFormat.format(Date(it.changedAt))
-                    val from = it.oldTitle?.takeIf { t -> t.isNotBlank() }?.let { "「$it」" } ?: "开播"
-                    val to = it.newTitle?.takeIf { t -> t.isNotBlank() }?.let { "「$it」" } ?: "（空）"
-                    "$time $from → $to"
-                }
+                binding.tvDayTitleChanges.text = lines.joinToString("\n")
             }
         }
     }

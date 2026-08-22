@@ -53,22 +53,23 @@ object FullBackupBuilder {
             .filter(::isValidImage)
             .associateBy { it.name }
         val mediaStore = MediaStore()
-        snapshot.mediaSnapshots.forEach { row ->
+        // 索引行引用的原图缺失/损坏时跳过该行并告警，不能让单条脏数据拖垮整个备份
+        val validMediaSnapshots = snapshot.mediaSnapshots.filter { row ->
             val file = if (row.kind == com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_AVATAR) {
                 avatarFiles[row.fileName]
             } else {
                 coverFiles[row.fileName]
             }
-            if (file == null || mediaStore.sha1Hex(file) != row.contentKey) {
-                throw java.io.IOException("媒体索引与原图不一致：${row.fileName}")
-            }
+            val valid = file != null && mediaStore.sha1Hex(file) == row.contentKey
+            if (!valid) AppLogger.w(TAG, "skip inconsistent media snapshot: ${row.fileName}", null)
+            valid
         }
         FullBackup.pack(
             snapshot.copy(
                 prefsJson = PreferenceManager(context).exportSnapshot(),
                 coverFiles = coverFiles,
                 avatarFiles = avatarFiles,
-                mediaSnapshots = snapshot.mediaSnapshots
+                mediaSnapshots = validMediaSnapshots
             ),
             output
         )
@@ -80,4 +81,6 @@ object FullBackupBuilder {
         android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
         return options.outWidth > 0 && options.outHeight > 0
     }
+
+    private const val TAG = "FullBackupBuilder"
 }

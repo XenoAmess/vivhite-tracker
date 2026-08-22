@@ -191,6 +191,14 @@ interface StreamSessionDao {
     )
     suspend fun popularityForSessionsStartingBetween(from: Long, to: Long): List<PopularityPointEntity>
 
+    /** 按开播月份取场次的完整主题变化（月报单场卡片用，避免逐场 N+1 查询） */
+    @Query(
+        "SELECT t.* FROM stream_title_changes t " +
+            "INNER JOIN stream_sessions s ON s.id = t.session_id " +
+            "WHERE s.start_ts >= :from AND s.start_ts < :to ORDER BY t.changed_at ASC"
+    )
+    suspend fun titleChangesForSessionsStartingBetween(from: Long, to: Long): List<StreamTitleChangeEntity>
+
     /** 某时间区间的主题变化新标题（月度词云用） */
     @Query("SELECT new_title FROM stream_title_changes WHERE changed_at >= :from AND changed_at < :to AND new_title IS NOT NULL AND new_title != ''")
     suspend fun changeTitlesBetween(from: Long, to: Long): List<String>

@@ -48,6 +48,9 @@ object StatsImageDataFactory {
             monthStart.timeInMillis,
             monthEnd.timeInMillis
         ).groupBy { it.sessionStartTs }
+        val titleChangesBySession = db.streamSessionDao()
+            .titleChangesForSessionsStartingBetween(monthStart.timeInMillis, monthEnd.timeInMillis)
+            .groupBy { it.sessionId }
         val followerPoints = db.streamSessionDao().followerSnapshots()
             .filter { it.ts >= monthStart.timeInMillis && it.ts < monthEnd.timeInMillis }
             .map { it.ts to it.followerNum.toInt() }
@@ -116,13 +119,32 @@ object StatsImageDataFactory {
             val time = timeFormat.format(Date(s.startTs)) +
                 (s.endTs?.let { "~${timeFormat.format(Date(it))}" } ?: "~进行中")
             val duration = s.endTs?.let { " · ${formatDuration(it - s.startTs)}" } ?: ""
+            val coverSnaps = coverSnapshots[s.startTs].orEmpty()
             records += s.startTs to StatsImageRenderer.RecordLine(
                 kind = StatsImageRenderer.RecordKind.SESSION,
                 text = "${dayFmt.format(Date(s.startTs))} $time$duration · ${s.title ?: "（无标题）"}",
+                detailLines = buildList {
+                    val titleChanges = titleChangesBySession[s.id].orEmpty()
+                    if (titleChanges.isNotEmpty()) {
+                        add(
+                            "主题变化：" + titleChanges.joinToString("；") { tc ->
+                                val at = timeFormat.format(Date(tc.changedAt))
+                                val from = tc.oldTitle?.takeIf { it.isNotBlank() } ?: "开播"
+                                val to = tc.newTitle?.takeIf { it.isNotBlank() } ?: "（空）"
+                                "$at 「$from」→「$to」"
+                            }
+                        )
+                    }
+                    if (coverSnaps.size > 1) {
+                        val times = coverSnaps.drop(1)
+                            .joinToString("、") { timeFormat.format(Date(it.observedAt)) }
+                        add("封面变化 ${coverSnaps.size - 1} 次（$times）")
+                    }
+                },
                 popularityPoints = popularityBySession[s.id].orEmpty().map { it.ts to it.online },
                 coverPaths = buildList {
                     s.coverPath?.takeIf { it.isNotBlank() }?.let(::add)
-                    coverSnapshots[s.startTs].orEmpty().forEach { snapshot ->
+                    coverSnaps.forEach { snapshot ->
                         add(java.io.File(context.filesDir, "covers/${snapshot.fileName}").absolutePath)
                     }
                 }.distinct()

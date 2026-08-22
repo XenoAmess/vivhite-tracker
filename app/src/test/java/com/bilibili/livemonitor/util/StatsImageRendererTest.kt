@@ -125,7 +125,7 @@ class StatsImageRendererTest {
             kind = StatsImageRenderer.RecordKind.SESSION,
             text = "08-09 20:00~22:00 · 2小时0分 · 月报测试直播",
             popularityPoints = listOf(1_000L to 100, 2_000L to 240, 3_000L to 180),
-            coverBitmap = cover
+            coverBitmaps = listOf(cover)
         )
 
         val plainHeight = StatsImageRenderer.computeHeight(context, sampleData(listOf(plainMood)))
@@ -136,6 +136,32 @@ class StatsImageRendererTest {
         assertTrue(richHeight > plainHeight)
         assertEquals(richHeight, bitmap.height)
         cover.recycle()
+    }
+
+    @Test
+    fun `场次主题封面变化明细撑高且双封面可绘制`() {
+        val base = StatsImageRenderer.RecordLine(
+            StatsImageRenderer.RecordKind.SESSION,
+            "08-09 20:00~22:00 · 2小时0分 · 变化测试"
+        )
+        val covers = listOf(
+            Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888).apply { eraseColor(0xFF6750A4.toInt()) },
+            Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888).apply { eraseColor(0xFFF48FB1.toInt()) }
+        )
+        val changed = base.copy(
+            detailLines = listOf("主题变化：20:30 「变化测试」→「新主题」", "封面变化 1 次（20:30）"),
+            coverBitmaps = covers
+        )
+
+        val baseHeight = StatsImageRenderer.computeHeight(context, sampleData(listOf(base)))
+        val changedData = sampleData(listOf(changed))
+        val changedHeight = StatsImageRenderer.computeHeight(context, changedData)
+        val bitmap = StatsImageRenderer.render(context, changedData)
+
+        assertTrue(changedHeight > baseHeight)
+        assertEquals(changedHeight, bitmap.height)
+        bitmap.recycle()
+        covers.forEach { it.recycle() }
     }
 
     @Test

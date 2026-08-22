@@ -124,6 +124,55 @@ class StatsImageDataFactoryTest {
         assertEquals(listOf(start + 10_000L to 100, nextMonth + 30_000L to 200), session.popularityPoints)
     }
 
+    @Test
+    fun `直播卡片包含主题与封面变化明细`() = runBlocking {
+        val month = monthStart()
+        val start = month.timeInMillis + 20 * 60_000L
+        val dao = AppDatabase.get(context).streamSessionDao()
+        val sessionId = dao.insertSession(
+            StreamSessionEntity(startTs = start, endTs = start + 90 * 60_000L, title = "变化测试")
+        )
+        dao.insertTitleChange(
+            com.bilibili.livemonitor.db.StreamTitleChangeEntity(
+                sessionId = sessionId,
+                changedAt = start + 30 * 60_000L,
+                oldTitle = "变化测试",
+                newTitle = "换了新主题"
+            )
+        )
+        val mediaDao = AppDatabase.get(context).mediaSnapshotDao()
+        mediaDao.insertSnapshot(
+            com.bilibili.livemonitor.db.MediaSnapshotEntity(
+                kind = com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                observedAt = start,
+                contentKey = "a".repeat(40),
+                fileName = "first.jpg",
+                sessionStartTs = start,
+                title = "变化测试"
+            )
+        )
+        mediaDao.insertSnapshot(
+            com.bilibili.livemonitor.db.MediaSnapshotEntity(
+                kind = com.bilibili.livemonitor.db.MediaSnapshotEntity.KIND_ROOM_COVER,
+                observedAt = start + 45 * 60_000L,
+                contentKey = "b".repeat(40),
+                fileName = "second.jpg",
+                sessionStartTs = start,
+                title = "换了新主题"
+            )
+        )
+
+        val session = StatsImageDataFactory.build(context, month).records.single {
+            it.kind == StatsImageRenderer.RecordKind.SESSION
+        }
+
+        assertEquals(2, session.detailLines.size)
+        assertTrue(session.detailLines[0].contains("主题变化"))
+        assertTrue(session.detailLines[0].contains("换了新主题"))
+        assertTrue(session.detailLines[1].startsWith("封面变化 1 次"))
+        assertEquals(2, session.coverPaths.size)
+    }
+
     private fun monthStart(): Calendar = Calendar.getInstance().apply {
         set(Calendar.DAY_OF_MONTH, 1)
         set(Calendar.HOUR_OF_DAY, 0)

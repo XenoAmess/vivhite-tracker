@@ -44,7 +44,7 @@ object StatsImageRenderer {
         val detailLines: List<String> = emptyList(),
         val popularityPoints: List<Pair<Long, Int>> = emptyList(),
         val coverPaths: List<String> = emptyList(),
-        val coverBitmap: Bitmap? = null
+        val coverBitmaps: List<Bitmap> = emptyList()
     )
 
     data class StatsImageData(
@@ -173,7 +173,7 @@ object StatsImageRenderer {
         ((data.moodStats.size + 2) / 3).coerceAtLeast(1) * MOOD_LINE_H
 
     private fun recordHeight(record: RecordLine): Int = when (record.kind) {
-        RecordKind.SESSION -> SESSION_RECORD_H
+        RecordKind.SESSION -> SESSION_RECORD_H + record.detailLines.take(2).size * RECORD_DETAIL_H
         RecordKind.MOOD -> RECORD_ROW_H + record.detailLines.take(2).size * RECORD_DETAIL_H
         RecordKind.MAGIC -> RECORD_ROW_H
     }
@@ -348,16 +348,35 @@ object StatsImageRenderer {
                     RecordKind.SESSION -> {
                         val mediaTop = y + 70f
                         val mediaBottom = mediaTop + SESSION_MEDIA_H
-                        val coverRect = RectF(
-                            PAD + 24f,
-                            mediaTop,
-                            PAD + 24f + SESSION_COVER_W,
-                            mediaBottom
-                        )
-                        drawCover(c, coverRect, record.coverBitmap, helper)
+                        val covers = record.coverBitmaps.take(2)
+                        if (covers.size == 2) {
+                            // 封面有变化：前后两张并列（320 = 156 + 8 + 156）
+                            val halfW = (SESSION_COVER_W - 8f) / 2f
+                            drawCover(
+                                c,
+                                RectF(PAD + 24f, mediaTop, PAD + 24f + halfW, mediaBottom),
+                                covers[0], helper
+                            )
+                            drawCover(
+                                c,
+                                RectF(PAD + 24f + halfW + 8f, mediaTop, PAD + 24f + SESSION_COVER_W, mediaBottom),
+                                covers[1], helper
+                            )
+                        } else {
+                            drawCover(
+                                c,
+                                RectF(
+                                    PAD + 24f,
+                                    mediaTop,
+                                    PAD + 24f + SESSION_COVER_W,
+                                    mediaBottom
+                                ),
+                                covers.firstOrNull(), helper
+                            )
+                        }
 
                         val chartRect = RectF(
-                            coverRect.right + SESSION_MEDIA_GAP,
+                            PAD + 24f + SESSION_COVER_W + SESSION_MEDIA_GAP,
                             mediaTop,
                             WIDTH - PAD,
                             mediaBottom
@@ -388,6 +407,15 @@ object StatsImageRenderer {
                                 "人气采样不足",
                                 chartRect.centerX(),
                                 chartRect.centerY() + 8f
+                            )
+                        }
+                        // 主题/封面变化明细（媒体行下方，最多 2 行）
+                        record.detailLines.take(2).forEachIndexed { index, detail ->
+                            c.drawText(
+                                ellipsize(detail, detailPaint, CONTENT_W - 44f),
+                                PAD + 36f,
+                                y + SESSION_RECORD_H + 6f + index * RECORD_DETAIL_H,
+                                detailPaint
                             )
                         }
                     }

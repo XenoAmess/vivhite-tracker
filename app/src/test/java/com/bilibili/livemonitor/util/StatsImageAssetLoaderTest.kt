@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -46,10 +47,10 @@ class StatsImageAssetLoaderTest {
         )
 
         val loaded = StatsImageAssetLoader.load(context, data)
-        val bitmap = loaded.records[0].coverBitmap
+        val bitmap = loaded.records[0].coverBitmaps.singleOrNull()
         assertNotNull(bitmap)
         assertTrue(maxOf(bitmap!!.width, bitmap.height) <= 640)
-        assertNull(loaded.records[1].coverBitmap)
+        assertTrue(loaded.records[1].coverBitmaps.isEmpty())
 
         StatsImageAssetLoader.recycle(loaded)
         assertTrue(bitmap.isRecycled)
@@ -74,9 +75,39 @@ class StatsImageAssetLoaderTest {
         val loaded = StatsImageAssetLoader.load(context, sampleData(records))
 
         assertTrue(
-            loaded.records.count { it.coverBitmap != null } == StatsImageAssetLoader.MAX_COVER_COUNT
+            loaded.records.count { it.coverBitmaps.isNotEmpty() } == StatsImageAssetLoader.MAX_COVER_COUNT
         )
         StatsImageAssetLoader.recycle(loaded)
+    }
+
+    @Test
+    fun `封面变化的场次解码前后两张并统一回收`() = runBlocking {
+        fun writeCover(name: String, color: Int): File =
+            File(context.filesDir, "covers/$name").apply {
+                parentFile!!.mkdirs()
+                val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(color)
+                outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
+        val first = writeCover("change-first.png", 0xFF6750A4.toInt())
+        val second = writeCover("change-second.png", 0xFFF48FB1.toInt())
+        val data = sampleData(
+            listOf(
+                StatsImageRenderer.RecordLine(
+                    StatsImageRenderer.RecordKind.SESSION,
+                    "封面变化场",
+                    coverPaths = listOf(first.absolutePath, second.absolutePath)
+                )
+            )
+        )
+
+        val loaded = StatsImageAssetLoader.load(context, data)
+        assertEquals(2, loaded.records[0].coverBitmaps.size)
+
+        val bitmaps = loaded.records[0].coverBitmaps
+        StatsImageAssetLoader.recycle(loaded)
+        assertTrue(bitmaps.all { it.isRecycled })
     }
 
     private fun sampleData(records: List<StatsImageRenderer.RecordLine>) =
