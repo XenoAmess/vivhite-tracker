@@ -168,6 +168,24 @@ class PreferenceManagerTest {
     // ========== 活动监控 11 键 ==========
 
     @Test
+    fun `promo_style 随设置快照导出并恢复`() {
+        prefs.setPromoStyle("BLUR_BG")
+        val snapshot = prefs.exportSnapshot()
+        assertTrue(snapshot.contains("\"promo_style\":\"BLUR_BG\""))
+
+        prefs.setPromoStyle("LIGHT_CARD")
+        prefs.importSnapshot(snapshot)
+        assertEquals("BLUR_BG", prefs.getPromoStyle())
+    }
+
+    @Test
+    fun `非法 promo_style 不写入`() {
+        prefs.setPromoStyle("BLUR_BG")
+        prefs.importSnapshot("""{"promo_style":"NOT_A_STYLE"}""")
+        assertEquals("BLUR_BG", prefs.getPromoStyle())
+    }
+
+    @Test
     fun `活动监控开关默认全开`() {
         // 新装应用默认开启所有活动监控：视频/置顶/动态 + 响铃
         // 配合 ActivityDecider 的「首次不提醒」机制，冷启动不会狂响

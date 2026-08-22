@@ -46,6 +46,8 @@ class BackupRestoreCoordinatorTest {
             database.mediaSnapshotDao().deleteAll()
             File(context.filesDir, "covers").deleteRecursively()
             File(context.filesDir, "avatars").deleteRecursively()
+            File(context.filesDir, "posters").deleteRecursively()
+            File(context.filesDir, "logs").deleteRecursively()
             PreferenceManager(context).apply {
                 setQuietHoursEnabled(false)
                 setAutoBackupEnabled(false)
@@ -85,6 +87,37 @@ class BackupRestoreCoordinatorTest {
         val work = WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork("auto_backup_periodic").get()
         assertTrue(work.isNotEmpty() && work.all { it.state == WorkInfo.State.CANCELLED })
+    }
+
+    @Test
+    fun `restores posters and restored log does not overwrite current log`() = runBlocking {
+        val logDir = File(context.filesDir, "logs").apply { mkdirs() }
+        File(logDir, "monitor.log").writeText("current-session-log")
+
+        val report = coordinator.restore(
+            FullBackup.Data(
+                sessions = listOf(
+                    StreamSessionEntity(startTs = 100, endTs = 200, title = "s")
+                ),
+                moods = emptyList(),
+                titleChanges = emptyList(),
+                popularity = emptyList(),
+                followers = emptyList(),
+                prefsJson = null,
+                posters = mapOf("monthly_2026-07.png" to imageBytes()),
+                logBytes = "restored-log-content".toByteArray()
+            )
+        )
+
+        assertEquals(1, report.posters.added)
+        assertTrue(report.logRestored)
+        assertTrue(File(context.filesDir, "posters/monthly_2026-07.png").isFile)
+        assertEquals("current-session-log", File(logDir, "monitor.log").readText())
+        assertTrue(
+            logDir.listFiles()!!.any {
+                it.name.startsWith("monitor_restored_") && it.readText() == "restored-log-content"
+            }
+        )
     }
 
     @Test

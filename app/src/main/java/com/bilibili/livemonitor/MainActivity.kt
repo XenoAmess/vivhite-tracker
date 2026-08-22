@@ -22,6 +22,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -842,6 +843,7 @@ class MainActivity : AppCompatActivity() {
                 preferenceManager.setAutoBackupEnabled(false)
                 backupSwitchView?.isChecked = false
             }
+            pendingManualBackup = false
             refreshBackupStatusText()
             refreshSettingsSubtitles()
             return@registerForActivityResult
@@ -857,6 +859,10 @@ class MainActivity : AppCompatActivity() {
                 backupSwitchView?.isChecked = true
                 com.bilibili.livemonitor.worker.BackupWorker.schedule(this)
             }
+            if (pendingManualBackup) {
+                pendingManualBackup = false
+                startManualBackup()
+            }
         } catch (e: SecurityException) {
             pendingAutoBackupEnable = false
             preferenceManager.setAutoBackupEnabled(false)
@@ -869,7 +875,10 @@ class MainActivity : AppCompatActivity() {
 
     private var backupStatusView: android.widget.TextView? = null
     private var backupSwitchView: com.google.android.material.switchmaterial.SwitchMaterial? = null
+    private var backupNowView: com.google.android.material.button.MaterialButton? = null
     private var pendingAutoBackupEnable = false
+    internal var pendingManualBackup = false
+    internal var manualBackupRunning = false
 
     private fun computeBackupSubtitle(): String =
         if (preferenceManager.isAutoBackupEnabled()) "每天自动备份：开" else "每天自动备份：关"
@@ -887,6 +896,56 @@ class MainActivity : AppCompatActivity() {
             )
             if (last > 0) {
                 append("\n上次备份：" + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(last)))
+            }
+            if (dir.isNotBlank()) {
+                append("\n目录内备份：统计中…")
+                // SAF 查询走 IO，回来后仅当目录没变才落文字
+                val shownDir = dir
+                lifecycleScope.launch {
+                    val count = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.bilibili.livemonitor.util.BackupDirectoryWriter
+                            .listBackupNames(this@MainActivity, shownDir)?.size
+                    }
+                    if (preferenceManager.getBackupTreeUri() == shownDir && count != null) {
+                        backupStatusView?.text = backupStatusView?.text.toString()
+                            .replace("目录内备份：统计中…", "目录内备份：$count 份")
+                    }
+                }
+            }
+        }
+    }
+
+    /** 手动「立即备份」：与自动备份共用 BackupDirectoryWriter（文件名带时间戳 + 写后清理） */
+    internal fun startManualBackup() {
+        val dir = preferenceManager.getBackupTreeUri()
+        if (dir.isBlank()) {
+            pendingManualBackup = true
+            Toast.makeText(this, "请先选择备份目录", Toast.LENGTH_SHORT).show()
+            backupDirLauncher.launch(null)
+            return
+        }
+        if (manualBackupRunning) return
+        manualBackupRunning = true
+        backupNowView?.isEnabled = false
+        Toast.makeText(this, "正在备份…", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            try {
+                val name = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    com.bilibili.livemonitor.util.BackupDirectoryWriter.write(
+                        this@MainActivity, dir
+                    ) { output ->
+                        com.bilibili.livemonitor.util.FullBackupBuilder.write(this@MainActivity, output)
+                    }
+                }
+                preferenceManager.setLastBackupTime(System.currentTimeMillis())
+                Toast.makeText(this@MainActivity, "备份完成：$name", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "备份失败：${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                manualBackupRunning = false
+                backupNowView?.isEnabled = true
+                refreshBackupStatusText()
+                refreshSettingsSubtitles()
             }
         }
     }
@@ -918,6 +977,8 @@ class MainActivity : AppCompatActivity() {
         }
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnPickBackupDir)
             .setOnClickListener { backupDirLauncher.launch(null) }
+        backupNowView = view.findViewById(R.id.btnBackupNow)
+        backupNowView?.setOnClickListener { startManualBackup() }
     }
 
     private fun bindAppearanceSection(view: android.view.View) {

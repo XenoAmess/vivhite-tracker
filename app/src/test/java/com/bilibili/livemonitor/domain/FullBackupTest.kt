@@ -239,6 +239,65 @@ class FullBackupTest {
         )
     }
 
+    @Test
+    fun `v4海报与日志随包往返`() {
+        val data = sampleData().copy(
+            posters = mapOf("monthly_2026-07.png" to ByteArray(1500) { (it % 131).toByte() }),
+            logBytes = "2026-08-21 启动日志\n".toByteArray()
+        )
+
+        val unpacked = FullBackup.unpack(FullBackup.pack(data))
+
+        assertEquals(FullBackup.CURRENT_VERSION, unpacked.formatVersion)
+        assertEquals(4, FullBackup.CURRENT_VERSION)
+        assertArrayEquals(
+            ByteArray(1500) { (it % 131).toByte() },
+            unpacked.posters["monthly_2026-07.png"]
+        )
+        assertEquals("2026-08-21 启动日志\n", unpacked.logBytes!!.toString(Charsets.UTF_8))
+    }
+
+    @Test
+    fun `v3旧包无海报日志仍可读取`() {
+        val bytes = validV3Zip()
+
+        val data = FullBackup.unpack(bytes)
+
+        assertEquals(3, data.formatVersion)
+        assertTrue(data.posters.isEmpty())
+        assertNull(data.logBytes)
+    }
+
+    @Test
+    fun `重复日志条目被识别为损坏备份`() {
+        // zip 库不允许同名条目，参考重复头像用例：用等长别名落盘后改字节
+        val aliased = zipOf(
+            FullBackup.ENTRY_MANIFEST to
+                """{"format":"vivhite-full-backup","version":4}""".toByteArray(),
+            FullBackup.ENTRY_SESSIONS to (SessionBackup.HEADER + "\n").toByteArray(),
+            FullBackup.ENTRY_MEDIA_SNAPSHOTS to
+                "kind,observed_at,content_key,source_url,file_name,session_start_ts,title\n".toByteArray(),
+            FullBackup.ENTRY_LOG to byteArrayOf(1),
+            "logs/monitor.l2g" to byteArrayOf(2)
+        )
+        replaceAscii(aliased, "logs/monitor.l2g", "logs/monitor.log")
+
+        assertTrue(
+            runCatching { FullBackup.unpack(aliased) }.exceptionOrNull()
+                is FullBackup.DamagedBackupException
+        )
+    }
+
+    @Test
+    fun `海报路径穿越被识别为损坏备份`() {
+        val bytes = validV3Zip("posters/../poster.png" to byteArrayOf(1))
+
+        assertTrue(
+            runCatching { FullBackup.unpack(bytes) }.exceptionOrNull()
+                is FullBackup.DamagedBackupException
+        )
+    }
+
     private fun validV3Zip(vararg extra: Pair<String, ByteArray>): ByteArray = zipOf(
         FullBackup.ENTRY_MANIFEST to
             """{"format":"vivhite-full-backup","version":3}""".toByteArray(),

@@ -200,6 +200,7 @@ class PreferenceManager(context: Context) {
         o.put("auto_download_update", isAutoDownloadUpdate())
         o.put("alert_sound_uri", getAlertSoundUri())
         o.put("alert_sound_title", getAlertSoundTitle())
+        o.put("promo_style", getPromoStyle())
         o.put("auto_backup_enabled", isAutoBackupEnabled())
         o.put("backup_tree_uri", getBackupTreeUri())
         return o.toString()
@@ -261,6 +262,12 @@ class PreferenceManager(context: Context) {
             o.optBooleanOrNull("auto_download_update")?.let { editor.putBoolean(KEY_AUTO_DOWNLOAD_UPDATE, it) }
             o.optStringOrNull("alert_sound_uri")?.let { editor.putString(KEY_ALERT_SOUND_URI, it) }
             o.optStringOrNull("alert_sound_title")?.let { editor.putString(KEY_ALERT_SOUND_TITLE, it) }
+            // 只接受合法风格名，防止脏快照把未知值写进来导致渲染处 valueOf 崩溃
+            o.optStringOrNull("promo_style")?.let { style ->
+                if (runCatching { PromoImageRenderer.Style.valueOf(style) }.isSuccess) {
+                    editor.putString(KEY_PROMO_STYLE, style)
+                }
+            }
             if (hasBackupUri) {
                 editor.putString(KEY_BACKUP_TREE_URI, backupUri.takeIf { backupUriUsable }.orEmpty())
                 if (hasAutoBackup) {

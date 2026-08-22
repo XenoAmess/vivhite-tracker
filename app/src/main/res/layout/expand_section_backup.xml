@@ -11,15 +11,31 @@
         android:id="@+id/switchAutoBackup"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="每天自动备份（全量 ZIP：场次+心情+主题变化+人气+粉丝+魔法期+设置+封面+头像）" />
+        android:text="每天自动备份（全量 ZIP：场次+心情+主题变化+人气+粉丝+魔法期+设置+封面+头像+海报+日志；保留 30 天，最多 60 份）" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnPickBackupDir"
-        style="?attr/materialButtonOutlinedStyle"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="选择备份目录"
-        android:textSize="13sp" />
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPickBackupDir"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="选择备份目录"
+            android:textSize="13sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBackupNow"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="立即备份"
+            android:textSize="13sp" />
+
+    </LinearLayout>
 
     <TextView
         android:id="@+id/tvBackupStatus"

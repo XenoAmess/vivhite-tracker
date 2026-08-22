@@ -1372,7 +1372,9 @@ class StatsActivity : AppCompatActivity() {
                 "包含：场次 ${data.sessions.size} · 心情 ${data.moods.size} · " +
                     "主题变化 ${data.titleChanges.size} · 人气点 ${data.popularity.size} · " +
                     "粉丝快照 ${data.followers.size} · 媒体记录 ${data.mediaSnapshots.size}\n" +
-                    "头像 ${data.avatarNames.size} 张 · 封面 ${data.coverNames.size} 张\n\n" +
+                    "头像 ${data.avatarNames.size} 张 · 封面 ${data.coverNames.size} 张 · " +
+                    "海报 ${data.posterNames.size} 张" +
+                    (if (data.logBytes != null) " · 含运行日志" else "") + "\n\n" +
                     "设置项（含魔法期、勿扰、检测频率等）将被覆盖。继续？"
             )
             .setPositiveButton("恢复") { _, _ ->
@@ -1405,7 +1407,8 @@ class StatsActivity : AppCompatActivity() {
                     "主题变化 +${report.titleChanges.added} / 补全 ${report.titleChanges.merged} · " +
                     "人气点 +${report.popularity.added} · 粉丝快照 +${report.followers.added} · " +
                     "媒体记录 +${report.mediaSnapshots.added} · 头像 +${report.avatars.added} · " +
-                    "封面 +${report.covers.added}" +
+                    "封面 +${report.covers.added} · 海报 +${report.posters.added}" +
+                    (if (report.logRestored) " · 日志已恢复" else "") +
                     if (data.prefsJson != null && !report.preferencesRestored) "\n设置快照无效，未覆盖现有设置。" else ""
             )
             .setPositiveButton("好", null)

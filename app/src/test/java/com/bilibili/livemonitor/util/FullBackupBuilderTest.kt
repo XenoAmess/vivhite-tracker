@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,6 +33,8 @@ class FullBackupBuilderTest {
         db.mediaSnapshotDao().deleteAll()
         java.io.File(context.filesDir, "covers").deleteRecursively()
         java.io.File(context.filesDir, "avatars").deleteRecursively()
+        java.io.File(context.filesDir, "posters").deleteRecursively()
+        java.io.File(context.filesDir, "logs").deleteRecursively()
         java.io.File(context.filesDir, "anchor_avatar.jpg").delete()
         PreferenceManager(context).setLegacyMediaImported(false)
         Unit
@@ -55,6 +58,23 @@ class FullBackupBuilderTest {
         assertEquals(502, unpacked.sessions.size)
         val open = unpacked.sessions.single { it.title == "进行中" }
         assertNull(open.endTs)
+    }
+
+    @Test
+    fun `导出包含月报海报和运行日志`() = runBlocking {
+        val posterDir = File(context.filesDir, "posters").apply { mkdirs() }
+        val bitmap = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
+        File(posterDir, "monthly_2026-07.png").outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        bitmap.recycle()
+        val logDir = File(context.filesDir, "logs").apply { mkdirs() }
+        File(logDir, "monitor.log").writeText("2026-08-21 检测正常\n")
+
+        val unpacked = FullBackup.unpack(FullBackupBuilder.build(context))
+
+        assertTrue(unpacked.posters.containsKey("monthly_2026-07.png"))
+        assertEquals("2026-08-21 检测正常\n", unpacked.logBytes!!.toString(Charsets.UTF_8))
     }
 
     @Test

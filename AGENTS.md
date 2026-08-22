@@ -69,7 +69,8 @@ AlarmManager(60s exact) → AlarmReceiver → startForegroundService
 - Room DB 当前 v8，共 6 表：`stream_sessions`、`stream_title_changes`、`mood_events`、`popularity_points`、`follower_snapshots`、`media_snapshots`。现有迁移为 1→2（心情）、2→3（心情时长）、3→4（人气采样）、4→5（场次封面）、5→6（粉丝快照）、6→7（索引/外键）、7→8（头像与直播封面事件）；加表/字段必须继续写 Migration，禁止删库重建。
 - 心情目录在 `domain/MoodCatalog`（22 种，key→emoji+中文文案+分组），**DB 只存 key 不存 emoji**；CSV 里存「😄开心」display，导入用 `keyOf` 反查（裸 key 也认）。
 - 备份编解码在 `domain/SessionBackup`（混合 CSV：类型列区分场次/心情，兼容旧 5 列格式；引号/逗号/换行转义）。导入合并去重（场次=起止时间，心情=时间+心情+标题）。
-- 导出海报 `util/StatsImageRenderer`：**纯按月维度**（摘要/逐周柱状/月历热力/心情统计/魔法期/全记录），可变高度；柱状离屏复用 `WeekStreamBarsView`（柱数随数据）；纯绘制无 IO 好测试。
+- 全量备份是 ZIP（`domain/FullBackup` + `util/FullBackupBuilder` + `controller/BackupRestoreCoordinator`），当前 v4：CSV 各表 + media_snapshots.csv + prefs.json + covers/ + avatars/ + posters/ + logs/monitor.log；兼容恢复 v1–v3。自动备份 `worker/BackupWorker` 每天写 SAF 目录，文件名 `vivhite_backup_yyyyMMdd_HHmmss.zip`，保留 30 天且最多 60 份；写入/清理逻辑在 `util/BackupDirectoryWriter`，设置页「立即备份」复用同一套。备份**不含** updates/ 安装包与自定义铃声文件（铃声只存 SAF URI，恢复后回退默认）。
+- 导出海报 `util/StatsImageRenderer`：**纯按月维度**（摘要/逐周柱状/月历热力/心情统计/魔法期/记录卡），可变高度（上限 40000px，RGB_565）；记录卡含心情原因/备注、每场封面与人气曲线、主题/封面变化明细；柱状离屏复用 `WeekStreamBarsView`（柱数随数据）；纯绘制无 IO 好测试，封面 Bitmap 由 `util/StatsImageAssetLoader` 后台采样（每场最多 2 张、共 21 场）并在渲染后回收。
 
 ## 应用更新通道（UpdateChecker）
 

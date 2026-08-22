@@ -2405,6 +2405,22 @@ class MainActivityTest {
             .text.toString().contains("关"))
     }
 
+    @Test
+    fun `立即备份无目录时引导选择目录`() {
+        prefs.setBackupTreeUri("")
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.showSettingsDrawer()
+        expandSectionAt(activity, 5)
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            as com.google.android.material.bottomsheet.BottomSheetDialog
+
+        sheet.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnBackupNow)!!
+            .performClick()
+
+        assertTrue("未选目录时应标记待手动备份", activity.pendingManualBackup)
+        assertEquals(Intent.ACTION_OPEN_DOCUMENT_TREE, shadowOf(context).nextStartedActivity?.action)
+    }
+
     private fun expandSectionAt(activity: MainActivity, position: Int) {
         // 点第 N 个条目的 itemRoot 让其内嵌容器展开
         val sheetDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()

@@ -52,6 +52,13 @@ object FullBackupBuilder {
         val avatarFiles = File(context.filesDir, "avatars").listFiles().orEmpty()
             .filter(::isValidImage)
             .associateBy { it.name }
+        val posterFiles = File(context.filesDir, "posters").listFiles().orEmpty()
+            .filter(::isValidImage)
+            .associateBy { it.name }
+        // monitor.log 由 AppLogger 截断在 1MB；再大说明异常，跳过不带
+        val logBytes = File(context.filesDir, "logs/monitor.log")
+            .takeIf { it.isFile && it.length() in 1..MAX_LOG_BYTES }
+            ?.readBytes()
         val mediaStore = MediaStore()
         // 索引行引用的原图缺失/损坏时跳过该行并告警，不能让单条脏数据拖垮整个备份
         val validMediaSnapshots = snapshot.mediaSnapshots.filter { row ->
@@ -69,6 +76,8 @@ object FullBackupBuilder {
                 prefsJson = PreferenceManager(context).exportSnapshot(),
                 coverFiles = coverFiles,
                 avatarFiles = avatarFiles,
+                posterFiles = posterFiles,
+                logBytes = logBytes,
                 mediaSnapshots = validMediaSnapshots
             ),
             output
@@ -83,4 +92,5 @@ object FullBackupBuilder {
     }
 
     private const val TAG = "FullBackupBuilder"
+    private const val MAX_LOG_BYTES = 2L * 1024 * 1024
 }

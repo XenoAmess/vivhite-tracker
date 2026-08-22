@@ -67,6 +67,28 @@ class BackupRestoreCoordinator(
             "头像",
             avatarHashes
         )
+        val (posterAdded, posterSkipped) = restoreImages(
+            data.posterNames,
+            data.posters,
+            data.posterFiles,
+            File(context.filesDir, "posters"),
+            "海报",
+            emptyMap()
+        )
+        // 运行日志：当前已有非空 monitor.log 时不覆盖，落为 monitor_restored_<时间>.log
+        val logRestored = data.logBytes?.let { bytes ->
+            val logDir = File(context.filesDir, "logs").apply { mkdirs() }
+            val current = File(logDir, "monitor.log")
+            val target = if (current.isFile && current.length() > 0) {
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
+                    .format(java.util.Date())
+                File(logDir, "monitor_restored_$stamp.log")
+            } else {
+                current
+            }
+            target.writeBytes(bytes)
+            true
+        } ?: false
 
         var sessionAdded = 0
         var sessionMerged = 0
@@ -265,7 +287,9 @@ class BackupRestoreCoordinator(
                 mediaSnapshotAdded,
                 skipped = mediaSnapshotSkipped
             ),
-            avatars = FullBackup.RestoreCount(avatarAdded, skipped = avatarSkipped)
+            avatars = FullBackup.RestoreCount(avatarAdded, skipped = avatarSkipped),
+            posters = FullBackup.RestoreCount(posterAdded, skipped = posterSkipped),
+            logRestored = logRestored
         )
     }
 

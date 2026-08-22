@@ -19,7 +19,7 @@ import java.util.zip.ZipOutputStream
 /** 全量备份 ZIP 编解码。流式 API 用于生产路径，ByteArray API 仅保留给小数据和兼容调用。 */
 object FullBackup {
 
-    const val CURRENT_VERSION = 3
+    const val CURRENT_VERSION = 4
     const val ENTRY_MANIFEST = "manifest.json"
     const val ENTRY_SESSIONS = "backup.csv"
     const val ENTRY_TITLE_CHANGES = "title_changes.csv"
@@ -27,16 +27,20 @@ object FullBackup {
     const val ENTRY_FOLLOWERS = "followers.csv"
     const val ENTRY_MEDIA_SNAPSHOTS = "media_snapshots.csv"
     const val ENTRY_PREFS = "prefs.json"
+    const val ENTRY_LOG = "logs/monitor.log"
     const val COVERS_PREFIX = "covers/"
     const val AVATARS_PREFIX = "avatars/"
+    const val POSTERS_PREFIX = "posters/"
 
     private const val FORMAT_ID = "vivhite-full-backup"
     private const val MAX_ENTRY_COUNT = 15_010
     private const val MAX_COVER_COUNT = 5_000
     private const val MAX_AVATAR_COUNT = 10_000
+    private const val MAX_POSTER_COUNT = 240
     private const val MAX_TEXT_ENTRY_BYTES = 16L * 1024 * 1024
     private const val MAX_COVER_BYTES = 32L * 1024 * 1024
     private const val MAX_AVATAR_BYTES = 32L * 1024 * 1024
+    private const val MAX_POSTER_BYTES = 32L * 1024 * 1024
     private const val MAX_TOTAL_EXPANDED_BYTES = 512L * 1024 * 1024
 
     class DamagedBackupException(message: String, cause: Throwable? = null) :
@@ -74,10 +78,16 @@ object FullBackup {
         val avatars: Map<String, ByteArray> = emptyMap(),
         /** Production imports spool avatars here instead of retaining every image in memory. */
         val avatarFiles: Map<String, File> = emptyMap(),
+        val posters: Map<String, ByteArray> = emptyMap(),
+        /** Production imports spool posters here instead of retaining every image in memory. */
+        val posterFiles: Map<String, File> = emptyMap(),
+        /** 运行日志（monitor.log 全文，≤16MB）；v4 新增，可选 */
+        val logBytes: ByteArray? = null,
         val formatVersion: Int = CURRENT_VERSION
     ) {
         val coverNames: Set<String> get() = covers.keys + coverFiles.keys
         val avatarNames: Set<String> get() = avatars.keys + avatarFiles.keys
+        val posterNames: Set<String> get() = posters.keys + posterFiles.keys
     }
 
     data class RestoreCount(val added: Int = 0, val merged: Int = 0, val skipped: Int = 0)
@@ -92,7 +102,9 @@ object FullBackup {
         val preferencesRestored: Boolean,
         val magicPeriodsRestored: Boolean,
         val mediaSnapshots: RestoreCount = RestoreCount(),
-        val avatars: RestoreCount = RestoreCount()
+        val avatars: RestoreCount = RestoreCount(),
+        val posters: RestoreCount = RestoreCount(),
+        val logRestored: Boolean = false
     )
 
     fun pack(data: Data): ByteArray = ByteArrayOutputStream().also { pack(data, it) }.toByteArray()
@@ -127,6 +139,16 @@ object FullBackup {
                 zip, AVATARS_PREFIX, data.avatars, data.avatarFiles, "头像",
                 MAX_AVATAR_COUNT, MAX_AVATAR_BYTES, budget
             )
+            writeImages(
+                zip, POSTERS_PREFIX, data.posters, data.posterFiles, "海报",
+                MAX_POSTER_COUNT, MAX_POSTER_BYTES, budget
+            )
+            data.logBytes?.let { bytes ->
+                budget.claim(bytes.size.toLong(), MAX_TEXT_ENTRY_BYTES)
+                zip.putNextEntry(ZipEntry(ENTRY_LOG))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
         }
     }
 
@@ -240,6 +262,9 @@ object FullBackup {
         val coverFiles = mutableMapOf<String, File>()
         val avatars = mutableMapOf<String, ByteArray>()
         val avatarFiles = mutableMapOf<String, File>()
+        val posters = mutableMapOf<String, ByteArray>()
+        val posterFiles = mutableMapOf<String, File>()
+        var logBytes: ByteArray? = null
         var manifestVersion: Int? = null
         var sawSessions = false
         var sawTitleChanges = false
@@ -247,9 +272,11 @@ object FullBackup {
         var sawFollowers = false
         var sawMediaSnapshots = false
         var sawPrefs = false
+        var sawLog = false
         var entryCount = 0
         var coverCount = 0
         var avatarCount = 0
+        var posterCount = 0
         var totalExpandedBytes = 0L
 
         try {
@@ -360,6 +387,11 @@ object FullBackup {
                             prefsJson = readLimited(MAX_TEXT_ENTRY_BYTES).toString(Charsets.UTF_8)
                             sawPrefs = true
                         }
+                        ENTRY_LOG -> {
+                            if (sawLog) throw DamagedBackupException("日志数据重复")
+                            logBytes = readLimited(MAX_TEXT_ENTRY_BYTES)
+                            sawLog = true
+                        }
                         else -> {
                             if (entry.name.startsWith(COVERS_PREFIX)) {
                                 coverCount++
@@ -398,6 +430,25 @@ object FullBackup {
                                     file.outputStream().use { copyLimited(it, MAX_AVATAR_BYTES) }
                                     avatarFiles[name] = file
                                 }
+                            } else if (entry.name.startsWith(POSTERS_PREFIX)) {
+                                posterCount++
+                                if (posterCount > MAX_POSTER_COUNT) throw DamagedBackupException("海报数量过多")
+                                val name = entry.name.removePrefix(POSTERS_PREFIX)
+                                validateImageName(name, "海报")
+                                if (name in posters || name in posterFiles) {
+                                    throw DamagedBackupException("海报文件重复：$name")
+                                }
+                                if (coverDirectory == null) {
+                                    posters[name] = readLimited(MAX_POSTER_BYTES)
+                                } else {
+                                    val posterDirectory = File(coverDirectory, "posters")
+                                    if (!posterDirectory.exists() && !posterDirectory.mkdirs()) {
+                                        throw IOException("无法创建海报临时目录")
+                                    }
+                                    val file = File(posterDirectory, name)
+                                    file.outputStream().use { copyLimited(it, MAX_POSTER_BYTES) }
+                                    posterFiles[name] = file
+                                }
                             } else {
                                 discardLimited(MAX_TEXT_ENTRY_BYTES)
                             }
@@ -434,6 +485,9 @@ object FullBackup {
             mediaSnapshots = mediaSnapshots,
             avatars = avatars,
             avatarFiles = avatarFiles,
+            posters = posters,
+            posterFiles = posterFiles,
+            logBytes = logBytes,
             formatVersion = version
         )
     }
