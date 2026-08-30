@@ -152,7 +152,7 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
-    implementation("org.jsoup:jsoup:1.23.1")
+    implementation("org.jsoup:jsoup:1.23.2")
     // 长宣传图的直播间二维码（纯 JVM，QR 矩阵可单测）
     implementation("com.google.zxing:core:3.5.4")
     // 增量更新打补丁（ApkDiffPatch 的 Android JNI 库，libapkpatch.so 已打入 jniLibs 4 ABI）
