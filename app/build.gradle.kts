@@ -161,10 +161,10 @@ dependencies {
     // 媒体播放器（ExoPlayer/Media3 - 用于 alarm 铃声 gapless 循环，解决 MediaPlayer 循环间隔）
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     // 场次/统计存储（Room + KSP，实体不用 @Parcelize——AGP9 内置 Kotlin 下 KSP 已知 bug）
-    implementation("androidx.room:room-runtime:2.8.4")
-    implementation("androidx.room:room-ktx:2.8.4")
-    ksp("androidx.room:room-compiler:2.8.4")
-    testImplementation("androidx.room:room-testing:2.8.4")
+    implementation("androidx.room:room-runtime:2.8.5")
+    implementation("androidx.room:room-ktx:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
+    testImplementation("androidx.room:room-testing:2.8.5")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260814")
     testImplementation("org.robolectric:robolectric:4.16.1")
@@ -173,7 +173,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     // Room 迁移测试（MigrationTestHelper 读 schemas/ 里的版本化 schema JSON）
-    androidTestImplementation("androidx.room:room-testing:2.8.4")
+    androidTestImplementation("androidx.room:room-testing:2.8.5")
     // 手账 UI 自动化（对话框交互 + DatePicker 操作）
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
