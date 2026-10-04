@@ -152,7 +152,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
-    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
     implementation("org.jsoup:jsoup:1.23.2")
     // 长宣传图的直播间二维码（纯 JVM，QR 矩阵可单测）
     implementation("com.google.zxing:core:3.5.4")
@@ -170,7 +170,7 @@ dependencies {
     testImplementation("org.json:json:20260814")
     testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("androidx.test:core:1.7.0")
-    testImplementation("androidx.work:work-testing:2.11.2")
+    testImplementation("androidx.work:work-testing:2.12.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     // Room 迁移测试（MigrationTestHelper 读 schemas/ 里的版本化 schema JSON）
