@@ -133,6 +133,7 @@ android {
             "UseKtx",
             "GradleDependency",
             "NewerVersionAvailable",
+            "AndroidGradlePluginVersion",
             "NestedWeights"
         )
         warningsAsErrors = true
