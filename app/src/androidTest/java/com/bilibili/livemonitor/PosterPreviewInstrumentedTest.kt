@@ -12,6 +12,7 @@ import com.bilibili.livemonitor.util.StatsImageDataFactory
 import com.bilibili.livemonitor.util.StatsImageRenderer
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -74,10 +75,11 @@ class PosterPreviewInstrumentedTest {
             outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             bitmap.recycle()
         }
-        // 9 场分布在月上旬，标题覆盖中英文
+        // 27 场覆盖整月，复现第 22 场起封面被加载数量上限截断的问题。
         val titles = listOf("happy", "sc2 肉鸽之心", "sad", "舟个痛快", "happy~", "瞧", "突变有手就行啊（", "吹水喵~", "我们的cndota")
-        titles.forEachIndexed { i, title ->
-            val start = monthStart + (2L + i) * 86_400_000L + 20 * 3_600_000L
+        repeat(27) { i ->
+            val title = titles[i % titles.size]
+            val start = monthStart + i * 86_400_000L + 20 * 3_600_000L
             val sid = dao.insertSession(
                 StreamSessionEntity(
                     startTs = start,
@@ -97,7 +99,7 @@ class PosterPreviewInstrumentedTest {
             }
         }
         // 第 3 场造"变化场"：主题变化 + 封面变化（第二张封面不同配色，并列展示）
-        val changedStart = monthStart + 4L * 86_400_000L + 20 * 3_600_000L
+        val changedStart = monthStart + 2L * 86_400_000L + 20 * 3_600_000L
         val changedCover = File(context.filesDir, "covers/poster-preview-2.png").apply {
             val bitmap = android.graphics.Bitmap.createBitmap(960, 540, android.graphics.Bitmap.Config.ARGB_8888)
             android.graphics.Canvas(bitmap).apply {
@@ -175,6 +177,10 @@ class PosterPreviewInstrumentedTest {
         val data = StatsImageDataFactory.build(context, monthCal)
         val posterData = StatsImageAssetLoader.load(context, data)
         val bmp = try {
+            val sessions = posterData.records.filter { it.kind == StatsImageRenderer.RecordKind.SESSION }
+            assertEquals(27, sessions.size)
+            assertTrue("整月每场都应有封面，包括第 22 场以后", sessions.all { it.coverBitmaps.isNotEmpty() })
+            assertEquals(2, sessions[2].coverBitmaps.size)
             StatsImageRenderer.render(context, posterData, avatar = null)
         } finally {
             StatsImageAssetLoader.recycle(posterData)
@@ -184,5 +190,6 @@ class PosterPreviewInstrumentedTest {
         assertTrue(out.exists() && out.length() > 10_000)
         println("POSTER_PATH=${out.absolutePath}")
         println("POSTER_SIZE=${bmp.width}x${bmp.height} records=${data.records.size}")
+        bmp.recycle()
     }
 }

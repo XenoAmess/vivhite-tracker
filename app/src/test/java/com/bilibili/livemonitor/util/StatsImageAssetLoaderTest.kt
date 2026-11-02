@@ -6,14 +6,16 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class StatsImageAssetLoaderTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
@@ -57,14 +59,14 @@ class StatsImageAssetLoaderTest {
     }
 
     @Test
-    fun `单张月报最多预解码二十场封面`() = runBlocking {
+    fun `二十七场月报的相同封面全部加载且复用同一位图`() = runBlocking {
         val allowed = File(context.filesDir, "covers/poster-limit.png").apply {
             parentFile!!.mkdirs()
             val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
             outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bitmap.recycle()
         }
-        val records = List(StatsImageAssetLoader.MAX_COVER_COUNT + 5) { index ->
+        val records = List(27) { index ->
             StatsImageRenderer.RecordLine(
                 StatsImageRenderer.RecordKind.SESSION,
                 "场次 $index",
@@ -74,10 +76,39 @@ class StatsImageAssetLoaderTest {
 
         val loaded = StatsImageAssetLoader.load(context, sampleData(records))
 
-        assertTrue(
-            loaded.records.count { it.coverBitmaps.isNotEmpty() } == StatsImageAssetLoader.MAX_COVER_COUNT
-        )
+        assertEquals(27, loaded.records.count { it.coverBitmaps.isNotEmpty() })
+        val bitmap = loaded.records.first().coverBitmaps.single()
+        loaded.records.forEach { assertSame(bitmap, it.coverBitmaps.single()) }
         StatsImageAssetLoader.recycle(loaded)
+        assertTrue(bitmap.isRecycled)
+    }
+
+    @Test
+    fun `整月三十一场各有不同的前后封面均可加载回收`() = runBlocking {
+        val records = List(31) { index ->
+            val paths = List(2) { change ->
+                File(context.filesDir, "covers/month-$index-$change.png").apply {
+                    parentFile!!.mkdirs()
+                    val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+                    outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    bitmap.recycle()
+                }.absolutePath
+            }
+            StatsImageRenderer.RecordLine(
+                StatsImageRenderer.RecordKind.SESSION,
+                "场次 $index",
+                coverPaths = paths
+            )
+        }
+
+        val loaded = StatsImageAssetLoader.load(context, sampleData(records))
+        val bitmaps = loaded.records.flatMap { it.coverBitmaps }
+
+        assertEquals(31, loaded.records.size)
+        assertTrue(loaded.records.all { it.coverBitmaps.size == 2 })
+        assertEquals(62, bitmaps.distinct().size)
+        StatsImageAssetLoader.recycle(loaded)
+        assertTrue(bitmaps.all { it.isRecycled })
     }
 
     @Test
@@ -106,6 +137,34 @@ class StatsImageAssetLoaderTest {
         assertEquals(2, loaded.records[0].coverBitmaps.size)
 
         val bitmaps = loaded.records[0].coverBitmaps
+        StatsImageAssetLoader.recycle(loaded)
+        assertTrue(bitmaps.all { it.isRecycled })
+    }
+
+    @Test
+    fun `跳过丢失损坏封面后仅保留前两张有效封面`() = runBlocking {
+        val missing = File(context.filesDir, "covers/missing.png")
+        val corrupt = File(context.filesDir, "covers/corrupt.png").apply {
+            parentFile!!.mkdirs()
+            writeText("not an image")
+        }
+        val validPaths = List(3) { index ->
+            File(context.filesDir, "covers/fallback-$index.png").apply {
+                val bitmap = Bitmap.createBitmap(64 * (index + 1), 64, Bitmap.Config.ARGB_8888)
+                outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }.absolutePath
+        }
+        val record = StatsImageRenderer.RecordLine(
+            StatsImageRenderer.RecordKind.SESSION,
+            "多次封面变化",
+            coverPaths = listOf(missing.absolutePath, corrupt.absolutePath) + validPaths
+        )
+
+        val loaded = StatsImageAssetLoader.load(context, sampleData(listOf(record)))
+        val bitmaps = loaded.records.single().coverBitmaps
+
+        assertEquals(listOf(64, 128), bitmaps.map { it.width })
         StatsImageAssetLoader.recycle(loaded)
         assertTrue(bitmaps.all { it.isRecycled })
     }

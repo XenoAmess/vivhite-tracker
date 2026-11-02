@@ -20,18 +20,16 @@ object StatsImageAssetLoader {
                 val coverRoot = File(context.filesDir, "covers").canonicalFile
                 val decoded = mutableMapOf<String, Bitmap>()
                 val invalid = mutableSetOf<String>()
-                var loadedCount = 0
                 data.copy(
                     records = data.records.map { record ->
                         if (record.kind != StatsImageRenderer.RecordKind.SESSION ||
-                            record.coverPaths.isEmpty() ||
-                            loadedCount >= MAX_COVER_COUNT
+                            record.coverPaths.isEmpty()
                         ) {
                             return@map record
                         }
-                        loadedCount++
-                        // 每场最多两张：首张 + 首次变化后的封面（并列展示变化）
-                        val covers = record.coverPaths.mapNotNull { path ->
+                        // 整月每场都加载；每场取前两张有效封面，相同路径复用。
+                        // 惰性解码，避免将不会展示的后续封面留在内存中。
+                        val covers = record.coverPaths.asSequence().mapNotNull { path ->
                             decoded[path]?.let { return@mapNotNull it }
                             if (path in invalid) return@mapNotNull null
                             val file = runCatching { File(path).canonicalFile }.getOrNull()
@@ -47,7 +45,7 @@ object StatsImageAssetLoader {
                                 invalid += path
                                 null
                             }
-                        }.take(MAX_COVERS_PER_SESSION)
+                        }.take(MAX_COVERS_PER_SESSION).toList()
                         record.copy(coverBitmaps = covers)
                     }
                 )
@@ -85,7 +83,6 @@ object StatsImageAssetLoader {
         }.getOrNull()
     }
 
-    internal const val MAX_COVER_COUNT = 21
     private const val MAX_COVERS_PER_SESSION = 2
     private const val MAX_COVER_DIMENSION = 640
 }
